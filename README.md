@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="#quick-start"><strong>Quick Start</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="https://docs.second.dev"><strong>Docs</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="https://docs.second.so"><strong>Docs</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#security--governance"><strong>Security & Governance</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 </p>
@@ -420,7 +420,7 @@ Source development (Docker mode) works on any platform with Docker Desktop.
 ## Contributing
 
 We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[docs](https://docs.second.dev) for architecture details and development setup.
+[docs](https://docs.second.so) for architecture details and development setup.
 Report security issues privately; see [SECURITY.md](SECURITY.md).
 
 ```bash
