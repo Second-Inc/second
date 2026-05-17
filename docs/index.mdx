@@ -1,26 +1,24 @@
 ---
 title: "Get started with Second"
-description: "A governed workspace for building custom internal software — where your team and AI agents work together on the same generated interfaces."
+description: "A governed workspace for building custom internal software, where your team and AI agents work together on the same generated interfaces."
 ---
 
-Second is a governed workspace platform that lets every team ship purpose-built internal software — collaborative apps designed from the ground up for humans and AI agents to work together.
+Second is a governed workspace platform that lets every team ship purpose-built internal software: collaborative apps designed from the ground up for humans and AI agents to work together.
 
-Prompt an app, and Second generates a full internal interface — already deployed in your workspace, with a real-time database, permissions, and audit logs out of the box. Every app treats agents as first-class citizens: they read and write to the same live database as your team, get scoped tools to do real work, and collaborate alongside humans on the same UI.
+Prompt an app, and Second generates a full internal interface already deployed in your workspace, with a real-time database, permissions, and audit logs out of the box. Every app treats agents as first-class citizens: they read and write to the same live database as your team, get scoped tools to do real work, and collaborate alongside humans on the same UI.
+
+Think of it as an internal, secure, and collaborative Lovable that runs on-prem, purpose-built for long-running, asynchronous work with AI agents.
 
 <Tip>
-**Think of it as** an internal, secure, and collaborative Lovable that runs on-prem — purpose-built for long-running, asynchronous work with AI agents.
-</Tip>
-
-The platform follows a zero-trust architecture for agents. No agent is granted implicit access to anything — every capability, data collection, and integration must be explicitly declared, scoped, and approved before an agent can act.
-
 For enterprise review, start with [Enterprise Deployment and Security](/enterprise).
 It covers customer-owned auth and OAuth apps, `agents.json` approval, secret
 injection, tenant isolation, and auditability.
 
-<Info>
 Need help with secure deployment, cost management, runtime setup, or production
 support? Contact [sales@second.so](mailto:sales@second.so).
-</Info>
+</Tip>
+
+The platform follows a zero-trust architecture for agents. No agent is granted implicit access to anything. Every capability, data collection, and integration must be explicitly declared, scoped, and approved before an agent can act.
 
 Run it locally from source in minutes, then plug in an external auth provider when you're ready to deploy.
 
@@ -44,13 +42,13 @@ For the full developer setup, see [Quickstart](/quickstart).
 | App agents with custom tools | Apps trigger scoped AI agents that call external APIs (HubSpot, Slack, etc.) with secure secret injection |
 | Draft/review governance | Draft edits, agent permissions, integrations, and published snapshots stay under admin/owner control |
 | Audit logs | Owners/admins can inspect workspace-scoped governance, agent, integration, and app-data changes without exposing secrets or payloads |
-| Live data persistence | Apps persist data in MongoDB via `useCollection`/`useDoc` — live updates via Change Streams |
-| Async agent execution | Agents run in the background and write results to the app's database — even after the user closes their browser |
+| Live data persistence | Apps persist data in MongoDB via `useCollection`/`useDoc` with live updates via Change Streams |
+| Async agent execution | Agents run in the background and write results to the app's database, even after the user closes their browser |
 | Real-time streaming | See text, tool calls, and reasoning appear as they happen |
 | Workspace-scoped data | Every record belongs to exactly one workspace |
 | Membership enforcement | API access requires proven membership |
 | Pluggable auth | Local `none` mode for development, `external` mode for production |
-| Local Claude auth | Uses your existing `claude` login — no API key needed for local dev |
+| Local Claude auth | Uses your existing `claude` login, no API key needed for local dev |
 | Provider-agnostic design | Claude today, extensible to other agent providers |
 
 ## How it works
@@ -67,25 +65,25 @@ Browser (useChat) → Next.js API → Worker (Claude Agent SDK) → streams back
 6. The worker streams raw SDK events back to Next.js.
 7. Next.js translates them into the AI SDK UIMessageStream protocol.
 8. The browser renders text, tool calls, and reasoning in real time.
-9. The agent edits a Vite + React + TypeScript workspace and calls `done_building` — the worker runs `npm run build`.
+9. The agent edits a Vite + React + TypeScript workspace and calls `done_building`, then the worker runs `npm run build`.
 10. The frontend fetches live workspace files through the web API (which proxies to the worker) and renders a sandboxed iframe preview.
 11. When the agent finishes, messages and source snapshots are persisted to MongoDB.
 12. Persisted source snapshots are used for recovery/rehydration after worker churn; live preview reads come from the worker filesystem.
 
 ## Next steps
 
-- [Quickstart](/quickstart) — run locally and build your first app
-- [Enterprise Deployment and Security](/enterprise) — customer-owned auth, OAuth apps, app-scoped credentials, `agents.json`, and app-agent governance
-- [Architecture](/architecture) — system overview with diagrams
-- [App Governance](/app-governance) — draft vs published snapshots, review flow, and governed agent config
-- [Audit Logs](/audit-logs) — workspace audit schema, redaction, permissions, and event coverage
-- [Agent System](/agent-system) — worker, bridge, and provider abstraction
-- [App Agents](/app-agents) — how apps trigger AI agents with custom tools
-- [App Data](/app-data) — live data persistence with MongoDB and Change Streams
-- [Integrations](/integrations) — API secrets, custom HTTP tools, and mock data
-- [Streaming](/streaming) — the two-hop streaming protocol in detail
-- [Authentication](/authentication) — local vs external auth modes
-- [Product Analytics](/product-analytics) — PostHog capture, anonymization, and opt-out behavior
-- [Self-hosting](/self-hosting) — deploy to production
-- [App Preview](/app-preview) — artifact preview pipeline, build step, iframe rendering, and source file persistence
-- [Contributing](/contributing) — help improve Second
+- [Quickstart](/quickstart): run locally and build your first app
+- [Enterprise Deployment and Security](/enterprise): customer-owned auth, OAuth apps, app-scoped credentials, `agents.json`, and app-agent governance
+- [Architecture](/architecture): system overview with diagrams
+- [App Governance](/app-governance): draft vs published snapshots, review flow, and governed agent config
+- [Audit Logs](/audit-logs): workspace audit schema, redaction, permissions, and event coverage
+- [Agent System](/agent-system): worker, bridge, and provider abstraction
+- [App Agents](/app-agents): how apps trigger AI agents with custom tools
+- [App Data](/app-data): live data persistence with MongoDB and Change Streams
+- [Integrations](/integrations): API secrets, custom HTTP tools, and mock data
+- [Streaming](/streaming): the two-hop streaming protocol in detail
+- [Authentication](/authentication): local vs external auth modes
+- [Product Analytics](/product-analytics): PostHog capture, anonymization, and opt-out behavior
+- [Self-hosting](/self-hosting): deploy to production
+- [App Preview](/app-preview): artifact preview pipeline, build step, iframe rendering, and source file persistence
+- [Contributing](/contributing): help improve Second

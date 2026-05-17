@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="#quick-start"><strong>Quick Start</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="https://docs.second.dev"><strong>Docs</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="https://docs.second.so"><strong>Docs</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#security--governance"><strong>Security & Governance</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 </p>
@@ -40,6 +40,11 @@ It's a single, beautifully governed workspace.
 Instead of adapting your workflows to pre-built agent management interfaces, Second is a workspace that comes with the right primitives to build exactly the interfaces your team needs. Prompt an app, and Second generates a full internal interface, already deployed in your workspace, with a real-time database, permissions, and audit logs out of the box. Air-gapped on your k8s.
 
 Above all, every app built on Second treats agents as first-class citizens. They read and write to the same real-time DB your team is working on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans on the same custom interfaces.
+
+> [!TIP]
+> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
+>
+> Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
 
 <strong>Think of it as:</strong> An internal, secure, and collaborative Lovable that runs on-prem — purpose-built for long-running, asynchronous work with agents.
 
@@ -420,7 +425,7 @@ Source development (Docker mode) works on any platform with Docker Desktop.
 ## Contributing
 
 We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[docs](https://docs.second.dev) for architecture details and development setup.
+[docs](https://docs.second.so) for architecture details and development setup.
 Report security issues privately; see [SECURITY.md](SECURITY.md).
 
 ```bash
