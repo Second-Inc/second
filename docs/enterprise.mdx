@@ -37,10 +37,7 @@ configuration, or support? Contact [sales@second.so](mailto:sales@second.so).
 
 ## Authentication
 
-Second separates authentication from authorization.
-
-Authentication answers "who is this user?" In production, that answer comes
-from your external provider. Your provider is responsible for:
+In production, your external auth provider is responsible for:
 
 - resolving the authenticated actor on each request
 - returning a stable user identifier
@@ -48,7 +45,7 @@ from your external provider. Your provider is responsible for:
 - syncing workspace memberships and roles
 - handling invitations if collaboration is enabled
 
-Authorization still happens inside Second. Every workspace route proves
+Authorization happens inside Second. Every workspace route proves
 membership, checks role permissions where needed, and queries data with
 `workspaceId` filters. A valid user from one workspace cannot read another
 workspace by guessing IDs.
