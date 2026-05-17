@@ -158,7 +158,7 @@ npx --yes @second-inc/cli --disable-telemetry  # No analytics
 **Prerequisites:** Node.js 20+, npm 10+, Docker Desktop
 
 ```bash
-git clone https://github.com/anthropics/second.git
+git clone https://github.com/Second-Inc/second.git
 cd second
 npm run dev
 ```
@@ -422,7 +422,7 @@ Source development (Docker mode) works on any platform with Docker Desktop.
 We welcome contributions. See the [docs](https://docs.second.dev) for architecture details and development setup.
 
 ```bash
-git clone https://github.com/anthropics/second.git
+git clone https://github.com/Second-Inc/second.git
 cd second
 npm run dev
 ```
