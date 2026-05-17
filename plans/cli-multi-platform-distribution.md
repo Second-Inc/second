@@ -659,7 +659,7 @@ These commands are for the future implementation and validation session. Do not 
 
 Feasibility on Linux x64:
 
-    cd /Users/omervexler/.codex/worktrees/971a/second
+    cd <repo-root>
     node packages/cli/scripts/prepare-runtime.mjs --runtime-id linux-x64 --package-root --out /tmp/second-runtime-linux-x64
     /tmp/second-runtime-linux-x64/bin/mongod --version
     /tmp/second-runtime-linux-x64/bin/redis-server --version
@@ -667,7 +667,7 @@ Feasibility on Linux x64:
 
 Feasibility on Linux arm64:
 
-    cd /Users/omervexler/.codex/worktrees/971a/second
+    cd <repo-root>
     node packages/cli/scripts/prepare-runtime.mjs --runtime-id linux-arm64 --package-root --out /tmp/second-runtime-linux-arm64
     /tmp/second-runtime-linux-arm64/bin/mongod --version
     /tmp/second-runtime-linux-arm64/bin/redis-server --version
@@ -675,7 +675,7 @@ Feasibility on Linux arm64:
 
 Feasibility on macOS Intel:
 
-    cd /Users/omervexler/.codex/worktrees/971a/second
+    cd <repo-root>
     node packages/cli/scripts/prepare-runtime.mjs --runtime-id darwin-x64 --package-root --out /tmp/second-runtime-darwin-x64
     /tmp/second-runtime-darwin-x64/bin/mongod --version
     /tmp/second-runtime-darwin-x64/bin/redis-server --version
@@ -683,12 +683,12 @@ Feasibility on macOS Intel:
 
 Expected future dry-run publish command:
 
-    cd /Users/omervexler/.codex/worktrees/971a/second
+    cd <repo-root>
     npm run publish:cli:all -- patch --dry-run
 
 Expected future tag release:
 
-    cd /Users/omervexler/.codex/worktrees/971a/second
+    cd <repo-root>
     git tag v0.1.23
     git push origin v0.1.23
 
@@ -822,11 +822,11 @@ No implementation has been done yet. This plan records the current distribution 
 - 2026-05-17: Initial plan created from repository inspection and current distribution question.
 
 
-## Captured User Intent (Verbatim)
+## Captured Intent
 
 
-Codex, I have a crucial question. It's regarding distribution. I'm talking specifically about the CLI distribution. Is it true that right now we are only supporting ARM Mac OS because this is my machine? What if I'd like it to support Linux and also Windows? How would you go about it? I have a Windows machine, by the way, here at my home so maybe I can release from there, like clone the repo and run the release command to release from there or something. It should all be set for me to do it.
-
-Regarding Linux, honestly I don't know what to do. Maybe we can compile for Linux from my machine, maybe not. Also what about non-ARM macOS machines? Please help.
+Plan multi-platform CLI distribution beyond the initial macOS arm64 payload.
+Keep `npx --yes @second-inc/cli` as the single user-facing command while adding
+payload packages for additional supported platforms through CI-built artifacts.
 
 Please do not actually implement anything. I just need a full plan file on what to do and remember that the plan should be extremely simple, straightforward to implement, to use with uninstructions if needed and agent instructions if needed, etc.

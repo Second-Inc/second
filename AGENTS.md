@@ -1,88 +1,112 @@
 # Second
-Second is a generative workspace, which allows teams to build internal tools.
 
-This is a monorepo containing everything.
+Second is a generative workspace for internal tools. The repository is a
+monorepo containing the web app, worker, local CLI, documentation, and release
+automation.
 
-# Layout
-- apps/web: nextjs + shadcn
+## Layout
 
-# General instructions (not necessarlly task dependent)
+- `apps/web`: Next.js app using shadcn/Radix UI.
+- `apps/worker`: worker service for agent sessions, runtime adapters, and tool
+  execution.
+- `packages/cli`: user-facing `@second-inc/cli` launcher.
+- `packages/cli-local-darwin-arm64`: local Apple Silicon payload package.
+- `docs`: Mintlify documentation.
+- `plans`: active implementation plans that are intentionally kept in the repo.
 
-For big tasks (or whenever you feel like it), please first of all read the docs/ to understand about this project. Read them also to orient yourself in this project, find relevant files, understand the overall architecture and the code base. Obviously they might be outdated so the code is the real truth eventually.
+## Project Context
 
-In this repo, identify key files, the architecture, what this project is about, and how everything works (in they way which is relevant for this task) using the docs/.
+Second currently supports two deployment models:
 
-Remember that we have currently 2 deployment models:
-1. Local, using `npx @second-inc/cli ...`
-2. On prem - on GCP (AWS is also not currently supported but it will and should be sometime). On prem can be either on the customer's cloud OR a managed instance - where I deploy it on Second's cloud and help them register the Auth provider, etc.
+1. Local development and local single-machine usage through
+   `npx --yes @second-inc/cli`.
+2. Self-hosted or managed deployments on customer infrastructure, currently
+   oriented around GCP/Kubernetes. AWS support is not implemented yet.
 
-We are now in the open source repo. You should probably only work on the open source repo (this was just context for you).
+The code is the source of truth. Use the docs to orient yourself, but verify
+behavior in the implementation before changing shared contracts.
 
-Also important: Whatever you do, it's very important that this will be enforced securely and beautifully and will actually work and will not have any security issues. Also keep in mind tenant isolation (critical). I mean I know that right now we haven't released our SAAS solution yet, but still it's very important. Keep all of the best practices from the docs and the current structure.
+## Security And Tenancy
 
-It's also very important to keep everything very secure and go with the security best practices and everything that we currently have set up and fixed to not regress and to not introduce any security issues.
+- Treat tenant isolation as a core invariant. Data access must stay scoped by
+  `workspaceId` and, where relevant, `appId`, user membership, app access, and
+  integration grants.
+- Preserve the distinction between browser-authenticated routes and internal
+  web/worker routes. Production internal routes must fail closed when
+  `INTERNAL_API_TOKEN` is missing or invalid.
+- Do not expose secrets, provider tokens, cookies, private URLs, full prompts,
+  source snapshots, or large documents on hot metadata paths or realtime events.
+- Workspace realtime events are invalidation hints, not authorization or data.
+  Keep payloads compact and publish them only after successful mutations.
+- GET/read paths must stay read-only. Do not repair, upsert, or publish
+  invalidation events from read routes unless the route is explicitly designed
+  as a mutation.
 
-# About app UI changes
-- Before changing app UI, inspect strong local references such as `apps/web/src/components/ai-elements/tool-card.tsx`, `apps/web/src/components/ai-elements/agents-card.tsx`, `apps/web/src/app/w/[workspaceId]/apps/[appId]/agents/page.tsx`, and `apps/web/src/app/w/[workspaceId]/settings/integrations/page.tsx`.
-- Match the existing restrained shadcn/Radix theme: compact rows, muted borders, mono metadata, semantic badges, and polished tool-call / agent-card patterns.
+Before changing navigation, app metadata, settings, chat, runs, sidebar,
+integrations, members, teams, or app source persistence, read the relevant docs:
+`docs/architecture.mdx`, `docs/streaming.mdx`,
+`docs/guard-and-tenancy.mdx`, `docs/app-preview.mdx`, and
+`docs/self-hosting.mdx`.
 
-# About local browser testing
-- Do not assume the app is on `localhost:3000`. `npm run dev` generates `.second-dev.txt` in the repo root; read its `url=` value before opening the app or telling a browser/agent what to visit. The file is local-only and gitignored.
-- `npm run dev` is worktree-aware: it automatically chooses a per-worktree dev ID, Compose project name, and non-conflicting ports. Multiple worktrees can run at once, and each active worktree has its own MongoDB and Redis containers.
-- If the human requests browser QA, that request grants permission to run `npm run dev` for the current worktree when no matching dev server is already running. Start it only as needed for QA, then use `.second-dev.txt` as the source of truth for the URL.
-- When using the in-app browser for QA, show the browser to the human unless they explicitly ask to keep it hidden.
-- If onboarding or sign-in needs QA identity details and the user did not specify them, use email `john@doe.com`, display name `John Doe`, role `Founder`, and workspace name `Second`.
-- When testing app-building flows, keep prompts intentionally tiny so runs finish quickly: ask for a tiny to-do list with minimal UI and no agents.
-- Unless explicitly requested, send the message and verify the response starts successfully, but do not approve or complete the build.
+For changes in those areas, include a performance and security checklist:
+hot-path data shape, read-vs-write behavior, realtime invalidation source,
+duplicate-request prevention, multi-tab/multi-user streaming behavior, tenant
+isolation, and staging validation.
 
-# About QA guides
-- For broad manual QA, use the `QA/` folder. Keep a reusable date-prefixed E2E guide such as `QA/YYYY-MM-DD-E2E.md`, and create a separate date-prefixed task guide such as `QA/YYYY-MM-DD-<feature-or-merge>-qa.md` for the current feature, branch, or merge.
-- When a user asks for both a general E2E pass and a feature-specific QA pass, run the general E2E guide first, then the feature-specific guide, and record results in the feature-specific QA file.
-- Only run QA when the user explicitly asks you to run QA, test, verify, or manually check the product. Creating or updating QA documents is not permission to execute them.
-- If the user asks to create the QA docs before running tests, stop after writing the docs so they can review them.
-- QA result files should mark each area as pass/fail/blocked, include concrete evidence such as URLs, app IDs, run IDs, model used, and audit event names, and list bugs separately with repro, expected behavior, observed behavior, impact, and status.
-- Respect the local testing constraints above: use the in-app browser, do not start the dev server unless the user explicitly allows it, and do not run containers or infrastructure commands.
+## UI Changes
 
-# No human in the loop mode
-- When the human says something like "just do it e2e and open a pr", "do it without me in the loop", or "do it e2e", treat that as permission to complete the whole loop without stopping for routine review.
-- In this mode, perform the task, create a plan first if the work is large or risky, run the relevant automated checks, run in-app browser QA, write a QA document, and iterate until the implementation and QA are clean.
-- After QA passes, create or switch to the branch before staging and committing. If changes already exist, keep them in the worktree, create the branch, then `git add -A`, commit, push, and open the PR.
-- Sometimes the human will ask for the same end-to-end flow but explicitly say not to open the PR yet; that is valid, so stop after the requested final step instead of creating the PR.
-- Only stop to ask the human if there is a real blocker, a destructive/external action not covered by the request, or an ambiguity that would make the work unsafe.
+- Match the existing restrained shadcn/Radix style: compact rows, muted borders,
+  mono metadata, semantic badges, and polished tool-call / agent-card patterns.
+- Before changing app UI, inspect strong local references such as
+  `apps/web/src/components/ai-elements/tool-card.tsx`,
+  `apps/web/src/components/ai-elements/agents-card.tsx`,
+  `apps/web/src/app/w/[workspaceId]/apps/[appId]/agents/page.tsx`, and
+  `apps/web/src/app/w/[workspaceId]/settings/integrations/page.tsx`.
 
-# Performance and realtime safety
-- Treat fast navigation and collaborative streaming as core product requirements, not polish. Features must preserve quick workspace navigation, app/chat back-and-forth, multi-tab use, and multiple users watching the same run.
-- Before changing navigation, app metadata, settings, chat, runs, sidebar, integrations, members, teams, or app source persistence, read the relevant docs: `docs/architecture.mdx`, `docs/streaming.mdx`, `docs/guard-and-tenancy.mdx`, `docs/app-preview.mdx`, and `docs/self-hosting.mdx`.
-- Do not put large source maps, prompts, files, secrets, or full documents on hot metadata paths. App lists, sidebar, access checks, settings shells, and navigation should use compact/projected read models. Source files belong behind explicit source/snapshot loaders.
-- GET/read paths must stay read-only. Do not "repair", "ensure", upsert, or publish invalidation events from a read route unless the route is explicitly designed and documented as a mutation.
-- Workspace realtime events are invalidation hints, not data and not authorization. Publish small scoped events only after a successful real mutation. Never include source, prompts, secrets, tokens, cookies, headers, or full DB documents in events.
-- Avoid refetch storms. A normal click must not fan out into repeated Members/Teams/Invitations/Integrations requests. Use the existing workspace realtime provider, projected settings read models, and scoped request dedupe patterns instead of adding component-local polling or new EventSource subscriptions.
-- Keep workspace chrome realtime separate from run-level chat streaming. Chat/run streaming needs ordered attach/replay semantics; sidebar/settings/app chrome only need compact invalidation/status updates.
-- Do not abort the authoritative chat POST on route unmount. Navigating away may close observers, but the running POST must be allowed to finish so messages persist and the active stream clears. Reconnecting clients should attach through the stream/replay path.
-- When diagnosing deployed slowness, use `SECOND_PERF_TRACE=1` temporarily and follow `docs/deployed-slowness-playbook.mdx`. Correlate request IDs with pod logs/metrics and check request amplification, health probe failures, CPU throttling, memory pressure, Redis/Mongo latency, and external auth latency before guessing.
-- For any plan or implementation touching these areas, include a performance safety checklist: hot-path data shape, read-vs-write behavior, realtime invalidation source, duplicate-request prevention, multi-tab/multi-user streaming behavior, tenant isolation, and how to validate in staging.
-- Do not assume Kubernetes/GKE automatically scales the app. Node autoscaling is not pod autoscaling. If capacity matters, inspect replicas/resources/HPA behavior and document what will or will not scale.
+## Local Testing
 
-# Forbidden actions:
-- You are not allowed to run git commands unless the human explicitly asks for git/PR work or no-human-in-the-loop mode.
-- You are not allowed to actually run containers / terraform etc. (but can run command to validate)
-- You are not allowed to run the dev server unless the human explicitly allows it or asks for browser QA as described above. It's probably already running.
+- Do not assume the app is on `localhost:3000`. `npm run dev` writes
+  `.second-dev.txt` in the repo root; use its `url=` value when opening the app.
+- `npm run dev` is worktree-aware and chooses isolated ports, Compose project
+  names, MongoDB, and Redis containers per worktree.
+- Do not start the dev server, containers, Docker Compose, or infrastructure
+  commands unless the task explicitly requires local QA or runtime validation.
+- If onboarding or sign-in needs test identity details, use
+  `john@doe.com`, display name `John Doe`, role `Founder`, and workspace
+  name `Second`.
+- When testing app-building flows, keep prompts intentionally small and stop
+  before approving or completing long builds unless the task explicitly asks for
+  end-to-end QA.
 
-# When I ask you to security review
-Read the docs/ to understand the overall structure and about this repo if you haven't yet.
-You need to verify / decline that the changes did not hurt tenant isolation / security?
+## Quality Checks
 
-# About updating docs
-When asked to update the docs in docs/:
-- It's really imporatnt that you will keep the same tone and style of the documentation.
-- You need to decide where it's time to update an existing doc, and when it's time to create a new one (if even needed). No problem to include some new details about security btw. It's important. Use your judement in regards on
-what to include and what not.
+Use the smallest validation surface that covers the change. Common checks:
 
-# About Plans
+```bash
+npm run typecheck
+npm --prefix apps/web run lint
+npm --prefix apps/web run build
+npm --prefix apps/worker run typecheck
+npm --prefix packages/cli run build
+```
 
-For complex features, significant refactors, or detail-heavy requests, create a plan before implementing.
+For docs changes:
 
-When asked to plan:
-- Do not code
-- Create a new Markdown file in `./plans/<descriptive-name>.md`
-- Follow `PLANS.md` (!)
+```bash
+cd docs
+mint validate
+```
+
+## QA Guides
+
+- Only run broad manual QA when explicitly asked.
+- For broad manual QA, keep reusable guides in `QA/` if that directory is
+  intentionally created for the task.
+- QA result files should record pass/fail/blocked status, concrete evidence,
+  bugs, repro steps, expected behavior, observed behavior, impact, and status.
+
+## Plans
+
+For complex features, significant refactors, or detail-heavy requests, create a
+plan before implementing. When explicitly asked to plan, do not code; create a
+Markdown file in `plans/` and follow `PLANS.md`.
