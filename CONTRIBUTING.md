@@ -6,15 +6,14 @@ Start with the contributor guide in the docs:
 
 - [docs/contributing.mdx](docs/contributing.mdx)
 
-## Contributor License Agreement
+## Contribution License
 
-Before we can accept outside contributions, contributors must agree to the
-Second Contributor License Agreement. This keeps the project legally clear and
-preserves Second's ability to relicense future versions if the project needs to
-change direction later.
+By submitting a pull request, you agree that your contribution is provided under
+the Apache License 2.0, the same license as this repository.
 
-Do not merge outside pull requests until the CLA check is configured and passing
-for the contributor.
+We may add a lightweight Contributor License Agreement check later. If that
+check is enabled before your pull request is merged, you may need to complete it
+before merge.
 
 Before opening a pull request, run the checks that match your change:
 

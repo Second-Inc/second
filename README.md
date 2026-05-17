@@ -41,6 +41,11 @@ Instead of adapting your workflows to pre-built agent management interfaces, Sec
 
 Above all, every app built on Second treats agents as first-class citizens. They read and write to the same real-time DB your team is working on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans on the same custom interfaces.
 
+> [!TIP]
+> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
+>
+> Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
+
 <strong>Think of it as:</strong> An internal, secure, and collaborative Lovable that runs on-prem — purpose-built for long-running, asynchronous work with agents.
 
 <br>
