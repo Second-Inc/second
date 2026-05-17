@@ -1,0 +1,12 @@
+{
+  "name": "second-oss",
+  "private": true,
+  "scripts": {
+    "dev": "bash ./scripts/dev.sh",
+    "bump:cli": "node ./scripts/bump-cli-version.mjs",
+    "publish:cli:darwin-arm64": "node ./scripts/publish-cli-darwin-arm64.mjs",
+    "start": "docker compose up --build",
+    "typecheck": "npm --prefix apps/web run typecheck && npm --prefix apps/worker run typecheck",
+    "release": "sh -c ': \"${SECOND_WEB_IMAGE:?Set SECOND_WEB_IMAGE, e.g. ghcr.io/second-inc/second-web:latest}\"; docker compose up --pull always --no-build'"
+  }
+}

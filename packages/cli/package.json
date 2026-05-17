@@ -1,0 +1,34 @@
+{
+  "name": "@second-inc/cli",
+  "version": "0.1.24",
+  "description": "Run Second locally with one command",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Second-Inc/second.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Second-Inc/second/issues"
+  },
+  "homepage": "https://github.com/Second-Inc/second#readme",
+  "bin": {
+    "second": "./bin/second.js"
+  },
+  "scripts": {
+    "build": "node --check bin/second.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/"
+  ],
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "mongodb-memory-server-core": "^11.1.0"
+  },
+  "license": "Apache-2.0",
+  "overrides": {
+    "postcss": "8.5.14"
+  }
+}

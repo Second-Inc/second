@@ -1,0 +1,20 @@
+{
+  "name": "@second-inc/runtime-linux-arm64",
+  "version": "0.1.1",
+  "description": "Second local runtime binaries for Linux arm64",
+  "license": "Apache-2.0",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/",
+    "manifest.json"
+  ],
+  "scripts": {
+    "build": "node ../cli/scripts/prepare-runtime.mjs --runtime-id linux-arm64 --package-root --out .",
+    "prepack": "npm run build"
+  }
+}

@@ -1,0 +1,131 @@
+---
+title: "App Governance"
+description: "How drafts, reviews, integrations, agent config, and published runtime state stay under workspace control."
+---
+
+Second separates building from publishing. Workspace roles are only `owner`,
+`admin`, and `member`; creator and collaborator are app-level access categories.
+People with app-level build access can keep iterating in a draft, while the
+published app keeps serving the last reviewed snapshot to its teams.
+
+The goal is simple: builders can move quickly, but the runtime that team members
+use is the version an admin or owner intentionally allowed to use real data and
+integrations.
+
+## Roles and app access
+
+| Actor | Can do |
+| --- | --- |
+| Workspace owner/admin | Review and publish apps, approve agent config, configure integrations and secrets |
+| Workspace member viewer | Use published apps for teams they belong to |
+| App creator | App-level access from `createdByUserId`; build and edit that draft app, request review, use the published app |
+| App collaborator | App-level access from `collaboratorUserIds`; build and edit that draft app, request review, use the published app |
+
+Local `none` auth is optimized for single-user development. External/on-prem
+deployments use the same code paths, but members create review requests and
+admins/owners approve before publishing.
+
+## Draft and published snapshots
+
+Apps have two source snapshots:
+
+| Snapshot | Stored in | Used by |
+| --- | --- | --- |
+| Draft | `app_source_snapshots` (`kind: "draft"`) | App creators, app collaborators, admins, and owners while building |
+| Published | `app_source_snapshots` (`kind: "published"`) | Published app viewers and builders using the published toggle |
+
+Editing a published app creates or updates the draft only. The published app
+continues to use the published snapshot until a new publish or review approval
+promotes the draft. The `apps` document stores snapshot IDs, hashes, file
+counts, and byte sizes so app lists, navigation, review inboxes, and access
+checks do not load source files. Older apps with embedded `sourceFiles` or
+`publishedSourceFiles` are still readable as a compatibility fallback.
+
+If an app is already in review and someone keeps editing it, the pending review
+is marked `superseded` and the app returns to `draft`. The UI tells the builder
+they are now editing an unpublished version and must request review again.
+
+## Review flow
+
+1. Builder finishes a draft.
+2. App creator/collaborator selects target teams and requests review.
+3. Admin/owner reviews the app, integration requirements, and agent config.
+4. Approval promotes the current draft source snapshot into
+   the published source snapshot.
+5. Team viewers use the promoted published snapshot.
+
+Creating `agents.json`, calling `present_agents`, or approving the Agents card
+does not create a review request and does not publish the app. Review starts
+only through the publish dialog.
+
+## Governed agents.json
+
+`agents.json` is editable draft code, but it is not trusted runtime
+configuration until the platform records an approval for the exact canonical
+JSON hash.
+
+The flow is:
+
+```
+Builder writes agents.json
+  → present_agents reads and validates the file
+  → admin/owner approves the Agents card payload
+  → platform stores canonical hash + approved payload + approver metadata
+  → draft agent runtime can use that exact config
+```
+
+Any later `agents.json` change clears the draft approval. It does not matter
+whether the change came from a UI toggle, a file edit, or a worker shell command:
+the source persistence path compares the canonical hash and marks the approval
+stale if it changed.
+
+Draft app-agent runs can start from the draft file so builders can test the
+in-progress app. Custom HTTP tools and agent data tools still require the
+current draft hash to match the stored approval before they can touch live
+integrations or app data. Publishing or review approval promotes the approved
+payload with the published snapshot, so published runtime continues to use the
+reviewed configuration.
+
+## Integration and domain approval
+
+Integrations are app-scoped grants under workspace governance. Admins and owners
+configure static secrets or workspace OAuth provider clients and mark the
+currently requested permission groups, scopes, and secret names as configured.
+The agent never receives static secret values, OAuth client secrets, refresh
+tokens, or access tokens.
+
+Custom tools are tied to an integration domain in `agents.json`, for example
+`slack.com` or `hubapi.com`. At runtime, `/api/internal/tool-execute`:
+
+1. Loads the current app's integration grant by `(workspaceId, appId, domain, keySlug)`.
+2. Verifies the tool exists in the approved `agents.json` payload for that
+   agent.
+3. For static tools, reads named secrets from Vault or local development storage.
+4. For OAuth tools, loads the server-created app-agent run by
+   `(workspaceId, appId, runId)`, resolves the triggering user, checks that
+   user's connected account and scopes, refreshes the access token on demand,
+   and injects the bearer token server-side.
+5. Substitutes only named static secret placeholders such as
+   `{{secrets.SLACK_BOT_TOKEN}}`.
+6. Validates that the final URL hostname matches the configured domain or one
+   of its subdomains.
+7. Rejects private/internal IPs, non-HTTPS production URLs, oversized
+   responses, and broad static calls when input was provided.
+
+If an integration is missing or not configured, the tool returns explicit
+mock data instead of a live API response — this includes OAuth missing-account,
+revoked-account, missing-scope, or provider-config failures. If a draft changes
+`agents.json` to request a new domain, endpoint, auth mode, OAuth scope, token
+URL, secret, permission, or data collection, that draft must be approved again
+before runtime can use it.
+
+## Draft data isolation
+
+Draft and published app data are also separated. Published apps read and write
+under the app's normal data scope. Draft previews and draft app-agent runs use
+an internal draft data scope for the same app. This lets builders test changes
+without mutating the live data used by the published app.
+
+All data queries still include `workspaceId` and the scoped app ID. Agent data
+tools also verify that the requested collection appears in the approved
+`agents.json` payload for the calling agent.

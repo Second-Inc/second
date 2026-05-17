@@ -1,0 +1,133 @@
+---
+title: "Quickstart"
+description: "Run Second locally and build your first app with an AI agent."
+---
+
+## Platform support
+
+The packaged local CLI (`npx --yes @second-inc/cli`) currently supports Apple
+Silicon Macs: M1, M2, M3, and M4. Intel Mac, Windows, and Linux support is
+coming soon.
+
+## Developer setup
+
+Use this path to run Second from a source checkout.
+
+### Prerequisites
+
+| Tool | Version |
+| --- | --- |
+| Node.js | 20+ |
+| npm | 10+ |
+| Docker Desktop | latest |
+
+### Install and run
+
+```bash
+npm --prefix apps/web install
+npm --prefix apps/worker install
+npm run dev
+```
+
+This starts MongoDB and Redis in Docker, then runs the web app and agent worker
+on your machine. The worker runs on the host so it can use your local Claude CLI;
+if you've logged in with `claude` before, the agent works without any extra
+configuration.
+
+The dev script writes `.second-dev.txt` in the repo root with the actual
+`url=` value to open. It uses portless when available for a stable `.localhost`
+URL and otherwise falls back to an auto-picked `http://localhost:<port>` URL.
+Code changes appear automatically.
+
+The worker uses your local Claude authentication. If you've previously logged
+in with `claude`, the agent works without any API key configuration.
+
+Open the `url=` value from `.second-dev.txt` and continue to [Complete onboarding](#complete-onboarding).
+
+## Packaged CLI
+
+The public command uses the package name `@second-inc/cli`. During private
+release rehearsal, sign in to the npm scope before using this path. The local
+CLI does not require Docker, Docker Compose, GHCR, a web container image,
+Homebrew, OpenSSL, or a user-installed MongoDB/Redis server.
+
+`@second-inc/cli` is intentionally a tiny launcher. It prints startup context,
+then invokes the matching platform payload package, for example
+`@second-inc/cli-local-darwin-arm64`. The payload package contains the packaged
+Next.js standalone web server, bundled worker, MongoDB binary, Redis binary, and
+runtime libraries needed by those binaries. After npm has installed that
+payload, startup does not download MongoDB, Redis, or OpenSSL separately:
+
+```bash
+npx --yes @second-inc/cli
+```
+
+`--yes` skips npm's first-run install prompt.
+
+CLI commands:
+
+| Command | What it does |
+| --- | --- |
+| `npx --yes @second-inc/cli` | Start Second (default) |
+| `npx --yes @second-inc/cli stop` | Stop all services |
+| `npx --yes @second-inc/cli reset` | Stop and delete all local data |
+
+Options: `--port <number>` to change the web port (default 3030), `--disable-telemetry` to disable product analytics.
+
+Local runtime binary overrides are optional and intended for development:
+`SECOND_MONGOD_PATH=/path/to/mongod` and
+`SECOND_REDIS_SERVER_PATH=/path/to/redis-server`.
+
+## Complete onboarding
+
+1. Enter your display name and email on `/onboarding/identity`.
+2. Create your first workspace on `/onboarding/workspace`.
+3. **Set up your AI provider** on `/onboarding/provider` — Second auto-detects whether the Claude CLI and/or an API key are available. If you've logged in with `claude` before, you're already set.
+4. You'll land on the workspace home page with the composer.
+
+## Build your first app
+
+1. Type a prompt in the composer (e.g., "Build me a hello world React app").
+2. Click **Build**.
+3. You'll navigate to the app page where the agent streams its response in real time.
+4. Watch the agent write code, run commands, and explain what it's doing.
+5. Send follow-up messages to iterate.
+
+You should see:
+- Text streaming word by word
+- Tool calls (Bash, Read, Write, etc.) with their inputs and outputs
+- The full conversation persisted — reload the page and it's still there
+
+## Verify workspace isolation
+
+A quick way to confirm tenancy enforcement is working:
+
+1. Create two workspaces.
+2. Grab an app ID from workspace B.
+3. Try to fetch it through workspace A's API:
+
+```bash
+curl -i "$(awk -F= '$1 == "url" { print $2 }' .second-dev.txt)/api/workspaces/<workspace-A-id>/apps/<app-id-from-B>"
+# Expected: 404
+```
+
+The `404` confirms the guard layer is blocking cross-workspace access.
+
+## Run fully containerized
+
+If you prefer to run everything inside Docker (e.g., for CI or environments without a local Claude CLI):
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... npm run start
+```
+
+Builds and runs all four services (web, worker, Mongo, Redis) in Docker. The `ANTHROPIC_API_KEY` is required because Docker containers can't access your local Claude authentication.
+
+This is mainly for [self-hosting](/self-hosting) and CI. For local development, `npm run dev` is preferred because it uses your local Claude auth automatically. After publication, `npx --yes @second-inc/cli` will provide the packaged local CLI.
+
+## Next steps
+
+- [Development](/development) — repo layout, scripts, and environment variables
+- [Architecture](/architecture) — system overview and request flow
+- [Agent System](/agent-system) — how the agent worker and bridge layer work
+- [Authentication](/authentication) — local vs external auth modes

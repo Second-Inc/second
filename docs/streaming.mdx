@@ -1,0 +1,412 @@
+---
+title: "Streaming"
+description: "How agent responses stream from the worker to the browser — protocols, translation, persistence, and multi-client resume."
+---
+
+Agent responses stream in real time from the agent worker through two hops before reaching the browser. Each hop uses a different protocol. The architecture is **runtime-agnostic** for the browser: Claude Code, Codex CLI, and OpenCode all normalize to the same AI SDK UIMessageStream parts before rendering.
+
+## The two-hop architecture
+
+```
+Agent Worker  →  Worker SSE  →  Next.js Bridge  →  AI SDK UIMessageStream  →  Browser (useChat)
+```
+
+**Hop 1: Worker → Next.js** — Runtime events serialized as SSE. The worker does not know about the Vercel AI SDK. Claude emits Claude SDK messages directly; Codex emits app-server notifications over stdio JSON-RPC; OpenCode emits JSON events. The worker normalizes all of them into the same worker message shape.
+
+**Hop 2: Next.js → Browser** — AI SDK UIMessageStream protocol. The browser doesn't know which provider generated the events. This is the **abstraction boundary** — everything downstream of the bridge is provider-agnostic.
+
+This architecture serves both the **builder agent** (chat-based) and **app agents** (triggered from within apps). App agents use the same bridge translation and UIMessageStream protocol. The difference is in the worker endpoint: builder agents use `POST /sessions/:appId/messages`, while app agents use `POST /sessions/:appId/agent-run` with background execution via `AgentRunManager`. See [App Agents](/app-agents) for the full app agent flow.
+
+### What's provider-specific vs. provider-agnostic
+
+| Layer | Provider-specific? | Notes |
+| --- | --- | --- |
+| Worker runtime adapter | Yes | Each runtime has its own launch/config/session behavior |
+| Worker SSE format (Hop 1) | Mostly no | Adapters normalize Claude/Codex/OpenCode into canonical worker messages |
+| Bridge (`worker-bridge.ts`) | Yes | Translates provider events → UIMessageStream chunks |
+| Session persistence (JSONL) | Yes | Claude uses `~/.claude/projects/` JSONL files. Codex will have its own format |
+| UIMessageStream (Hop 2) | **No** | Same protocol regardless of provider |
+| Redis resumable/replay streams | **No** | Operates on UIMessageStream SSE, not provider events |
+| MongoDB persistence | **No** | Stores `UIMessage[]` — provider-agnostic |
+| Frontend (`useChat`) | **No** | Renders `UIMessage` parts — doesn't know the provider |
+
+New runtimes should keep this boundary: absorb event/session/tool-name differences in the worker adapter or bridge, not in individual UI components.
+
+## Runtime normalization
+
+Codex CLI runs with `codex app-server --listen stdio://`; OpenCode runs with `opencode run --format json`. Their events are parsed by the worker and mapped to canonical tool names before reaching the UI:
+
+| Runtime event/tool | Canonical UI tool |
+| --- | --- |
+| Second MCP `present_plan` | `mcp__second__present_plan` |
+| Second MCP `present_agents` | `mcp__second__present_agents` |
+| Second MCP `done_building` | `mcp__second__done_building` |
+| App custom tools | `mcp__app_tools__<name>` |
+| App data tools | `mcp__app_data__update_app_data`, `mcp__app_data__read_app_data` |
+| Shell/command tools | `Bash` |
+| File edits/writes/reads/searches | `Edit`, `Write`, `Read`, `Glob`, `Grep` |
+| Web tools | `WebFetch`, `WebSearch` |
+
+Unknown runtime events are ignored or summarized instead of crashing the stream.
+
+Codex app-server exposes file edits and web research as native item types rather than Claude-style tool names. It does not expose a standalone Claude-style `Write` tool; when Codex edits through its patch/file-edit path, the adapter maps `fileChange` items into `Write` or `Edit` and preserves the full `{path, kind, diff}` change list so the UI can render single-file and multi-file patch cards. Builder prompts tell Codex to prefer `apply_patch` for file creation and edits so Second gets structured file-change cards instead of plain Bash cards from shell redirection. Codex `commandExecution` output deltas stream as preliminary `tool-output-available` chunks for the existing `Bash` tool card, while `fileChange` output deltas are treated as underlying patch-tool stdout and are not surfaced as assistant text. Codex starts `webSearch` items before the query is known, so the adapter waits for the completed `webSearch` item, maps `search` actions into `WebSearch`, maps `openPage`/`findInPage` actions into `WebFetch`, and immediately resolves the search card once Codex reports the search action. Later opened page URLs and source URLs in the final assistant text are emitted as follow-up `tool-output-available` updates for the same `toolCallId`, which enriches the completed `WebSearch` card with source chips without keeping the loader active for the whole assistant answer. Codex MCP tool calls still arrive only after the tool arguments are complete, so Second can render the plan card as soon as Codex starts the `present_plan` call, but Codex does not currently provide partial MCP argument deltas for the plan fields themselves.
+
+In local development, Codex builder sessions keep a `codex app-server --listen stdio://` process warm per app/runtime session for up to 10 minutes of idle time. The warm process is initialized before the worker stream starts and is reused for later builder messages. Production and app-agent runs keep the one-process-per-turn behavior, and local warming can be disabled with `SECOND_CODEX_APP_SERVER_WARM=0`.
+
+Set `SECOND_CODEX_TRACE=1` on both the worker and web server when debugging Codex tool rendering. The worker logs sanitized Codex app-server notifications and the synthetic worker SSE messages it emits. The web server logs the received worker messages and the AI SDK tool chunks it writes. The trace intentionally records ids, statuses, file paths, diff line counts, output sizes, and timing; it does not log full prompts, full command output, file contents, or unified diff bodies.
+
+For Codex remote MCP tools, app-server emits `mcpServer/elicitation/request` before the actual `tools/call`. The worker adapter accepts only brokered MCP tool-call approval elicitations for allowlisted `mcp__second__*`, `mcp__app_tools__*`, and `mcp__app_data__*` tools; all other MCP elicitations are declined. This keeps `done_building` and the approval cards callable without treating arbitrary MCP prompts as trusted user input.
+
+## Worker SSE format (Hop 1) — Claude
+
+The worker streams raw Claude SDK messages as JSON, one per SSE `data:` line:
+
+```
+data: {"type":"system","subtype":"init","session_id":"abc123"}
+data: {"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}
+data: {"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Bash","id":"tc_1"}}}
+data: {"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}}
+data: {"type":"stream_event","event":{"type":"content_block_stop"}}
+data: {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tc_1","content":"file1.ts\nfile2.ts"}]}}
+data: {"type":"assistant","message":{"content":[...]}}
+data: {"type":"result","result":"Done."}
+data: [DONE]
+```
+
+### SDK message types
+
+| Type | When it fires |
+| --- | --- |
+| `system` (subtype `init`) | Once at session start — contains `session_id` |
+| `stream_event` | During streaming — wraps raw Anthropic API stream events |
+| `assistant` | After each assistant turn completes — contains full message |
+| `user` | After tool execution — contains `tool_result` content blocks |
+| `result` | When the agent finishes — contains total cost, usage stats |
+
+## AI SDK UIMessageStream format (Hop 2) — all providers
+
+The bridge translates provider-specific events into the [Vercel AI SDK UIMessageStream protocol](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol):
+
+```
+data: {"type":"text-start","id":"txt_1"}
+data: {"type":"text-delta","id":"txt_1","delta":"Hello, "}
+data: {"type":"text-delta","id":"txt_1","delta":"let me check."}
+data: {"type":"text-end","id":"txt_1"}
+data: {"type":"tool-input-start","toolCallId":"tc_1","toolName":"Bash","dynamic":true}
+data: {"type":"tool-input-delta","toolCallId":"tc_1","inputTextDelta":"{\"command\":\"ls\"}"}
+data: {"type":"tool-input-available","toolCallId":"tc_1","toolName":"Bash","input":{"command":"ls"},"dynamic":true}
+data: {"type":"tool-output-available","toolCallId":"tc_1","output":"file1.ts\nfile2.ts","dynamic":true}
+data: {"type":"finish"}
+data: [DONE]
+```
+
+### Claude bridge translation rules
+
+| Claude SDK event | AI SDK chunk |
+| --- | --- |
+| `content_block_start` + `thinking` | Closes any open text block |
+| `content_block_delta` + `thinking_delta` | `reasoning-start` (first time) + `reasoning-delta` |
+| `content_block_stop` (thinking) | `reasoning-end` |
+| `content_block_start` + `text` | Closes any open reasoning block |
+| `content_block_delta` + `text_delta` | `text-start` (first time) + `text-delta` |
+| `content_block_stop` (text) | `text-end` |
+| `content_block_start` + `tool_use` | Closes text + reasoning, then `tool-input-start` |
+| `content_block_delta` + `input_json_delta` | `tool-input-delta` |
+| `content_block_stop` (tool) | `tool-input-available` |
+| `user` message with `tool_result` | `tool-output-available` (only for tracked tools) |
+| `message_start` (new turn) | Flushes any remaining pending tool outputs |
+| `[DONE]` | Closes open text/reasoning blocks, flushes pending tools |
+
+Content blocks are properly tracked by type and index. Each `content_block_start` closes the previous block's open parts (text or reasoning), and each `content_block_stop` finalizes the current block. This prevents overlapping parts in the UIMessageStream.
+
+**Thinking mode handling:** When thinking is set to `enabled`, the SDK may not emit `stream_event` messages for thinking blocks. The bridge has a fallback path: if no `stream_event` messages were received for a turn, it processes the complete `assistant` message and emits reasoning blocks from `thinking` content blocks. When thinking is `adaptive` (Opus only), the model decides when and how much to think — stream events are emitted normally.
+
+### Dynamic tool parts
+
+All tool chunks include `dynamic: true`. This tells the AI SDK to create `dynamic-tool` parts (rather than typed `tool-{name}` parts), since the agent's tools are not known at compile time.
+
+## Builder run lifecycle
+
+Builder runs move through a small explicit state machine:
+
+| Status | Meaning |
+| --- | --- |
+| `pending` | Run exists in MongoDB, but no worker query has been claimed yet |
+| `streaming` | One chat POST claimed the run and is responsible for the worker query + persistence |
+| `completed` | Final `UIMessage[]` was persisted and `activeStreamId` was cleared |
+| `failed` | Reserved for failed runs |
+
+The first `POST .../chat` for a pending run calls `startRunStream()` with `{ workspaceId, appId, runId }`. That update is atomic and only succeeds when the run is pending, or when a completed/failed run is being extended with a longer message list. If a second tab, route remount, or back/forward navigation sends the same initial POST while the first request is still initializing the sandbox, the duplicate POST returns an empty successful stream and does not start another worker query. If stale browser history sends an old message list for a completed run, the claim is rejected so persisted conversation history is not overwritten.
+
+Once the browser-facing stream exists, `consumeSseStream` registers it in Redis and saves `activeStreamId` on the run. At that point other tabs can resume the live stream. The chat route also captures UI stream chunks into a Redis replay buffer with ordered sequence numbers and a terminal marker. Before `activeStreamId` exists, reconnecting tabs wait briefly for stream-ready or terminal run events, then fall back to bounded polling rather than starting a duplicate worker query.
+
+Provider-native session state is best-effort. Claude stores a JSONL session file
+snapshot that can be restored after worker churn. Codex CLI and OpenCode session
+ids depend on runtime-local state in the worker pod, so after a pod restart the
+chat route does not treat those ids as covering the persisted Second transcript.
+It sends a bounded transcript handoff plus restored source files instead. If
+Codex still reports that a stored thread/rollout is missing, the worker starts a
+fresh Codex thread and continues the same Second run rather than surfacing the
+native resume error to the user.
+
+## Frontend integration
+
+The chat UI uses `useChat` from `@ai-sdk/react` with a `DefaultChatTransport` pointing at the chat API route:
+
+```typescript
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+
+const { messages, sendMessage, status, resumeStream } = useChat({
+  transport: new DefaultChatTransport({
+    api: `/api/workspaces/${workspaceId}/apps/${appId}/runs/${runId}/chat`,
+    prepareReconnectToStreamRequest: ({ api }) => ({ api: `${api}/stream` }),
+  }),
+  messages: initialMessages,
+});
+```
+
+### Resume behavior
+
+`AppChat` uses a dedicated `useRunSync` hook as the single resume orchestrator.
+
+For a brand-new run, the server creates the run as `pending`, and the first mounted `AppChat` sends the initial prompt. Before auto-sending, `AppChat` fetches the current run state with `no-store` and only sends when the server still reports `pending` with zero persisted messages. If browser back/forward restores stale route props, the client hydrates from the server instead of replaying the first prompt. For an already-streaming run, `useRunSync` attaches to the active Redis stream instead of sending a new message.
+
+The hook calls `resumeStream()` for:
+
+1. Workspace realtime run events (`run.starting`, `run.stream_ready`)
+2. Initial page load when the run is already streaming **and** persisted messages already exist (`initialMessages.length > 0`)
+3. Browser back/forward restores where a no-store status check finds a streaming run even if the route props were stale
+
+This avoids overlapping resume requests from multiple code paths. If more than one `resumeStream()` call overlaps on the same `useChat` instance, the AI SDK can duplicate assistant content or throw runtime errors.
+
+When `resumeStream()` reconnects to `GET .../chat/stream`, buffered content appears instantly. If replay chunks exist, the stream endpoint uses the Redis replay buffer first and follows new chunks live; otherwise it resumes the active Redis resumable stream. New content after catch-up streams live.
+
+If the stream endpoint returns `204` while the run still reports `streaming`, the tab does not treat that as terminal. This can happen in production during the small window after the POST claimed the run but before the stream is attachable. The endpoint waits briefly on Redis run events before returning `204`; the client fallback polls `GET .../chat` for snapshots and periodically retries `resumeStream()` until it attaches or the run completes.
+
+Chat POST streams are deliberately not aborted on React unmount. Navigating away closes observer connections, but the authoritative POST is allowed to finish so `onFinish` can persist messages and clear the active stream. The Stop button still aborts intentionally.
+
+### Multi-tab message sync
+
+When Tab A sends a message, Tab B (same app/run) sees the new user message and streaming response in real time — no page reload required. This works via Redis pub/sub pushed over SSE:
+
+```
+POST /chat handler → workspace event publish → shared workspace SSE → useRunSync hook → setMessages + resumeStream/replay
+```
+
+**How it works:**
+
+1. `WorkspaceRealtimeProvider` owns one shared `GET /api/workspaces/[workspaceId]/events` SSE connection around the workspace shell. The connection is shared across tabs with `BroadcastChannel` and Web Locks.
+2. Builder run repository updates publish compact workspace events: `run.starting`, `run.stream_ready`, `run.completed`, and `run.failed`. The payload contains ids and status only, never prompts, source files, secrets, or full messages.
+3. On connect or reconnect, the workspace events endpoint emits compact catch-up events for currently streaming runs so mounted tabs can recover if they missed the original publish.
+4. `AppChat` owns `useChat`; `useRunSync` listens to the workspace realtime provider for events matching its `{ workspaceId, appId, runId }`.
+5. When a tab's `useRunSync` hook receives `run.starting` or `run.stream_ready` **and** `useChat` status is `"ready"` (not already streaming/submitted), it:
+   - Fetches the latest messages from `GET .../chat`
+   - Calls `setMessages()` to update `useChat`'s state in-place (no component remount)
+   - Calls `resumeStream()` to reconnect to the live Redis stream
+6. When Tab B receives `run.completed` or `run.failed` (and is not already streaming), it fetches final messages and calls `setMessages()` to display the complete conversation.
+7. When streaming ends after a sync-triggered resume, a final fetch ensures messages are complete (covers the case where `completed` was skipped because Tab B was mid-resume).
+
+Events from the tab's own activity are ignored: if `useChat` status is `"streaming"` or `"submitted"`, the sync hook skips event-driven `setMessages`/resume work.
+
+### Race-condition hardening
+
+Recent fixes added explicit guards in `AppChat` + `useRunSync`:
+
+- **Pending-to-streaming claim**: the server atomically claims a run before talking to the worker, so remounts during sandbox initialization cannot start a second worker query.
+- **Duplicate POST no-op**: if a run is already streaming, the chat POST returns an empty successful stream instead of failing the UI or starting another query.
+- **Single resume owner**: `useChat` no longer auto-resumes on mount via `resume: true`; `useRunSync` owns resume flow.
+- **Sender guard**: local send paths set `statusRef.current = "submitted"` before calling `sendMessage(...)`, preventing run-event handlers from racing the sender tab before React state commits.
+- **No clobber during local send**: sync `setMessages(...)` updates are ignored while local status is `"submitted"`/`"streaming"`, so optimistic local user messages are not overwritten by stale server snapshots.
+- **Initial prompt preflight**: brand-new app pages verify the run is still `pending` and empty before auto-sending the stored app prompt. Cancelled preflight checks release their in-memory guard so route transitions and browser history can retry safely.
+- **Stale history POST guard**: completed/failed runs can only be re-claimed when the posted message list is longer than the persisted one, so stale back/forward requests cannot replace a full conversation with the first message.
+- **Initial load guard for new runs**: initial live sync runs only when `runStatus === "streaming"` and `initialMessages.length > 0`, preventing false "connecting" state on brand-new runs.
+- **Back/forward status check**: restored app pages do a delayed no-store status read. If the server says the run is already streaming, the page hydrates the latest snapshot and enters the live-sync path even when route props were stale.
+- **Resume retry after 204**: a `204` from `GET .../chat/stream` means "not attachable yet", not "done". While the run remains `streaming`, the polling fallback keeps retrying the real stream attach so browser forward does not wait for final persistence.
+- **Replay buffer fallback**: UI stream chunks are captured in Redis with ordered sequence numbers and terminal state. A reconnecting tab can catch up from replay and then follow live chunks even if the resumable-stream instance is unavailable.
+- **Unmount-safe POST**: route changes do not abort the active chat POST, so browser back/forward can reconnect to the same run instead of terminating it.
+- **Optimistic sidebar app entry**: app creation updates the mounted sidebar via a local event before navigation. This avoids a post-navigation `router.refresh()` that could interrupt first-mount chat initialization.
+- **Shared events connection**: workspace lifecycle events and app data streams are shared across tabs with `BroadcastChannel` + Web Locks when available, so many tabs do not exhaust the browser's per-origin HTTP connection budget.
+- **Interruptible rendering**: message rendering uses deferred values and throttled stream updates so navigation remains responsive during long streams.
+
+### Rendering
+
+Messages are rendered by iterating `msg.parts` and switching on `part.type`. Each part type maps to a dedicated component in `components/ai-elements/`:
+
+| Part type | Component | Rendered as |
+| --- | --- | --- |
+| `text` | `react-markdown` + `CodeBlock` | Markdown with GFM tables, syntax-highlighted code blocks (via `sugar-high`), language icons, copy buttons. Light/dark theme aware. |
+| `reasoning` | `Reasoning` | Collapsible block with brain icon — shows `Reasoning...` while the part is streaming and `Done reasoning` once the part is closed |
+| `dynamic-tool` (`mcp__second__present_plan`) | `PlanCard` | Interactive card showing the build plan with Approve & Build / Request Changes buttons |
+| `dynamic-tool` (`mcp__second__present_integration_setup`) | `IntegrationSetupCard` | Compact setup-instructions card that opens a dialog with required secrets, permission groups, exact permissions, and verified setup links |
+| `dynamic-tool` (Bash) | `Terminal` or `ToolCard` | Mutating or arbitrary commands render as the macOS-style terminal. Read-only shell wrappers such as `cat`, `sed`, `ls`, `find`, `rg --files`, and simple compound `/bin/zsh -lc` probes are visually translated into `Read`, `List`, or `Grep` cards. |
+| `dynamic-tool` (Write, Edit) | `ToolCard` | Collapsible one-liner: file icon + filename + "Created"/"Edited" + colored `+N -N` diff stats. Expands to GitHub-style diff view |
+| `dynamic-tool` (Read, List, Glob, Grep) | `ToolCard` | One-liner: file/search icon + filename/path/pattern + status |
+| `dynamic-tool` (WebSearch) | `ToolCard` | Search query + source chips with favicons. fewer than 3 results inline, 3+ collapsible with stacked favicon circles |
+| `dynamic-tool` (WebFetch) | `ToolCard` | Hostname + "Fetched" + clickable source chip with favicon |
+| `dynamic-tool` (`mcp__app_tools__*`) | `CustomToolCard` | Integration favicon + action display name, then expandable formatted input/output payloads |
+| `dynamic-tool` (other) | Inline card | Tool name, input summary, running/done state |
+
+### AI Element components
+
+Located in `components/ai-elements/`. These are composable React components that render the different `UIMessagePart` types from the AI SDK. They are **not** part of the AI SDK itself — they're custom UI built on top of the standard `UIMessage` data structure.
+
+#### `code-block.tsx`
+
+Drop-in `code` component for `react-markdown`. Detects fenced code blocks (has `language-*` className) and renders them with:
+- Composer-style card (`--composer-bg`, `--composer-shadow`, `rounded-2xl`)
+- Language icon per file type (terminal for bash/sh, braces for JS/TS, JSON icon, globe for HTML, etc.) + language label
+- Syntax highlighting via `sugar-high` (3KB, zero-dep, no async/WASM)
+- Copy-to-clipboard button with hover state
+- Light/dark theme aware — uses `--sh-*` CSS variables from `globals.css`
+
+Inline code renders as a plain `<code>` with muted background. The `prose` wrapper disables Tailwind Typography's decorative backtick pseudo-elements (`prose-code:before:content-none prose-code:after:content-none`).
+
+#### `reasoning.tsx`
+
+Collapsible reasoning/thinking block built on Radix `Collapsible`. Manages its own open/close state:
+- **Auto-opens** when `isStreaming` becomes true
+- **Uses part state** from the AI SDK to label active vs finished reasoning
+- **Falls back to message position** when older persisted messages do not have a precise reasoning state
+- User can manually toggle at any time
+
+Uses a context pattern (`ReasoningContext`) so `ReasoningTrigger` and `ReasoningContent` can access streaming state without prop drilling.
+
+#### `plan-card.tsx`
+
+Interactive build plan card rendered when the agent calls the `present_plan` custom tool. Uses the composer card style (`--composer-bg`, `--composer-shadow`, `rounded-2xl`) with a gradient swoosh + glow animation when the plan is ready. Sections:
+- **Overview** — high-level summary paragraph
+- **Main Features** — flat list with name + description per feature
+- **Data Flow** — how data moves through the app
+- **Agents / Backend** — side-by-side sections, showing "Not available" badge when null
+- **Actions** — "Approve & Build" and "Request Changes" buttons (always visible, disabled during streaming). Skeleton placeholders shown while tool input streams.
+
+#### `terminal.tsx`
+
+macOS-style terminal renderer for Bash tool calls. Uses the composer card style. Displays:
+- Traffic light dots (red/yellow/green) in the header
+- Command with `$` prefix in green (emerald for light mode, green-400 for dark)
+- Scrollable output area (max 192px)
+- Green checkmark when done, spinner while running, copy button next to command
+- Light/dark theme aware — white bg in light mode, dark in dark mode
+
+#### `tool-card.tsx`
+
+Compact one-liner cards for file and web tools, styled to match the reasoning block (same `text-sm`, `size-4` icons). Each tool type has a dedicated icon and status text:
+
+- **Write** — `FilePlusIcon` + filename + "Created" + green `+N` stats. Collapsible: expands to show a GitHub-style diff (all lines green for new files).
+- **Edit** — `FilePenLineIcon` + filename + "Edited" + colored `+N -N` stats. Collapsible: expands to show red (deleted) and green (added) lines. Diff is computed from the tool's `old_string`/`new_string` input.
+- **Read** — `FileSearchIcon` + filename for one file. Multi-file reads show `Read N files` as a closed-by-default collapsible list of the exact file paths.
+- **List** — `FolderSearchIcon` + folder path for one location. Multi-location lists show `Listed N locations` as a closed-by-default collapsible list of the exact paths.
+- **Glob** — `FolderSearchIcon` + pattern. Simple one-liner.
+- **Grep** — `SearchIcon` + pattern. Simple one-liner.
+- **WebSearch** — `GlobeIcon` + query. With fewer than 3 results: inline source chips with favicons. With 3+ results: stacked overlapping favicon circles + "N sources", collapsible to show all source chips.
+- **WebFetch** — `GlobeIcon` + hostname + "Fetched" + clickable source chip with favicon.
+
+#### `custom-tool-card.tsx`
+
+Dedicated renderer for app-agent custom HTTP tools (`mcp__app_tools__*`). It uses metadata from `agents.json` when available:
+
+- Integration name and favicon from `tool.integration`
+- Action label from `tool.displayName`, falling back to a title-cased tool name
+- HTTP method and endpoint host from `tool.endpoint`
+- Expandable **Input** and **Output** panels with parsed JSON formatting. If the worker returns mock data or an error preface before a JSON payload, the card keeps the note and formats the payload separately.
+
+Source chips are rounded-full pills with Google favicon, truncated title, and external link icon. Favicons fetched from `google.com/s2/favicons`.
+
+#### Architecture
+
+The rendering flow is:
+
+```
+useChat → messages[].parts[] → part.type switch → AI Element component
+```
+
+Each `UIMessagePart` has a `type` field that determines which component renders it. The mapping happens in `app-chat.tsx`'s message rendering loop. Adding a new part type renderer is just another `if (part.type === "...")` branch with a new component.
+
+### Scroll behavior
+
+The chat uses `use-stick-to-bottom` (same library as the reference app) for automatic scroll management during streaming. The layout uses absolute positioning:
+
+```
+┌─ relative container (flex-1) ──────────────┐
+│ ┌─ absolute inset-0 ────────────────────┐  │
+│ │ StickToBottom (messages, pb-48)       │  │
+│ └───────────────────────────────────────┘  │
+│ ┌─ absolute bottom-0 z-20 ─────────────┐  │
+│ │ Composer input (pointer-events-auto)  │  │
+│ └───────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+The message area has `pb-48` bottom padding so content doesn't hide behind the input overlay. A `h-4 bg-background` separator hides the scroll edge.
+
+## API routes
+
+### `POST /api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat`
+
+Sends a message to the agent. Returns a UIMessageStream SSE response.
+
+1. Authenticates the request and loads the app + run by `{ workspaceId, appId, runId }`.
+2. Atomically marks the run as `streaming`. The claim succeeds only for pending runs or legitimate follow-up messages with a longer message list. If the claim fails because another request already started the run, or because a stale browser history request posted old messages, returns an empty successful stream.
+3. Creates a `UIMessageStream` with the bridge in the `execute` callback.
+4. The SSE stream is tee'd via `consumeSseStream`, registered in Redis, saved to the run as `activeStreamId`, and captured into the run replay buffer.
+5. After the bridge finishes, fetches the session file from the worker and saves it to MongoDB for cross-container resume.
+6. On finish, persists the final messages to MongoDB via `completeRun`.
+
+### `GET /api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat`
+
+Returns the persisted chat history as JSON. Used for loading existing conversations.
+
+### `GET .../chat/stream`
+
+Resume endpoint for in-flight streams. Uses a Redis replay buffer when available and falls back to Redis-backed resumable streams (`resumable-stream` library) to reconnect to an active SSE stream.
+
+1. Loads the run's `activeStreamId` and `status` from MongoDB.
+2. If the run is `streaming` but not attachable yet, waits briefly for Redis run events before deciding.
+3. If no active stream or run is completed/failed, returns `204` (no content).
+4. If replay chunks exist, returns a replay/follow SSE stream. The optional `cursor` query parameter skips chunks the client already saw.
+5. If replay is not available, creates a `ResumableStreamContext` with Redis pub/sub and calls `resumeExistingStream`.
+6. Returns the resumed stream as SSE with `x-vercel-ai-ui-message-stream: v1` header.
+
+This enables multiple tabs/clients to see the same live stream.
+
+### `GET /api/workspaces/[workspaceId]/events`
+
+Workspace sync endpoint. Subscribes to the workspace Redis pub/sub channel and pushes compact workspace events used by sidebar, app chrome, settings, and run observers. `WorkspaceRealtimeProvider` keeps one shared browser connection for this endpoint and fans events out to mounted components in-process and across tabs. On subscribe, the endpoint also emits compact catch-up events for currently streaming builder runs, scoped by `workspaceId`, so reconnecting browsers can resume without opening per-run event streams.
+
+Run observers react only to events scoped to their `{ workspaceId, appId, runId }`:
+
+| Event | When | Client action |
+| --- | --- | --- |
+| `run.starting` | Run status changed to `"streaming"` before the stream is attachable | Fetch messages, start live-sync fallback |
+| `run.stream_ready` | `activeStreamId` set to a non-null value | Fetch messages, call `setMessages` + `resumeStream` |
+| `run.completed` | `status` changed to `"completed"` | Fetch messages, call `setMessages` with final state |
+| `run.failed` | `status` changed to `"failed"` | Fetch messages, call `setMessages` with error state |
+
+The older run-specific `GET .../runs/[runId]/events` endpoint still exists for compatibility and for stream attach coordination, but normal app pages do not open a separate browser `EventSource` for each run.
+
+## Persistence
+
+Messages are persisted to MongoDB after the agent finishes each response:
+
+1. Run is created as `pending` with empty messages.
+2. User sends a message → chat POST saves the optimistic `UIMessage[]` and marks the run as `streaming`.
+3. Agent streams its response → the SSE stream is tee'd via `consumeSseStream`, published to Redis for multi-client resume, and captured in a Redis replay buffer. The `activeStreamId` is saved to the run document.
+4. Agent finishes → the bridge fetches provider-aware session state from the worker.
+5. `onFinish` saves the latest provider session state under both `sessionState` and `runtimeSessionStates.<runtimeId>`, records how many persisted UI messages that native session covers, then `completeRun` saves the full `UIMessage[]` array, clears `activeStreamId`, and marks the run as `"completed"`.
+
+On page load, the server component fetches the latest run and passes `initialMessages` to the chat component.
+
+`runtimeSessionStates` lets the same run switch between Claude Code, Codex CLI, and OpenCode without losing each runtime's native resume handle. If the selected runtime has not seen the whole Second transcript, the chat route sends a bounded provider-neutral handoff prompt containing the missing persisted UI messages before the latest user message.
+
+## Cross-container resume
+
+When the worker's 15-minute TTL expires and the session is destroyed, the next message triggers a full context restore:
+
+1. The chat route loads the selected runtime's entry from `runtimeSessionStates`, falling back to `sessionState` when it belongs to the selected runtime.
+2. The session state is passed to the worker request.
+3. Claude restores JSONL state when needed; Codex CLI and OpenCode receive their native session IDs when available.
+4. The runtime adapter resumes the provider session and streams normalized events.
+
+The user sees one continuous conversation. Each runtime gets the strongest resume behavior it supports through the generic `ProviderSessionState` shape.

@@ -1,0 +1,267 @@
+---
+title: "Self-hosting"
+description: "Deploy Second with your own MongoDB, Redis, authentication provider, and workspace governance controls."
+---
+
+## Production checklist
+
+Before going live, make sure you have:
+
+- [ ] `SECOND_AUTH_MODE=external` with a working auth provider extension
+- [ ] External auth provider syncs workspace memberships, roles, and invitations
+- [ ] `MONGODB_URI` pointing to a managed MongoDB instance (must support replica sets for app data Change Streams)
+- [ ] `SECOND_PUBLIC_URL` set to your public HTTPS origin
+- [ ] If using OAuth integrations, provider OAuth apps use
+      `${SECOND_PUBLIC_URL}/api/oauth/callback` as the redirect URI
+- [ ] At least one supported runtime installed for the worker: `claude`, `codex`, or `opencode`
+- [ ] If enabling OpenCode, use a version whose `opencode run --help` includes `--format json`
+- [ ] Runtime provider credentials configured for the runtime(s) you enable
+- [ ] `REDIS_URL` pointing to a Redis instance
+- [ ] `INTERNAL_API_TOKEN` set to the same strong secret on both web and worker
+- [ ] HTTPS termination via a trusted reverse proxy
+- [ ] MongoDB and Redis access restricted to your application network
+
+For on-prem deployments, admins and owners remain the control point for
+published app access, app-scoped integration keys, and reviewed agent
+permissions. Local development can run without external auth, but production
+deployments should use external auth and a strong internal API token.
+
+<Info>
+Need help with a secure production rollout, runtime/provider setup, cost
+management, or support? Contact [sales@second.so](mailto:sales@second.so).
+</Info>
+
+## Environment variables
+
+### Web (`apps/web`)
+
+```bash
+SECOND_AUTH_MODE=external
+MONGODB_URI=mongodb+srv://<user>:<pass>@<cluster>/<db>
+SECOND_PUBLIC_URL=https://your-domain.example
+WORKER_URL=http://worker:3001
+REDIS_URL=redis://redis:6379
+INTERNAL_API_TOKEN=<shared-secret>
+# Local auth mode only: set a stable value so no-auth sessions survive restarts.
+# SECOND_NO_AUTH_SESSION_SECRET=<32+-char-random-secret>
+# Optional but recommended in production for integration/OAuth secret storage:
+# WORKOS_API_KEY=...
+# Required in production if WorkOS Vault is not configured and OAuth is enabled:
+# SECOND_TOKEN_ENCRYPTION_KEY=<32-byte-base64-or-64-char-hex-or-passphrase>
+# Optional, diagnostics only:
+# SECOND_PERF_TRACE=1
+# Optional, product analytics. Enabled by default in anonymized mode:
+# SECOND_POSTHOG_TOKEN=phc_...
+# SECOND_POSTHOG_HOST=https://us.i.posthog.com
+# SECOND_POSTHOG_DISABLED=1
+# SECOND_SENTRY_DSN=https://...@...ingest.us.sentry.io/...
+# NEXT_PUBLIC_SENTRY_DSN=https://...@...ingest.us.sentry.io/...
+# SECOND_SENTRY_DISABLED=1
+# SENTRY_AUTH_TOKEN=...
+# SECOND_TELEMETRY_DISABLED=1
+```
+
+`SECOND_POSTHOG_TOKEN` is a PostHog project token, not a private API key.
+Product analytics are enabled by default after onboarding in anonymized mode,
+and events are forwarded by the web app's same-origin analytics endpoint. If
+you do not want a deployment to send PostHog analytics, set
+`SECOND_POSTHOG_DISABLED=1` or `SECOND_TELEMETRY_DISABLED=1`.
+
+`SECOND_SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` are public Sentry DSNs, not
+private API keys. Error reporting is enabled by default with masked replay on
+error only. If you do not want a deployment to send Sentry error reports, set
+`SECOND_SENTRY_DISABLED=1`, `SECOND_ERROR_REPORTING_DISABLED=1`, or
+`SECOND_TELEMETRY_DISABLED=1`. Source-map upload requires a private
+`SENTRY_AUTH_TOKEN` in CI; never commit that token.
+
+With anonymization on, Second forwards personless events only and strips user,
+workspace, app, prompt, and URL identifiers. Anonymized events share a stable
+local `anon_...` ID so they can be grouped in PostHog without being linked to
+the user's person profile. Users can turn anonymization off from the workspace
+account menu. With anonymization off, Second sends a dedicated PostHog
+`$identify` event for that onboarded user and then forwards product events with
+the non-anonymized event properties. See [Product analytics](/product-analytics)
+for the full capture and privacy model.
+
+### Worker (`apps/worker`)
+
+```bash
+PORT=3001
+INTERNAL_API_TOKEN=<same-shared-secret>
+TOOL_EXECUTE_URL=http://web:3000/api/internal/tool-execute
+# Configure only the provider keys needed by enabled runtimes:
+# ANTHROPIC_API_KEY=sk-ant-...
+# CODEX_API_KEY=...
+# OPENAI_API_KEY=...
+# GOOGLE_API_KEY=...
+# GEMINI_API_KEY=...
+# Optional executable overrides when the worker PATH differs:
+# SECOND_CLAUDE_PATH=/usr/local/bin/claude
+# SECOND_CODEX_PATH=/usr/local/bin/codex
+# SECOND_OPENCODE_PATH=/usr/local/bin/opencode
+# Optional local-development Codex tuning:
+# SECOND_CODEX_APP_SERVER_WARM=0 # disables local warm Codex app-server reuse
+# Optional; only for intentionally isolated deployments using mounted Codex login state:
+# SECOND_ALLOW_CODEX_LOCAL_AUTH=1
+```
+
+`INTERNAL_API_TOKEN` authenticates internal web↔worker calls. The worker uses it for web internal APIs (tool execution, agent completion callbacks, app data reads/writes), and the web server uses it when calling the worker HTTP API. Use a strong random secret and set the same value on both services.
+
+The worker must never pass `INTERNAL_API_TOKEN`, MongoDB URLs, Redis URLs, WorkOS secrets, cookies, headers, or integration secret values into CLI runtimes. Codex CLI and OpenCode are launched with an allowlisted environment plus private per app/run `HOME` and config directories. The only token they receive for Second tools is a short-lived scoped MCP broker token. Codex receives an OpenAI key through app-server login instead of through the spawned process environment, and Codex shell commands get a separate shell `HOME` plus key/token/secret environment exclusions. In local Codex login mode, the private Codex home is seeded with only the local Codex `auth.json`; production deployments should prefer explicit provider keys, and local auth seeding is disabled by default under `NODE_ENV=production`.
+
+Claude Code runs with subprocess environment scrubbing enabled by default. On
+Linux workers, that requires the `bubblewrap` package (`bwrap` executable). Keep
+it installed in custom worker images. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0` is an
+explicit escape hatch only for externally isolated workers that accept Claude
+subprocesses not getting Claude's inner env scrubber.
+
+Codex's Linux `workspace-write` sandbox can fail inside containers when the host blocks the namespace or `bwrap` operations it needs. In production, Second treats the worker/container environment as the external sandbox for normal Codex build runs and sends Codex `danger-full-access` when the selected runtime setting is `workspace-write`. Local development still uses Codex `workspace-write`.
+
+For local development only, Codex builder sessions keep a warm `codex app-server`
+process per app/runtime session to reduce repeated startup cost. This is disabled
+under `NODE_ENV=production`, does not apply to app-agent runs, and can be turned
+off locally with `SECOND_CODEX_APP_SERVER_WARM=0`.
+
+Redis is required for collaborative streaming and workspace coordination. It
+backs live stream resume/replay, run events, and workspace event invalidations.
+OAuth also uses Redis for short-lived OAuth state and single-flight refresh
+locks so concurrent tool calls do not stampede the provider token endpoint.
+
+`SECOND_PERF_TRACE=1` can be enabled temporarily during incident diagnosis. It
+logs route names, request IDs, elapsed timings, counts, CPU, and memory. It does
+not log prompts, source files, cookies, tokens, headers, or secret values, but
+it adds log volume and should normally stay off.
+
+## OAuth integrations
+
+Self-hosted and on-prem deployments use customer-owned OAuth apps. Second does
+not require WorkOS Pipes, Pipedream, Composio, or any hosted OAuth broker for
+this path.
+
+The enterprise Gmail/Calendar setup flow is:
+
+1. The builder declares OAuth metadata in `agents.json` and
+   `integration-setup.json`: provider key, authorization URL, token URL, exact
+   scopes, and API endpoint.
+2. A workspace admin opens Settings → Integrations and copies Second's redirect
+   URI, usually `https://your-domain.example/api/oauth/callback`.
+3. The customer's Google Workspace admin creates a Google Cloud OAuth client for
+   that deployment. For internal Workspace use, configure the consent screen as
+   Internal and add the listed Gmail/Calendar scopes.
+4. The admin pastes the OAuth client ID and client secret into Second. In
+   production with WorkOS configured, the client secret is stored in WorkOS
+   Vault. Without WorkOS Vault, Second requires `SECOND_TOKEN_ENCRYPTION_KEY`
+   and stores an encrypted local reference.
+5. Each end user clicks Connect for that provider. Second redirects to the
+   provider, receives an authorization code at `/api/oauth/callback`, exchanges
+   it server-side, and stores the refresh token through the same secret-store
+   adapter.
+6. When an app agent uses an OAuth tool, `/api/internal/tool-execute` resolves
+   the triggering user from the app-agent run, checks the connected account and
+   scopes, refreshes the access token on demand if needed, injects the bearer
+   token server-side, and calls the provider API.
+
+There is no background refresh daemon. Access-token refresh is a normal
+provider token endpoint call made inside the existing web API request when a
+tool needs a valid access token. Refresh-token revocation, provider token
+rotation, missing scopes, and provider network failures are surfaced as
+reconnect or tool-failure states; token values are never logged or returned to
+agents.
+
+Local development uses the same manual path: create your own provider OAuth app,
+paste client ID/secret into Second settings, and connect your account. The local
+secret adapter encrypts OAuth secrets with `SECOND_TOKEN_ENCRYPTION_KEY` or a
+generated gitignored key in `.second-dev/`; changing OAuth client credentials in
+the UI does not require restarting the service.
+
+When manually testing OAuth in local development, run Second on a plain
+loopback origin instead of the portless `*.second.localhost` dev URL:
+
+```bash
+SECOND_DEV_PORTLESS=0 PORT=4198 npm run dev
+```
+
+Then register the exact redirect URI shown in Second, for example
+`http://localhost:4198/api/oauth/callback`. Providers such as Google only grant
+special HTTP redirect handling to loopback hosts like `localhost` or
+`127.0.0.1`; they do not treat generated `*.second.localhost` hosts as loopback
+OAuth redirect URIs.
+
+Portless is only a developer convenience for `npm run dev`. It is not used by
+`npm run start`, `npm run release`, on-prem deployments, or the packaged
+`npx --yes @second-inc/cli` local runtime. The CLI should use the same plain loopback
+shape for OAuth-capable local runs.
+
+## Running with Docker Compose
+
+**Option A** — build from source:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... npm run start
+```
+
+**Option B** — use prebuilt images:
+
+```bash
+SECOND_WEB_IMAGE=ghcr.io/<org>/<image>:<tag> \
+ANTHROPIC_API_KEY=sk-ant-... \
+npm run release
+```
+
+Both options start all four services: MongoDB, Redis, the worker, and the web app.
+
+## Why `WORKER_URL` is required
+
+The Next.js web server calls the worker over HTTP for agent operations and live workspace reads (for example `/sessions/:appId/messages`, `/sessions/:appId/status`, `/sessions/:appId/files`).
+
+`WORKER_URL` must resolve from the web runtime to the worker runtime over your private network.
+
+## Architecture in production
+
+```
+Internet → Load Balancer / Reverse Proxy → Web (port 3000)
+                                              ├─ → Worker (port 3001, internal)
+                                              ├─ → MongoDB (internal)
+                                              └─ → Redis (internal)
+```
+
+Only the web app needs to be exposed publicly. The worker, MongoDB, and Redis should be on an internal network.
+
+## Capacity and scaling
+
+The application code is designed so the web tier can scale horizontally behind
+a load balancer: durable state lives in MongoDB, live coordination lives in
+Redis, and every route still authorizes by workspace before returning data.
+Workspace realtime uses one workspace event subscription per browser profile
+when BroadcastChannel/Web Locks are available, and settings pages use projected
+read models instead of loading large app source snapshots on navigation.
+
+The shipped local/Docker Compose setup does not autoscale. If you deploy to
+Kubernetes, node autoscaling and pod autoscaling are separate concerns. Managed
+clusters such as GKE Autopilot can add nodes for schedulable pod requests, but
+they do not automatically create more web pods unless your deployment defines
+more replicas or an HPA/KEDA policy. A single web pod may handle small teams,
+but production deployments should set explicit web replicas or autoscaling
+targets based on request latency, CPU, memory, and streaming connection count.
+
+Worker scaling needs more care than web scaling. The worker keeps active agent
+SDK sessions in memory, while durable run messages and source snapshots are
+saved through the web layer. Additional worker replicas can improve capacity,
+but active sessions, workspace filesystem persistence, and load-balancer
+routing need to be planned for the deployment model.
+
+## Security notes
+
+- Never use `SECOND_AUTH_MODE=none` on the public internet. See [Authentication](/authentication) for details on external mode.
+- Production collaboration depends on the external provider mapping accepted invitations into Second's `users`, `workspace_memberships`, and default `General` team membership. Unknown external roles should not grant elevated access.
+- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `INTERNAL_API_TOKEN` are secrets — treat them accordingly and never commit them to source control.
+- The worker's HTTP API (`/sessions/*`) should not be exposed publicly — only the web app should be able to reach it.
+- The worker's scoped MCP route (`/mcp/*`) is for CLI runtimes only. It requires a per-run bearer token and should still stay on an internal network.
+- Internal API endpoints (`/api/internal/*`) bypass the browser auth proxy and rely on `INTERNAL_API_TOKEN` for authentication. Missing tokens fail closed in production. Keep these on an internal network.
+- Make sure your reverse proxy forwards and sanitizes headers correctly (`X-Forwarded-For`, `X-Forwarded-Proto`).
+
+## Deployment hardening boundary
+
+This open-source repo owns runtime env/config/tool isolation. It does not define production container images, per-run pod/job isolation, Kubernetes service accounts, seccomp/AppArmor profiles, read-only root filesystems, network egress policy, metadata-server blocking, firewall rules, VPC segmentation, DNS controls, or per-container network observability.
+
+Those controls belong to the operator-managed deployment layer. They are recommended for production, especially when enabling OpenCode, because OpenCode permissions are not a strong OS sandbox by themselves. Managed Second deployments can wrap these runtimes in stronger isolated worker environments and expose stricter networking/container overrides as a security feature.

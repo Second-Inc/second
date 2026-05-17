@@ -1,0 +1,280 @@
+---
+title: "Development"
+description: "Set up the repository, scripts, and environment variables for local development."
+---
+
+## Repository layout
+
+```
+apps/
+├── web/        → Next.js application (UI, API routes, persistence)
+└── worker/     → Agent worker (Claude Agent SDK, session management)
+
+docs/           → Documentation (what you're reading now)
+packages/
+├── cli/                         → Tiny npx launcher (@second-inc/cli)
+│   └── bin/second.js             → Resolves and runs the platform payload
+└── cli-local-darwin-arm64/       → macOS arm64 local payload package
+    ├── bin/second-local.js       → Local runtime supervisor
+    └── dist/                     → Web, worker, MongoDB, Redis payload (gitignored)
+```
+
+## Install and run
+
+```bash
+npm --prefix apps/web install
+npm --prefix apps/worker install
+npm run dev
+```
+
+`npm run dev` runs `scripts/dev.sh`. It first starts MongoDB and Redis in Docker, then starts the agent worker on the host and the Next.js dev server with hot reload. If Docker is not running, the script exits before starting the web server so the app does not boot against missing MongoDB/Redis.
+
+The dev script is worktree-aware. It automatically derives a stable local dev ID from the current branch/worktree and repository path, uses that ID as the Docker Compose project name, lets Docker assign free loopback host ports for MongoDB and Redis, and chooses free host ports for web and worker. Multiple worktrees can run at the same time without sharing containers, networks, volumes, or host ports.
+
+When available, the script runs through [portless](https://github.com/vercel-labs/portless) and exposes the app at a stable `.localhost` URL such as `http://feature.second.localhost:1355`. The default proxy uses local HTTP on port `1355` and disables host-file sync so `npm run dev` does not ask for sudo. If portless is not installed, the script uses `npx portless@0.12.0` in interactive shells. If portless is disabled or unavailable, it falls back to an auto-picked `http://localhost:<port>` URL.
+
+Each start writes `.second-dev.txt` in the repository root with the actual URL, ports, and Compose project name. The file is gitignored and safe for local agents and browser automation to read. Prefer its `url=` value over assuming `http://localhost:3000`.
+
+The worker runs on the host (not in Docker) so it can use your local Claude authentication. If you've ever run `claude` and logged in, the agent will work with your existing auth — no API key needed.
+
+## Scripts
+
+All scripts run from the repository root:
+
+| Script | What it does |
+| --- | --- |
+| `npm run dev` | Starts per-worktree Mongo + Redis in Docker, worker + Next.js on host with hot reload |
+| `npm run typecheck` | Runs `tsc --noEmit` on both `apps/web` and `apps/worker` |
+| `npm run start` | Builds and runs all services in Docker (requires `ANTHROPIC_API_KEY`) |
+| `npm run release` | Runs prebuilt images with Docker Compose |
+| `npm run build --prefix packages/cli` | Syntax-checks the tiny `@second-inc/cli` launcher |
+| `npm run build --prefix packages/cli-local-darwin-arm64` | Builds the macOS arm64 payload with web, worker, MongoDB, Redis, and runtime libraries |
+| `node scripts/local-workspace-member.mjs ...` | Seeds a local no-auth user into an existing workspace with a role |
+| `node scripts/verify-local-rbac.mjs ...` | Signs in as a local member and verifies integration mutation APIs return `403` |
+| `node scripts/migrate-app-source-snapshots.mjs ...` | Migrates legacy embedded app source maps into `app_source_snapshots` after backup/approval |
+
+## Local multi-user testing
+
+Local no-auth mode does not send real invitations. To test workspace roles
+without simulating an external provider, seed a second user into an existing
+workspace:
+
+```bash
+node scripts/local-workspace-member.mjs \
+  --workspace-id <workspaceId> \
+  --email member@example.test \
+  --name "Member User" \
+  --role member
+```
+
+The script upserts the user, upserts the workspace membership, ensures the
+workspace has the default `General` team, and adds the user to that team. Then
+sign out, open `/onboarding/identity`, and use the seeded email/name.
+
+To verify the member cannot mutate integration settings through the API:
+
+```bash
+node scripts/verify-local-rbac.mjs \
+  --base-url "$(awk -F= '$1 == "url" { print $2 }' .second-dev.txt)" \
+  --workspace-id <workspaceId> \
+  --email member@example.test \
+  --name "Member User"
+```
+
+The verifier obtains real local session cookies through `/api/onboarding/identity`
+and expects `403` from integration create, configure, reset, and delete routes.
+
+## Environment variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SECOND_AUTH_MODE` | `none` | `none` for local dev, `external` for production |
+| `MONGODB_URI` | auto-configured | Full Mongo URI including database name |
+| `SECOND_PUBLIC_URL` | auto-configured | Canonical app origin, used for redirects |
+| `WORKER_URL` | auto-configured | Worker HTTP API endpoint |
+| `REDIS_URL` | auto-configured | Redis connection string |
+| `ANTHROPIC_API_KEY` | — | Required in Docker mode. Not needed for `npm run dev` |
+| `INTERNAL_API_TOKEN` | — | Shared token for web↔worker internal API auth. Optional in local dev, required in production |
+| `SECOND_PERF_TRACE` | `0` | Set to `1` to emit safe structured timing logs for selected hot paths. Do not leave enabled unless diagnosing performance |
+| `SECOND_POSTHOG_TOKEN` | built-in release default or empty | Optional public PostHog project token for product analytics. This is not a secret |
+| `SECOND_POSTHOG_HOST` | `https://us.i.posthog.com` | Optional PostHog host override, for example EU projects |
+| `SECOND_POSTHOG_DISABLED` | `0` | Set to `1` to disable PostHog analytics |
+| `SECOND_SENTRY_DSN` | built-in release default or empty | Optional public Sentry DSN for error reporting. This is not a secret |
+| `NEXT_PUBLIC_SENTRY_DSN` | built-in release default or empty | Optional browser Sentry DSN override; set it before building if you need a custom client-side DSN |
+| `SECOND_SENTRY_DISABLED` | `0` | Set to `1` to disable Sentry error reporting |
+| `SECOND_ERROR_REPORTING_DISABLED` | `0` | Alias for `SECOND_SENTRY_DISABLED=1` |
+| `SENTRY_AUTH_TOKEN` | — | Optional CI-only secret for uploading Sentry source maps |
+| `SECOND_TELEMETRY_DISABLED` | `0` | Set to `1` to disable product analytics and error reporting |
+| `TOOL_EXECUTE_URL` | auto-configured | Worker's URL for custom tool execution |
+| `WEB_PORT` | auto-picked, prefers `3000` | Host port for the web app |
+| `WORKER_PORT` | auto-picked, prefers `3001` | Host port for the worker |
+| `MONGO_PORT` | Docker-assigned | Host port for MongoDB; set explicitly only when you need a fixed port |
+| `REDIS_PORT` | Docker-assigned | Host port for Redis; set explicitly only when you need a fixed port |
+| `SECOND_DEV_ID` | auto-generated | Stable local ID used to isolate each worktree |
+| `SECOND_DEV_PORTLESS` | `1` | Set to `0` to skip portless and use localhost auto-ports |
+| `SECOND_DEV_PORTLESS_PROXY_PORT` | `1355` | Local portless proxy port; uses an unprivileged port to avoid sudo |
+| `SECOND_DEV_PORTLESS_HTTPS` | `0` | Set to `1` to use HTTPS; port `443` may require sudo |
+| `SECOND_DEV_PORTLESS_SYNC_HOSTS` | `0` | Set to `1` to let portless sync `/etc/hosts`; this may require sudo |
+| `SECOND_DEV_ALLOWED_ORIGINS` | — | Optional extra hostnames for Next.js dev internal resources, comma or space separated |
+| `SECOND_DEV_KEEP_INFRA` | `0` | Set to `1` to keep dev Mongo/Redis containers running after the dev server exits |
+
+Product analytics are enabled by default in anonymized mode. To disable them for
+a local run, use `npm run dev -- --disable-telemetry`,
+`npm run dev -- --no-analytics`, or `SECOND_POSTHOG_DISABLED=1 npm run dev`.
+See [Product analytics](/product-analytics) for the capture path, anonymous ID
+behavior, and privacy rules.
+
+Client and server error reporting use Sentry by default. The DSN is public and
+can be overridden with `SECOND_SENTRY_DSN`; set `NEXT_PUBLIC_SENTRY_DSN` before
+building when you need browser-side events to go to a custom Sentry project.
+Source-map upload requires `SENTRY_AUTH_TOKEN` in CI.
+
+## How `WORKER_URL` is set
+
+`WORKER_URL` is the internal HTTP address the web server uses to call the worker API (`/sessions/*`, `/detect-provider`).
+
+### `npm run dev` (monorepo dev)
+
+- Web runs on host.
+- Worker runs on host.
+- `WORKER_URL` is set to `http://127.0.0.1:<chosen-worker-port>` by the root `dev` script.
+- `MONGODB_URI` is set to the Docker-assigned loopback MongoDB port with `directConnection=true&replicaSet=rs0`, so the host web process does not follow Mongo's internal `localhost:27017` replica-set advertisement from another worktree.
+- `WEB_URL` and `TOOL_EXECUTE_URL` are set to the loopback web server URL so the host worker calls the correct worktree even when the browser URL is a portless HTTPS hostname.
+- Next.js dev resources are allowed from the generated `*.second.localhost` proxy host and from `SECOND_PUBLIC_URL`, so the canonical portless URL can load HMR, fonts, and client code without falling back to the loopback web port.
+
+### `npm run start` / `npm run release` (compose deployment)
+
+- Web and worker both run in Docker.
+- `WORKER_URL` is set to `http://worker:3001` in `docker-compose.yml`.
+- `worker` is the Docker service DNS name reachable from the `web` container.
+
+### `npx --yes @second-inc/cli`
+
+- `npx` installs the tiny `@second-inc/cli` launcher first.
+- The launcher invokes the matching platform payload package, for example
+  `@second-inc/cli-local-darwin-arm64`.
+- Web runs as a packaged Next.js standalone Node server on the host.
+- MongoDB runs as a packaged native `mongod` child process on loopback with `--replSet rs0`.
+- Redis runs as a packaged native `redis-server` child process on loopback for streaming/replay, pub/sub, OAuth state, and short locks.
+- Worker runs on the host so it can use the user's local Claude/Codex/OpenCode auth.
+- The CLI starts a loopback-only host control server for release status and update restart requests. The web process receives only server-side `SECOND_LOCAL_*` / `SECOND_RELEASE_*` environment variables and calls the control server with a local bearer token; those values are not exposed as `NEXT_PUBLIC_*`.
+- MongoDB and Redis startup run concurrently. The web server still waits until MongoDB has a ready single-node replica set and Redis has answered `PONG`.
+
+This is expected and required for local Claude CLI auth, since the worker must run on the host in CLI mode.
+
+The launcher package is intentionally tiny. The payload package carries the
+Next.js standalone output, worker bundle, packaged MongoDB, packaged Redis, and
+runtime libraries. That keeps the visible `npx` command stable while avoiding a
+large launcher package that sits behind npm's spinner before our code can print
+progress.
+
+## Runtime config and Docker builds
+
+`readRuntimeConfig()` in `src/lib/config/runtime.ts` validates that `SECOND_AUTH_MODE`, `MONGODB_URI`, and `SECOND_PUBLIC_URL` are set. These variables exist at runtime but not during `docker build`.
+
+During `next build`, Next.js prerenders pages and calls `readRuntimeConfig()` — which would crash on missing env vars. To handle this, the function detects the build phase via `process.env.NEXT_PHASE === "phase-production-build"` (set automatically by Next.js) and returns safe defaults. At runtime, full validation applies as normal.
+
+This means no placeholder env vars are needed in the Dockerfile, and no pages need `export const dynamic = "force-dynamic"` just to avoid build errors.
+
+## Docker Compose services
+
+| Service | Image | Purpose |
+| --- | --- | --- |
+| `mongo` | `mongo:8.0` | Database (with `--replSet rs0` for Change Streams) |
+| `redis` | `redis:7-alpine` | Stream resumption + pub/sub |
+| `worker` | Built from `apps/worker/Dockerfile` | Agent runner |
+| `web` | Built from `apps/web/Dockerfile` | Next.js app |
+
+In dev mode (`npm run dev`), only Mongo and Redis run in Docker. The worker and web app run on the host for fast iteration and access to local Claude auth.
+
+### MongoDB replica set
+
+MongoDB runs with `--replSet rs0` because [Change Streams](/app-data#live-updates-change-streams--sse) require a replica set. The `docker-compose.yml` healthcheck auto-initiates the replica set on first start:
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "mongosh --quiet --eval 'try{rs.status().ok}catch(e){rs.initiate({_id:\"rs0\",members:[{_id:0,host:\"localhost:27017\"}]});rs.status().ok}' | grep 1"]
+```
+
+In production (e.g., MongoDB Atlas), replica sets are the default — no extra configuration needed.
+
+The packaged CLI does not use Docker and does not require the user to install
+MongoDB. It starts the packaged `mongod` binary with `--replSet rs0`, binds it
+to `127.0.0.1`, initiates a single-node replica set using the MongoDB Node
+driver, and gives the web process a loopback `MONGODB_URI` with
+`directConnection=true&replicaSet=rs0`.
+
+## How the CLI works
+
+`npx --yes @second-inc/cli` starts a tiny launcher, which runs the matching
+platform payload package. The payload's supervisor starts the full stack
+locally:
+
+```
+┌─ Host processes owned by npx --yes @second-inc/cli ────┐
+│  mongod --replSet rs0  → database                │
+│  redis-server          → stream relay            │
+│  node server.js        → Next.js app             │
+│  node worker.mjs       → agent worker            │
+└──────────────────────────────────────────────────┘
+        ↕ loopback-only HTTP/TCP ports
+```
+
+The worker runs on the host so it can access the user's local `claude`, `codex`, or `opencode` CLI and authentication. The web process reaches the worker through a loopback `WORKER_URL`.
+
+**Script resolution:** the payload supervisor prefers `apps/worker/src/index.ts`
+when running from the monorepo, so the worker can resolve the Claude Agent SDK
+and `claude` CLI binary from its own `node_modules`. When the monorepo isn't
+available, it falls back to the bundled `dist/worker.mjs` shipped in the payload
+package.
+
+**Provider detection** happens at runtime in the web app's onboarding flow, not in the CLI. The CLI just starts infrastructure; the app handles auth.
+
+**Release/update control:** the CLI writes a random local control token to
+`~/.second/secrets/local-control-token`, starts a small host control server, and
+writes non-secret connection metadata to `~/.second/local-control.json`. The
+control server exposes unauthenticated `GET /health`, authenticated
+`GET /release/status`, and authenticated `POST /update/install`. Update status
+checks use the host user's npm auth, which lets private npm-package rehearsals
+work without putting npm tokens in the web process or browser.
+
+### Building the CLI for publishing
+
+```bash
+cd packages/cli-local-darwin-arm64
+npm publish --access restricted
+
+cd ../cli
+npm publish --access restricted
+```
+
+Publish the platform payload before the launcher for the same version. The
+payload package's `prepack` script runs the build that bundles the worker,
+builds the Next standalone web server, and prepares packaged MongoDB/Redis
+runtime files. The launcher package is deliberately tiny and points npm users to
+the matching payload package at runtime.
+
+During private release rehearsal use `--access restricted` and a logged-in npm
+account with access to the `@second-inc` scope. For public release, publish with
+public access after the package visibility decision is made.
+
+## Local data
+
+**`npm run dev`**: MongoDB data persists in a per-worktree Docker volume under the generated Compose project. The dev script also writes a stable no-auth session secret under `.second-dev/` so local sign-in survives host web-server restarts. The dev script stops and removes the per-worktree Mongo/Redis containers on exit by default, but it does not delete volumes. Set `SECOND_DEV_KEEP_INFRA=1` before starting if you want the containers to remain running after the dev server exits. Wipe the current worktree's dev containers and volume with the `compose_project=` value from `.second-dev.txt`:
+
+```bash
+docker compose -p <compose_project> down --volumes --remove-orphans
+```
+
+**`npx --yes @second-inc/cli`**: MongoDB data persists at `~/.second/data/mongo/`,
+Redis data persists at `~/.second/data/redis/`, generated app workspaces persist
+at `~/.second/data/workspaces/`, logs are written under `~/.second/logs/`, and
+local service secrets persist under `~/.second/secrets/` so sign-in,
+web↔worker auth, and local update auth survive stop/start. MongoDB, Redis,
+OpenSSL runtime libraries on macOS, the packaged web server, and the worker
+bundle come from the platform payload package instead of a first-run
+infrastructure download cache. Wipe local data with:
+
+```bash
+npx --yes @second-inc/cli reset
+```

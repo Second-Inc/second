@@ -1,0 +1,37 @@
+name: Docs Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs-check.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Validate Mintlify docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Mintlify CLI
+        run: npm install -g mint@latest
+
+      - name: Validate Mintlify docs
+        working-directory: docs
+        run: mint validate

@@ -1,0 +1,217 @@
+"use client";
+
+import { useState } from "react";
+import Image from "next/image";
+import { Check, ChevronDown, Code2, Info, Plus, Terminal } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AGENT_RUNTIMES,
+  getDefaultRuntimeSettings,
+  getModelDisplayName,
+  getRuntime,
+  normalizeRuntimeSettings,
+  type AgentRuntimeSettings,
+} from "@/lib/agent/runtime-registry";
+
+// OpenCode remains wired in the runtime layer, but it is still under
+// development and will be exposed in the picker once deployment is ready.
+const VISIBLE_AGENT_RUNTIMES = AGENT_RUNTIMES.filter(
+  (runtime) => runtime.id !== "opencode",
+);
+
+type ModelSelectorProps = {
+  value: AgentRuntimeSettings;
+  onChange: (value: AgentRuntimeSettings) => void;
+  side?: "top" | "bottom";
+};
+
+export function ModelSelector({
+  value,
+  onChange,
+  side = "top",
+}: ModelSelectorProps) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const selectedRuntime = getRuntime(value.runtimeId);
+  const selectedModel = selectedRuntime.models.find((m) => m.id === value.model);
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="default"
+            className="gap-1 text-muted-foreground"
+          >
+            {selectedModel?.name ?? getModelDisplayName(value.model)}
+            <ChevronDown className="size-3" strokeWidth={2} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" side={side} className="min-w-72">
+          <DropdownMenuRadioGroup
+            value={`${value.runtimeId}:${value.model}`}
+            onValueChange={(nextValue) => {
+              const [runtimeId, model] = nextValue.split(":");
+              const runtime = VISIBLE_AGENT_RUNTIMES.find(
+                (entry) => entry.id === runtimeId,
+              );
+              if (!runtime || !model) return;
+              onChange(
+                normalizeRuntimeSettings({
+                  ...getDefaultRuntimeSettings(runtime.id),
+                  model,
+                }),
+              );
+            }}
+          >
+            {VISIBLE_AGENT_RUNTIMES.map((runtime, index) => (
+              <div key={runtime.id}>
+                {index > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuLabel className="flex items-center gap-2">
+                  {runtime.icon ? (
+                    <Image
+                      src={runtime.icon}
+                      alt=""
+                      width={16}
+                      height={16}
+                      className="rounded-sm"
+                    />
+                  ) : (
+                    <Code2 className="size-3.5 text-muted-foreground" />
+                  )}
+                  {runtime.name}
+                </DropdownMenuLabel>
+                {runtime.models.map((model) => (
+                  <DropdownMenuRadioItem
+                    key={`${runtime.id}:${model.id}`}
+                    value={`${runtime.id}:${model.id}`}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="text-xs">{model.name}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {model.description}
+                      </span>
+                    </div>
+                    {"experimental" in model && model.experimental ? (
+                      <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        Experimental
+                      </span>
+                    ) : null}
+                  </DropdownMenuRadioItem>
+                ))}
+              </div>
+            ))}
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setDialogOpen(true)}>
+            <Plus />
+            <span>Add provider</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Provider setup dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="overflow-hidden p-0 sm:max-w-md">
+          {/* Header */}
+          <div className="border-b px-5 py-4 pr-12">
+            <DialogHeader>
+              <DialogTitle>Providers</DialogTitle>
+              <DialogDescription>
+                Configure which AI providers Second can use.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          {/* Body */}
+          <div className="flex flex-col gap-3 p-5">
+            {/* Local mode note */}
+            <div className="flex items-center gap-3 rounded-xl border px-4 py-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40">
+                <Info className="size-4 text-muted-foreground" strokeWidth={1.7} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] font-medium text-foreground">
+                  You are in local mode
+                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  In enterprise deployments, providers are pre-configured with
+                  your infrastructure settings.{" "}
+                  <a
+                    href="https://second.so"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary underline underline-offset-2"
+                  >
+                    Learn more
+                  </a>
+                </p>
+              </div>
+            </div>
+
+            <div className="px-1 pt-1 text-[12px] font-medium text-foreground">
+              Configured
+            </div>
+
+            {VISIBLE_AGENT_RUNTIMES.map((runtime) => (
+              <div key={runtime.id} className="flex flex-col gap-3 rounded-lg border p-4">
+                <div className="flex items-center gap-3">
+                  {runtime.icon ? (
+                    <Image
+                      src={runtime.icon}
+                      alt={runtime.shortName}
+                      width={24}
+                      height={24}
+                      className="rounded"
+                    />
+                  ) : (
+                    <div className="flex size-6 items-center justify-center rounded border bg-muted">
+                      <Terminal className="size-3.5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <span className="flex-1 text-sm font-medium">{runtime.name}</span>
+                  {runtime.id === selectedRuntime.id ? (
+                    <div className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400">
+                      <Check className="size-3" strokeWidth={2.5} />
+                      <span className="text-[11px] font-medium">Selected</span>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="text-xs leading-relaxed text-muted-foreground">
+                  <a
+                    href={runtime.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2"
+                  >
+                    Setup docs
+                  </a>
+                  {" — "}
+                  {runtime.description}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

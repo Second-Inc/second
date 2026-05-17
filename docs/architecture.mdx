@@ -1,0 +1,254 @@
+---
+title: "Architecture"
+description: "How Second's governed workspace architecture connects the browser, web app, worker, and database."
+---
+
+Second is built around a workspace-first data model and a streaming agent architecture. The browser talks to a Next.js API layer, which delegates agent work to a separate worker process. Access checks, review state, and source/data scoping live in the web layer before any worker output becomes trusted runtime state.
+
+## System overview
+
+```
+Browser (useChat)
+    │
+    ├─ POST /api/.../runs/[runId]/chat     → send message, get SSE stream back
+    ├─ GET  /api/.../runs/[runId]/chat     → load chat history
+    │
+    ▼
+┌──────────────────────────────────────────────┐
+│  Next.js (apps/web)                          │
+│                                              │
+│  API Route:                                  │
+│  ├─ validates workspace/app/run ownership    │
+│  ├─ atomically claims one active run stream  │
+│  ├─ connects to worker via HTTP              │
+│  ├─ createUIMessageStream()                  │
+│  │   └─ worker-bridge reads worker SSE       │
+│  │      and writes UIMessage chunks          │
+│  ├─ Redis resumable stream → activeStreamId  │
+│  ├─ Redis replay buffer → cursor attach      │
+│  └─ onFinish() → MongoDB (persistence)       │
+└──────────────────┬───────────────────────────┘
+                   │ HTTP (SSE stream)
+                   ▼
+┌──────────────────────────────────────────────┐
+│  Worker (apps/worker)                        │
+│                                              │
+│  Builder agent:                              │
+│  ├─ POST /sessions/:appId/messages           │
+│  │   → starts or continues agent session     │
+│  │   → returns SSE stream of SDK events      │
+│  ├─ GET  /sessions/:appId/status             │
+│  └─ DELETE /sessions/:appId                  │
+│                                              │
+│  App agents (async):                         │
+│  ├─ POST /sessions/:appId/agent-run          │
+│  │   → fire-and-forget background execution  │
+│  └─ GET  /sessions/:appId/agent-run/:rId/events │
+│      → SSE stream of agent messages          │
+│                                              │
+│  Claude Agent SDK:                           │
+│  └─ query() with streaming events            │
+└──────────────────────────────────────────────┘
+```
+
+## App agent and data flow
+
+In addition to the builder agent chat flow, apps can trigger agents and persist data:
+
+```
+App iframe (SDK hooks)
+    │
+    ├─ useAgent()      → postMessage → AppAgentBridge → /api/.../agent-runs → Worker
+    ├─ useCollection() → postMessage → AppDataBridge  → /api/.../data → MongoDB
+    │
+    ▼
+┌──────────────────────────────────────────────┐
+│  Live updates                                │
+│                                              │
+│  MongoDB Change Stream (app_data collection) │
+│    → SSE: GET /api/.../data/stream           │
+│      → AppDataBridge                         │
+│        → postMessage to iframe               │
+│          → SDK hooks re-render               │
+│                                              │
+│  Agent writes:                               │
+│  Worker → POST /api/internal/app-data-write  │
+│    → MongoDB → Change Stream → app sees it   │
+└──────────────────────────────────────────────┘
+```
+
+See [App Governance](/app-governance), [App Agents](/app-agents),
+[App Data](/app-data), and [Integrations](/integrations) for details.
+
+Draft and published runtime state are intentionally separate. Published app
+views read and write app data under the published app ID. Draft previews and
+draft app-agent runs use a draft data scope derived from the same app ID, so a
+builder can test data changes without mutating the currently published app data.
+
+## Services
+
+| Service | Role | Runs in Docker (dev) | Runs on host (dev) |
+| --- | --- | --- | --- |
+| **Web** | Next.js app — UI, API routes, persistence | | Yes |
+| **Worker** | Agent runner — executes Claude sessions | | Yes |
+| **MongoDB** | Data storage — users, workspaces, apps, runs | Yes | |
+| **Redis** | Resumable stream relay, run replay buffers, and workspace domain events | Yes | |
+
+## Collections
+
+| Collection | Purpose |
+| --- | --- |
+| `users` | Identity records (display name, email) |
+| `workspaces` | Workspace metadata |
+| `workspace_memberships` | Links users to workspaces with the `owner`, `admin`, or `member` role |
+| `workspace_teams` | Workspace-internal teams. Every workspace starts with a default `General` team |
+| `workspace_team_memberships` | Links users to workspace teams. New workspace members are added to `General` |
+| `workspace_invitations` | Workspace-scoped invitation records, external invitation IDs, requested role, and default team assignment |
+| `apps` | Workspace-owned application records, draft/review/published state, app collaborators, and team visibility |
+| `app_source_snapshots` | Large draft and published source-file snapshots, separated from hot app metadata paths |
+| `review_requests` | Workspace admin inbox items for app publication approval |
+| `agent_runs` | Builder agent runs: messages, `pending`/`streaming`/`completed` status, session state, active stream ID |
+| `integrations` | App-scoped integration grants, setup requirements, static/OAuth auth metadata, app/requester metadata, and integration state. See [Integrations](/integrations) |
+| `integration_credentials` | Static app-scoped API key/bot-token secret references and configured snapshots |
+| `oauth_provider_configs` | Workspace/provider OAuth client configs such as a customer-owned Google OAuth app; stores client ID and secret reference, not user tokens |
+| `connected_accounts` | Per-user OAuth account metadata and token secret references keyed by workspace, user, and provider config |
+| `app_agent_runs` | App-triggered agent runs (status, result, usage, triggering user). See [App Agents](/app-agents) |
+| `app_data` | App data documents, partitioned by `workspaceId` + scoped `appId` + `collection`. Published apps use the app ID; drafts use an internal draft scope. See [App Data](/app-data) |
+| `audit_events` | Append-only workspace audit records for governance, app/build lifecycle, integrations, app-agent/tool outcomes, app data writes, and safe authorization denials. See [Audit Logs](/audit-logs) |
+
+Every workspace-owned entity carries a `workspaceId` field and is always queried with it. Nested resources are also loaded with their parent IDs, for example `{ workspaceId, appId, runId }`, so a run from one app cannot be read through another app in the same workspace.
+
+## Request flow (standard routes)
+
+```
+Request → Middleware proxy → Route handler → Repository → Response
+```
+
+1. **Middleware proxy** — redirects unonboarded users, rejects unauthorized API calls.
+2. **Route handler** — calls `requireWorkspaceContext` to validate actor + workspace membership.
+3. **Permission check** — sensitive routes check a named workspace permission such as `integrations:manage` or `members:invite`.
+4. **Repository** — runs the database query, scoped by `workspaceId`.
+
+Cross-workspace access returns `404` — not `403` — so a caller learns nothing about resources in other workspaces. App routes add one more check after loading the workspace: owners and admins can see every app, app creators (`createdByUserId`) and app collaborators (`collaboratorUserIds`) can see their private drafts/review requests, and published apps are visible only to members of the selected teams.
+
+Nested routes repeat the same rule at each parent boundary. App files, chat runs, app-agent runs, data, agents config, and settings all first prove workspace membership, then load the app by `{ workspaceId, appId }`, then load child resources by the full parent scope.
+
+## Workspace realtime and settings reads
+
+Workspace chrome uses explicit Redis-backed domain events rather than request-scoped MongoDB change streams. Mutations publish small events such as `app.created`, `app.updated`, `review.updated`, `integration.changed`, `member.changed`, `run.stream_ready`, and `run.completed`. Events contain ids, status, timestamps, and invalidation scopes; they never carry prompts, source files, secrets, headers, cookies, or full database documents.
+
+`WorkspaceRealtimeProvider` owns one workspace event subscription around the workspace shell. Sidebar, app chrome, integration callouts, settings pages, and run-status indicators subscribe to that provider instead of each opening their own workspace event stream. Run chat streaming remains separate because it has stricter ordering and replay requirements.
+
+Settings pages render a cheap route shell first. Members, teams, invitations, and integrations then load through projected API read models. These API routes still authorize every request with `requireWorkspaceContext`; a short in-process dedupe window only shares duplicate reads for the same workspace, user, role, and membership version. Realtime invalidations are hints, not authorization decisions.
+
+## App publishing and review
+
+New apps start as `draft`. A draft is visible only to its app creator, explicit app collaborators, and workspace admins and owners. Creator and collaborator are app-level access categories, not workspace roles. When the builder is ready to publish, the requester selects one or more workspace teams:
+
+1. In local `none` auth mode, publishing has no approval step and only marks the app as published.
+2. In external/on-prem mode, members create a pending app review request.
+3. Admins and owners see pending requests in the review inbox, inspect the target teams, and review integration requirements.
+4. Approval promotes the reviewed draft snapshot to the published snapshot and
+   shares that published version with the selected teams. If any requested
+   integration still needs configuration, approval is blocked until an admin or
+   owner configures it.
+
+Owners and admins can self-publish after reviewing the app, but that path still records an approved review request for auditability.
+
+If the requester changes the app after creating a pending review — for example
+by sending another builder message or editing the approved agent configuration —
+the pending review is automatically closed as superseded and the app moves back
+to `draft`. Stale review approvals are rejected, and the requester must send
+the updated app for review again.
+
+Published apps keep a separate published source snapshot. Builders and
+agent-configuration edits mutate the draft source snapshot only. Current
+snapshots are stored in `app_source_snapshots`; the `apps` document keeps
+metadata pointers, hashes, file counts, and sizes so navigation and access
+checks do not load large file maps. Legacy embedded `sourceFiles` and
+`publishedSourceFiles` are still read as a fallback for old apps until they are
+saved or migrated. When an app creator or collaborator edits an already
+published app, the app keeps serving the last published snapshot to team
+viewers while the builder works on a draft. Publishing locally or approving a
+review promotes the current draft snapshot into the published snapshot. See
+[App Governance](/app-governance) for the full role and review flow.
+
+`agents.json` is a protected draft artifact. The builder and file tools may
+edit it, but live agent runtime permissions are trusted only after the platform
+records an approval for the exact canonical JSON hash. Any later `agents.json`
+change clears that draft approval. Draft app-agent runs can start from the
+draft file so builders can test the in-progress app, but custom HTTP tools and
+agent data tools require the current draft hash to match the stored approval
+before they can touch live integrations or app data. Publishing and review
+approval promote both the source snapshot and the approved `agents.json`
+payload into the published snapshot.
+
+Integration domains and OAuth metadata are approved at runtime, not trusted from
+model output. A custom tool must exist in the approved `agents.json` payload,
+resolve an app-scoped integration grant by `workspaceId`, `appId`, `domain`, and
+`keySlug`, and pass the tool-execute domain/protocol/IP guards before any
+credential is injected. OAuth tools add one more trusted lookup: the web route
+loads `app_agent_runs` by `workspaceId + appId + runId` and resolves the
+triggering user from that server-created row before reading a connected account.
+
+## Request flow (agent chat)
+
+```
+POST /api/.../runs/[runId]/chat
+  → authenticate + load app by workspaceId/appId
+  → load run by workspaceId/appId/runId
+  → atomically mark run as streaming
+  → createUIMessageStream({ execute, onFinish })
+  → register Redis resumable stream
+  → capture Redis replay chunks for cursor attach
+  → worker-bridge connects to worker SSE
+  → translates Claude SDK events → AI SDK UIMessageStream
+  → streams to browser via SSE
+  → onFinish persists messages + clears active stream in MongoDB
+```
+
+New runs start as `pending`. The first chat POST that claims the run starts the worker request. If a route remount, back/forward navigation, or second tab posts the same pending run while the first stream is initializing, the duplicate POST returns an empty successful stream and does not start another worker session. Completed runs can only be claimed again when the posted message list is longer than the persisted list, so stale browser history requests cannot replace a full conversation with the original first prompt.
+
+See [Agent System](/agent-system), [Worker](/worker), and [Streaming](/streaming) for details.
+
+## Indexes
+
+Created automatically on startup:
+
+| Collection | Index | Notes |
+| --- | --- | --- |
+| `apps` | `{ workspaceId: 1, createdAt: -1 }` | List apps by workspace, newest first |
+| `apps` | `{ workspaceId: 1, publishStatus: 1, createdAt: -1 }` | List draft/review/published app groups |
+| `apps` | `{ workspaceId: 1, teamIds: 1, publishStatus: 1 }` | Enforce team-scoped published app lists |
+| `apps` | `{ workspaceId: 1, collaboratorUserIds: 1 }` | List private app collaboration access |
+| `app_source_snapshots` | `{ workspaceId: 1, appId: 1, kind: 1 }` | Unique — one draft and one published source snapshot per app |
+| `app_source_snapshots` | `{ workspaceId: 1, appId: 1, updatedAt: -1 }` | Find recent source snapshot metadata |
+| `review_requests` | `{ workspaceId: 1, status: 1, updatedAt: -1 }` | Admin review inbox |
+| `review_requests` | `{ workspaceId: 1, resourceType: 1, resourceId: 1, status: 1 }` | Find pending review for a resource |
+| `workspaces` | `{ slug: 1 }` | Unique — one URL slug per workspace |
+| `workspaces` | `{ externalOrganizationProvider: 1, externalOrganizationId: 1 }` | Sparse — map an external auth organization back to a workspace |
+| `workspace_memberships` | `{ workspaceId: 1, userId: 1 }` | Unique — one membership per user per workspace |
+| `workspace_memberships` | `{ userId: 1, workspaceId: 1 }` | Fast membership lookup from actor to workspace |
+| `workspace_memberships` | `{ workspaceId: 1, createdAt: 1 }` | Projected settings member lists |
+| `workspace_teams` | `{ workspaceId: 1, slug: 1 }` | Unique — one team slug per workspace |
+| `workspace_teams` | `{ workspaceId: 1, isDefault: 1 }` | Find the default team |
+| `workspace_teams` | `{ workspaceId: 1, isDefault: -1, name: 1 }` | Projected settings team lists |
+| `workspace_team_memberships` | `{ workspaceId: 1, teamId: 1, userId: 1 }` | Unique — one team membership per user/team/workspace |
+| `workspace_team_memberships` | `{ workspaceId: 1, userId: 1 }` | List a user's teams inside a workspace |
+| `workspace_invitations` | `{ workspaceId: 1, emailNormalized: 1, status: 1 }` | Find duplicate pending invitations |
+| `workspace_invitations` | `{ externalInvitationId: 1 }` | Sparse — reconcile external invitation status |
+| `users` | `{ emailNormalized: 1 }` | Unique — prevents duplicate accounts |
+| `integrations` | `{ workspaceId: 1, appId: 1, domain: 1, keySlug: 1 }` | Unique — one app-scoped integration grant per app/provider/key |
+| `integrations` | `{ workspaceId: 1, appId: 1, updatedAt: -1 }` | Review, publish, and app-state integration checks |
+| `integrations` | `{ workspaceId: 1, domain: 1 }` | Provider filtering and diagnostics |
+| `integration_credentials` | `{ workspaceId: 1, domain: 1, capabilityFingerprint: 1 }` | Credential lookup for compatible app grants |
+| `oauth_provider_configs` | `{ workspaceId: 1, providerKey: 1 }` | Unique — one OAuth client config per workspace/provider key |
+| `oauth_provider_configs` | `{ workspaceId: 1, updatedAt: -1 }` | Settings provider config lists |
+| `connected_accounts` | `{ workspaceId: 1, userId: 1, providerConfigId: 1 }` | Unique — one connected account per user/provider config |
+| `connected_accounts` | `{ workspaceId: 1, providerKey: 1, userId: 1 }` | Provider/user connection status lookups |
+| `connected_accounts` | `{ workspaceId: 1, userId: 1, updatedAt: -1 }` | Current-user settings projections |
+| `app_agent_runs` | `{ appId: 1, createdAt: -1 }` | List runs by app, newest first |
+| `app_agent_runs` | `{ workspaceId: 1, status: 1 }` | Query runs by workspace and status |
+| `agent_runs` | `{ workspaceId: 1, appId: 1, createdAt: -1 }` | List builder runs by app, newest first |
+| `app_data` | `{ workspaceId: 1, appId: 1, collection: 1, updatedAt: -1 }` | Primary query + Change Stream filter |
+| `app_data` | `{ workspaceId: 1, appId: 1, collection: 1, _id: 1 }` | Single doc lookups |

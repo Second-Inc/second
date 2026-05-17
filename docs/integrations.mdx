@@ -1,0 +1,478 @@
+---
+title: "Integrations"
+description: "How Second keeps static secrets and OAuth tokens under server control while app agents use approved custom HTTP tools."
+---
+
+Integrations connect app agents to external services such as Linear, HubSpot,
+Slack, Gmail, Calendar, and other APIs without exposing credentials to the
+agent runtime. Second supports two credential shapes:
+
+- an **integration grant** records what one app asked to use, including
+  provider domain, key slug, auth mode, permission groups, setup steps, app, and
+  requester metadata
+- a **static credential** stores app-scoped API keys, bot tokens, or private app
+  tokens for static-secret grants
+- an **OAuth provider config** stores one workspace/provider OAuth client, such
+  as a customer-owned Google OAuth app
+- a **connected account** stores one user's OAuth connection metadata and token
+  secret references for one provider config
+
+A configured credential for one app never silently powers another app. If
+Roadmap Tracker asks for Linear read access and Sprint Writer asks for Linear
+write access, those are separate grants and separate setup decisions even
+though both use `linear.app`.
+
+OAuth adds a second boundary: a provider client configured by an admin does not
+grant access to any user's data by itself. Each user connects their own account,
+and runtime resolves the account from the server-created app-agent run record.
+
+## How it works
+
+Static-secret custom tools:
+
+```
+Agent calls custom tool
+  → Worker MCP tool handler
+    → POST /api/internal/tool-execute
+      → Verify tool appears in approved agents.json payload
+      → Resolve grant by workspaceId + appId + domain + keySlug
+      → Follow that grant's credential binding
+      → Read named secrets from Vault or local development storage
+      → Inject named secrets and tool input into endpoint templates
+      → Validate hostname, protocol, and resolved IPs
+      → Execute HTTP request to external API
+      → Return response to agent
+```
+
+If the current app grant is missing, unconnected, not configured, or missing a
+required secret, the endpoint returns a random entry from the tool's `mockData`
+instead of using another app's credential.
+
+OAuth custom tools use the same approved `agents.json` boundary, but the
+credential lookup is per triggering user:
+
+```
+Agent calls OAuth custom tool
+  → Worker posts toolName, approved toolSpec, toolInput, runId
+    → POST /api/internal/tool-execute
+      → Verify tool appears in approved agents.json payload
+      → Resolve grant by workspaceId + appId + domain + keySlug
+      → Verify grant auth metadata matches the approved tool
+      → Load app_agent_runs by workspaceId + appId + runId
+      → Resolve triggering user from the run record
+      → Load connected_account by workspaceId + userId + providerConfigId
+      → Check scopes and revoked state
+      → Refresh access token on demand if missing or near expiry
+      → Inject Authorization: Bearer <access token> server-side
+      → Validate hostname, protocol, and resolved IPs
+      → Execute HTTP request to external API
+      → Return bounded response to agent
+```
+
+There is no separate OAuth refresh service, cron, sidecar, or Kubernetes job.
+Refresh happens synchronously inside the existing Next.js API path when a tool
+needs an access token. The "refresh server" is the provider token endpoint.
+
+## Data model
+
+`integrations` stores app grants:
+
+```ts
+type IntegrationDocument = {
+  _id: string;
+  workspaceId: string;
+  appId: string;
+  appName: string;
+  name: string;              // "Linear"
+  domain: string;            // "linear.app"
+  keySlug: string;           // "default", "write-access", etc.
+  keyName: string;           // "Linear read key for Roadmap Tracker"
+  capabilityLabel: string;   // "Linear read"
+  auth:
+    | { type: "static_secret" }
+    | {
+        type: "oauth2";
+        providerKey: string;
+        identity: "triggering_user";
+        authorizationUrl: string;
+        tokenUrl: string;
+        scopes: string[];
+        tokenAuthMethod: "client_secret_post" | "client_secret_basic" | "none";
+        authorizationParams?: Record<string, string>;
+        tokenParams?: Record<string, string>;
+      };
+  accessLevel: "read" | "write" | "delete_admin" | "mixed" | "unknown";
+  credentialBinding: { mode: "none" } | { mode: "dedicated"; credentialId: string };
+  permissionGroups: IntegrationPermissionGroup[];
+  secretRequirements: IntegrationSecretRequirement[];
+  setupInstructions: IntegrationSetupInstructions | null;
+  requestedByUserId: string;
+  requestedByUserName: string;
+  requestedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+```
+
+`integration_credentials` stores secret material and configured snapshots:
+
+```ts
+type IntegrationCredentialDocument = {
+  _id: string;
+  workspaceId: string;
+  domain: string;
+  credentialName: string;
+  configured: boolean;
+  vaultSecretIds: Record<string, string>;
+  localSecrets: Record<string, string>;
+  configuredPermissionGroups: IntegrationPermissionGroup[];
+  configuredSecrets: string[];
+  capabilityFingerprint: string;
+  linkedGrantIds: string[];
+  createdAt: Date;
+  updatedAt: Date;
+};
+```
+
+Read models expose configured secret names, never secret values or Vault IDs.
+
+OAuth provider configs store workspace/provider OAuth client metadata:
+
+```ts
+type OAuthProviderConfigDocument = {
+  _id: string;
+  workspaceId: string;
+  providerKey: string;              // "google", "microsoft", "zoom", etc.
+  displayName: string;
+  authorizationUrl: string;
+  tokenUrl: string;
+  tokenAuthMethod: "client_secret_post" | "client_secret_basic" | "none";
+  defaultAuthorizationParams?: Record<string, string>;
+  defaultTokenParams?: Record<string, string>;
+  clientId: string | null;
+  clientSecretRef: string | null;   // WorkOS Vault or local encrypted ref
+  configured: boolean;
+  configuredAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+```
+
+Connected accounts store per-user OAuth state:
+
+```ts
+type ConnectedAccountDocument = {
+  _id: string;
+  workspaceId: string;
+  userId: string;
+  providerConfigId: string;
+  providerKey: string;
+  source: "customer_oauth" | "local_direct" | "hosted_broker";
+  externalSubject?: string | null;
+  accountEmail?: string | null;
+  accountName?: string | null;
+  grantedScopes: string[];
+  refreshTokenRef?: string | null;  // WorkOS Vault or local encrypted ref
+  accessTokenRef?: string | null;   // optional short-lived cache
+  accessTokenExpiresAt?: Date | null;
+  lastRefreshAt?: Date | null;
+  lastRefreshError?: string | null;
+  revokedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+```
+
+Provider keys are workspace-local grouping keys, not a hardcoded registry. The
+builder discovers official OAuth URLs and scopes from provider docs and writes
+them into `agents.json` and `integration-setup.json`; runtime safety comes from
+admin approval plus URL/scope invariants.
+
+## integration-setup.json
+
+The builder creates `integration-setup.json` only when this app needs setup.
+The same provider can appear in many apps because the grant identity includes
+`appId` and `keySlug`.
+
+```json
+{
+  "integrations": [
+    {
+      "name": "Slack",
+      "domain": "slack.com",
+      "keySlug": "default",
+      "keyName": "Slack post key for this app",
+      "capabilityLabel": "Slack post",
+      "why": "This app sends Slack messages.",
+      "permissionGroups": [
+        {
+          "name": "Write",
+          "description": "Allows the app to post messages into selected Slack channels.",
+          "permissions": ["chat:write"]
+        }
+      ],
+      "secrets": [
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "label": "Slack bot token",
+          "description": "Paste the Bot User OAuth Token that starts with xoxb-.",
+          "required": true
+        }
+      ],
+      "setupInstructions": {
+        "overview": "Create or update a Slack app, grant the bot scope, install it to the workspace, and paste the bot token in Second.",
+        "steps": [
+          {
+            "title": "Open Slack apps",
+            "description": "Go to [Slack | API apps](https://api.slack.com/apps) and create a new app or open the existing app you want Second to use.",
+            "url": "https://api.slack.com/apps"
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+When the builder calls `present_integration_setup`, the worker reads this file
+and posts it to `/api/internal/integration-requirements`. That sync is
+idempotent for the current app: listed grants are upserted, and grants no
+longer present for the app are removed.
+
+OAuth setup items use the same outer shape but declare `auth.type = "oauth2"`
+instead of static secrets:
+
+```json
+{
+  "integrations": [
+    {
+      "name": "Google Gmail",
+      "domain": "googleapis.com",
+      "keySlug": "gmail-read",
+      "keyName": "Google OAuth client for this app",
+      "capabilityLabel": "Gmail metadata search",
+      "why": "This app searches the triggering user's Gmail metadata.",
+      "auth": {
+        "type": "oauth2",
+        "providerKey": "google",
+        "identity": "triggering_user",
+        "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+        "tokenUrl": "https://oauth2.googleapis.com/token",
+        "scopes": ["https://www.googleapis.com/auth/gmail.metadata"],
+        "tokenAuthMethod": "client_secret_post",
+        "authorizationParams": {
+          "access_type": "offline",
+          "prompt": "consent"
+        }
+      },
+      "permissionGroups": [
+        {
+          "name": "Read-only",
+          "description": "Allows the app to search Gmail metadata for the connected user.",
+          "permissions": ["https://www.googleapis.com/auth/gmail.metadata"]
+        }
+      ],
+      "setupInstructions": {
+        "overview": "Create a customer-owned OAuth app, add Second's redirect URI, configure the client ID/secret in Second, then each user connects their own account.",
+        "steps": [
+          {
+            "title": "Create OAuth client",
+            "description": "Create a provider OAuth app with the listed scopes. For Google Workspace enterprise deployments, use an Internal app when appropriate."
+          },
+          {
+            "title": "Add redirect URI",
+            "description": "Copy the redirect URI shown in Second's integration settings into the provider OAuth app."
+          },
+          {
+            "title": "Configure and connect",
+            "description": "Paste the client ID and client secret into Second, then connect your own account."
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+For local OAuth smoke tests, run the dev server without portless:
+
+```bash
+SECOND_DEV_PORTLESS=0 PORT=4198 npm run dev
+```
+
+Use the resulting `http://localhost:<port>` app URL and register the exact
+redirect URI shown in Second, such as
+`http://localhost:4198/api/oauth/callback`. Portless `*.second.localhost` URLs
+are useful for normal development, but providers such as Google do not treat
+them as loopback OAuth redirect URIs. The packaged `npx --yes @second-inc/cli` local runtime
+should follow the same plain loopback shape for OAuth-capable local runs;
+portless is only a `npm run dev` convenience.
+
+## agents.json custom tools
+
+Custom tools reference the same app key with `integration.keySlug`. If omitted,
+Second normalizes the slug to `"default"`.
+
+```json
+{
+  "type": "custom",
+  "name": "linear_search_issues",
+  "integration": {
+    "name": "Linear",
+    "domain": "linear.app",
+    "keySlug": "default"
+  },
+  "endpoint": {
+    "method": "POST",
+    "url": "https://api.linear.app/graphql",
+    "headers": {
+      "Authorization": "{{secrets.LINEAR_API_KEY}}"
+    }
+  },
+  "mockData": [{ "issues": [] }]
+}
+```
+
+`present_agents` validates that custom tools include integration metadata,
+endpoint method, and endpoint URL. Static-secret tools include a named
+`{{secrets.NAME}}` placeholder, OAuth tools include auth metadata, and public
+unauthenticated tools may omit both when the provider's official API requires
+no credentials. Draft and published runtime calls then verify the requested tool
+still appears in the approved `agents.json` payload before credentials are
+injected or, for public tools, before the bounded public request is executed.
+
+OAuth custom tools are still custom HTTP tools. They declare `integration.auth`
+and omit `Authorization` headers:
+
+```json
+{
+  "type": "custom",
+  "name": "gmail_search_messages",
+  "integration": {
+    "name": "Google Gmail",
+    "domain": "googleapis.com",
+    "keySlug": "gmail-read",
+    "auth": {
+      "type": "oauth2",
+      "providerKey": "google",
+      "identity": "triggering_user",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": ["https://www.googleapis.com/auth/gmail.metadata"],
+      "tokenAuthMethod": "client_secret_post",
+      "authorizationParams": {
+        "access_type": "offline",
+        "prompt": "consent"
+      }
+    }
+  },
+  "endpoint": {
+    "method": "GET",
+    "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
+    "queryParams": {
+      "q": "{{query}}",
+      "maxResults": "10"
+    }
+  },
+  "mockData": [{ "messages": [] }]
+}
+```
+
+OAuth tools must not include `{{oauth.access_token}}`, `{{access_token}}`,
+`{{token}}`, `{{secrets.*}}`, or an explicit `Authorization` header. The broker
+injects the bearer token after resolving the triggering user from `runId`.
+
+## Setup state
+
+A grant needs setup when:
+
+- no credential is bound to the current app grant
+- the bound credential is not configured
+- a requested permission/scope is not present in configured snapshots
+- a requested required secret name is not present in configured snapshots
+- an OAuth provider config shell exists but has no client ID/secret
+- the current user has not connected the required OAuth account
+- the connected OAuth account is revoked or missing required scopes
+
+Review approval and direct publish check only the current app's grants. A
+different app's configured provider key does not clear the gate.
+
+## Secret management
+
+| Mode | Storage | When |
+| --- | --- | --- |
+| WorkOS Vault | `vaultSecretIds[name]` in `integration_credentials` | Production deployments with WorkOS configured |
+| Local secret | `localSecrets[name]` in `integration_credentials` | Local development without WorkOS |
+| OAuth secret store | `vault:<id>` or `local:v1:<ciphertext>` refs in provider/account rows | OAuth client secrets, refresh tokens, and optional short-lived access-token cache |
+
+Secrets are injected by replacing named placeholders such as
+`{{secrets.SLACK_BOT_TOKEN}}` in URL, headers, query params, and request body.
+Tool input fields can also be used as placeholders, such as `{{query}}`.
+
+OAuth client secrets and refresh tokens use `apps/web/src/lib/oauth/secret-store.ts`.
+When WorkOS Vault is configured, values go to Vault. In local development, the
+adapter encrypts values with `SECOND_TOKEN_ENCRYPTION_KEY` or a generated
+gitignored key under `.second-dev/`. In production without WorkOS Vault, the
+local adapter fails closed unless `SECOND_TOKEN_ENCRYPTION_KEY` is configured.
+
+If the agent provides tool input but the endpoint spec does not use any
+non-secret placeholders, execution fails. This prevents custom tools from
+accidentally turning a lookup into a broad static API call.
+
+## Tool execution constraints
+
+- HTTPS only, except `localhost` during development
+- final URL hostname must match `integration.domain` or one of its subdomains
+- requested tool must be present in the approved app `agents.json` payload
+- runtime grant lookup includes `workspaceId`, `appId`, `domain`, and `keySlug`
+- OAuth runtime additionally requires `runId`, loads the run by `workspaceId +
+  appId + runId`, and resolves the triggering user from that server-created row
+- OAuth provider config and connected account lookups include `workspaceId`,
+  and connected account lookup also includes `userId`
+- OAuth authorization and token URLs must be HTTPS and resolve outside private
+  network ranges before Second redirects or exchanges tokens
+- external requests to private/internal IP ranges are rejected
+- 30-second external request timeout
+- 1MB response limit
+- mock data is returned for missing or unconfigured integrations, including
+  OAuth missing-account, revoked-account, missing-scope, or provider-config cases
+
+## API routes
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/workspaces/[wId]/integrations` | Projected settings read model grouped by app/key. No secret values or Vault IDs |
+| `POST` | `/api/workspaces/[wId]/integrations` | Rejected for app-blind creates; grants come from app setup sync |
+| `PATCH` | `/api/workspaces/[wId]/integrations/[id]` | Configure or rotate the credential for one app grant |
+| `POST` | `/api/workspaces/[wId]/integrations/[id]` | Reset saved credential state for one app grant |
+| `DELETE` | `/api/workspaces/[wId]/integrations/[id]` | Delete one app grant and its dedicated credential |
+| `POST` | `/api/internal/integration-requirements` | Sync app-scoped grant requirements from `integration-setup.json` |
+| `POST` | `/api/internal/workspace-integrations` | Return current app grant metadata to the builder, without secret values |
+| `POST` | `/api/internal/tool-execute` | Execute a custom HTTP tool with app-grant credential resolution |
+| `PATCH` | `/api/workspaces/[wId]/oauth-provider-configs/[providerConfigId]` | Configure or rotate a workspace OAuth client |
+| `GET` | `/api/workspaces/[wId]/oauth/[providerConfigId]/start` | Start current-user OAuth consent for one app grant |
+| `GET` | `/api/oauth/callback` | Generic OAuth callback that exchanges code, stores tokens, and redirects back |
+| `DELETE` | `/api/workspaces/[wId]/connected-accounts/[accountId]` | Revoke the current user's connected account |
+
+Workspace realtime publishes compact `integration.changed` invalidation events
+after successful mutations. Events may include IDs and key slug metadata, but
+never secrets, prompts, source files, headers, cookies, or full documents.
+
+## Key files
+
+| File | Role |
+| --- | --- |
+| `apps/web/src/lib/db/types.ts` | Grant and credential document types |
+| `apps/web/src/lib/db/repositories/integrations.ts` | Grant sync, credential configure/reset/delete, setup checks |
+| `apps/web/src/lib/db/repositories/oauth-provider-configs.ts` | OAuth provider config shell/configure helpers |
+| `apps/web/src/lib/db/repositories/connected-accounts.ts` | Connected-account lookup, scope checks, token cache, revoke state |
+| `apps/web/src/lib/oauth/secret-store.ts` | WorkOS/local encrypted OAuth secret references |
+| `apps/web/src/lib/oauth/token-exchange.ts` | Code exchange and refresh-token request helper |
+| `apps/web/src/lib/oauth/token-broker.ts` | On-demand access-token cache/refresh broker |
+| `apps/web/src/app/api/internal/tool-execute/route.ts` | Runtime secret injection, approval check, domain/IP guards |
+| `apps/web/src/app/api/internal/integration-requirements/route.ts` | Worker-to-web setup sync |
+| `apps/web/src/app/api/workspaces/[wId]/integrations/[id]/route.ts` | Configure, reset, and delete one app grant |
+| `apps/web/src/app/api/workspaces/[wId]/oauth/[providerConfigId]/start/route.ts` | OAuth consent start |
+| `apps/web/src/app/api/oauth/callback/route.ts` | OAuth callback |
+| `apps/web/src/app/w/[wId]/settings/integrations/integrations-client.tsx` | App/key settings UI |
+| `apps/worker/src/runner.ts` | Builder integration tools and custom app tool bridge |

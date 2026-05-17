@@ -1,0 +1,167 @@
+---
+title: "App Preview"
+description: "How Second builds, previews, and persists Vite artifacts using done_building."
+---
+
+Second's app preview system renders compiled artifacts in a sandboxed iframe. The agent edits a Vite + React + TypeScript workspace, calls `done_building`, the worker runs a real build, and the frontend renders `dist/index.html` plus built assets.
+
+No Sandpack. No in-browser bundling.
+
+## TLDR
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                         BUILD + PREVIEW LIFECYCLE                            │
+│                                                                               │
+│  1. WRITE        Agent edits Vite project files in workspace                 │
+│                 (src/*, config files, etc.)                                  │
+│                                                                               │
+│  2. BUILD        Agent calls done_building tool                              │
+│                 → Worker awaits background dep warmup (started at scaffold) │
+│                 → Worker installs deps if still needed                       │
+│                 → Worker runs npm run typecheck + npm run build in parallel │
+│                 → Build output must include dist/index.html                  │
+│                                                                               │
+│  3. STREAM END   Bridge fetches workspace snapshot from worker               │
+│                 → Chat API persists snapshot to app_source_snapshots         │
+│                                                                               │
+│  4. PREVIEW      Frontend requests live files via web API                    │
+│                 → web API uses worker files when available                   │
+│                 → falls back to Mongo source snapshot after sandbox churn     │
+│                 → renders compiled artifact in iframe                         │
+│                                                                               │
+│  5. RESTORE      On cold start / recycled worker workspace                   │
+│                 source snapshot is restored from Mongo into workspace         │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Storage model
+
+| What | Where | Format |
+| --- | --- | --- |
+| Working copy during agent execution | Worker filesystem (`/tmp/second-workspaces/{appId}` by default) | Regular project files |
+| Durable snapshot | MongoDB `app_source_snapshots` | `Record<string, string>` (source + `dist/**` text files) |
+| Snapshot metadata | MongoDB `apps` | Snapshot IDs, hashes, file counts, and byte sizes |
+| Chat messages and run metadata | MongoDB `agent_runs` | `UIMessage[]` and run fields |
+| Preview runtime | Browser iframe | `srcDoc` HTML built from current files returned by the web API |
+
+`app_source_snapshots` is the durable restore snapshot. Live preview/file
+explorer reads prefer the worker workspace via `/sessions/:appId/files`, then
+fall back to the persisted Mongo snapshot when the worker workspace is missing
+or empty after sandbox churn. The `apps` document keeps compact metadata so app
+lists, navigation, and access checks do not load source files. Legacy embedded
+`apps.sourceFiles` snapshots remain readable until the app is saved or migrated.
+
+## Workspace template
+
+New workspaces are scaffolded with a Vite + React + TS + Tailwind + Shadcn starter.
+
+Template includes:
+
+- `package.json` (`dev`, `typecheck`, `build`, `preview`)
+- `index.html`
+- `vite.config.ts`
+- `tailwind.config.ts`
+- `postcss.config.js`
+- `tsconfig*.json`
+- `src/main.tsx`, `src/App.tsx`, `src/index.css`
+- `src/components/ui/button.tsx`
+- `src/lib/utils.ts`
+- `src/lib/second-sdk.ts` — the app SDK with `useAgent`, `useAgentList`, `useCollection`, and `useDoc` hooks. See [App Agents](/app-agents) and [App Data](/app-data)
+- `components.json`
+
+If `sourceFiles` are provided during scaffold (restore path), those files are written instead of the template.
+
+## Build step (`done_building`)
+
+The `mcp__second__done_building` tool is the build gate.
+
+Behavior:
+
+1. Validates required Vite files exist.
+2. Awaits the background dependency warmup started at scaffold time (if any).
+3. Installs dependencies only when still needed (`node_modules` missing, lock drift, or a declared package is absent from `node_modules`).
+4. Runs `npm run typecheck` and `npm run build` in parallel (when both scripts are defined in `package.json`). Scripts are honored as-is, so swapping bundlers or type-checkers "just works".
+5. Requires `dist/index.html` to exist.
+6. Collects workspace snapshot (including `dist/**`).
+7. Returns structured success payload (`status: "complete"`) or explicit failure text.
+
+If install/build fails, the agent receives errors (typecheck and build errors reported separately) and must fix/retry.
+
+### Dependency warmup
+
+Workspaces start `npm install --include=dev` in the background as soon as they are scaffolded (see `apps/worker/src/dep-warmup.ts`). The explicit dev-dependency include matters in production workers because npm otherwise follows `NODE_ENV=production` and may omit Vite, TypeScript, PostCSS plugins, and type packages required by the generated app build. By the time `done_building` is called, deps are usually already installed, so the build step is dominated by the (parallel) typecheck + bundle rather than a cold install. Warmup is a no-op when `node_modules` already exists (warm worker), and `done_building` performs the same install only if the dependency tree is incomplete or stale.
+
+## Snapshot guardrails
+
+Snapshot persistence is deliberately bounded:
+
+- Per-file cap: `512KB`
+- Warning threshold: `8MB` total snapshot size
+- Hard fail threshold: `12MB` total snapshot size
+- No silent truncation, no partial snapshot writes
+
+If limits are exceeded, `done_building` returns an explicit error and preview persistence does not advance.
+
+## Preview rendering
+
+`AppPreview` resolves rendering in this order:
+
+1. Artifact mode (`dist/index.html` + `dist/*` assets)
+2. Legacy ArrowJS fallback (`main.js` / `main.ts`) for older snapshots
+
+Artifact mode rewrites built local asset references to iframe-safe inlined/data URLs so the compiled app runs directly inside `srcDoc`.
+
+Iframe is sandboxed and intentionally omits `allow-same-origin`, so the preview
+does not regain same-origin privileges with the parent app. Parent-window
+bridges validate `event.source` against the expected iframe window before
+handling SDK messages.
+
+Workspace owners and admins can tune generated-app runtime capabilities in
+Settings → Runtime settings. The default policy preserves the normal app
+experience: scripts run, clipboard writes are available for user-triggered copy
+actions, and external links can open new tabs. Hardening those toggles removes
+the corresponding iframe `sandbox` or `allow` capability without changing the
+tenant boundary or granting same-origin access.
+
+## done_building success detection
+
+Build-complete UI transitions are triggered only when `done_building` returns a successful structured payload (`status: "complete"`).
+
+Failed tool outputs no longer flip the workspace into a false "ready" state.
+
+## Persistence and conditional hydration
+
+On each user message:
+
+1. Web checks worker status (`/sessions/:appId/status`).
+2. If restore is **not** needed, web sends prompt without `sourceFiles`.
+3. If restore **is** needed, web loads the latest draft source snapshot from Mongo and sends it as `sourceFiles` to the worker.
+4. Worker scaffolds from `sourceFiles` only when workspace is empty.
+
+This avoids reloading large snapshots on every turn while preserving recovery after worker/session churn.
+
+## Live reads vs durable restore
+
+- Live preview/file explorer reads: web API calls worker `GET /sessions/:appId/files` using `WORKER_URL` when live files are available, merging them over the persisted snapshot so live source can update without hiding the last compiled `dist/**` artifact.
+- Idle/cold fallback: if the worker is unavailable or returns an empty workspace, the web API returns the MongoDB source snapshot so the compiled app and file explorer remain visible after the 15-minute sandbox TTL.
+- Durable recovery after worker loss: chat restore path loads the MongoDB source snapshot and rehydrates the workspace.
+- Result: UI shows current worker filesystem when available; Mongo snapshot is used both to keep the idle preview visible and to recover state after churn.
+
+## Key files
+
+| File | Role |
+| --- | --- |
+| `apps/worker/src/workspace-template.ts` | Vite + TS + Shadcn scaffold |
+| `apps/worker/src/runner.ts` | `done_building` implementation, snapshot limits, workspace collection |
+| `apps/worker/src/dep-warmup.ts` | background `npm install` started at scaffold time |
+| `apps/worker/src/index.ts` | scaffold logic, status/files endpoints, warmup trigger |
+| `apps/web/src/components/app-preview.tsx` | artifact-first iframe rendering + legacy fallback |
+| `apps/web/src/components/app-chat.tsx` | successful `done_building` detection in stream UI |
+| `apps/web/src/components/app-workspace.tsx` | initial preview visibility logic |
+| `apps/web/src/app/w/[workspaceId]/settings/runtime-settings` | workspace runtime capability settings for generated app iframes |
+| `apps/web/src/lib/agent/worker-bridge.ts` | bridge stream handling and build-complete gating |
+| `apps/web/src/app/api/.../chat/route.ts` | conditional hydration + snapshot persistence |
+| `apps/web/src/lib/db/repositories/app-source-snapshots.ts` | source snapshot storage, hashes, file counts, and size summaries |
+| `apps/web/src/lib/db/repositories/apps.ts` | app metadata, legacy fallback, and snapshot promotion |
+| `scripts/migrate-app-source-snapshots.mjs` | optional operational migration from embedded legacy source maps into snapshot documents |

@@ -1,0 +1,55 @@
+---
+title: "Authentication"
+description: "Choose between local no-auth mode and an external auth provider."
+---
+
+Second supports two authentication modes, controlled by the `SECOND_AUTH_MODE` environment variable.
+
+## `none` mode (local development)
+
+Designed for local development and trusted internal networks. Identity is managed entirely within Second.
+
+How it works:
+
+1. User fills out `/onboarding/identity` (display name + email).
+2. A local signed session cookie is issued.
+3. Users without workspace memberships are redirected to `/onboarding/workspace`.
+4. Cookie signatures use an auto-generated process secret — no external config needed.
+
+<Warning>Do not expose `none` mode to the public internet. There is no real authentication — anyone who can reach the server can create an identity.</Warning>
+
+Local mode does not send real workspace invitations. The members UI still shows
+roles and governance state, but invitation actions explain that external
+authentication is required. For local multi-user testing, seed a second user into
+an existing workspace with `scripts/local-workspace-member.mjs`; the seeded user
+is added to the workspace's default `General` team.
+
+## `external` mode (production)
+
+For internet-facing deployments. Second delegates authentication to your own provider.
+
+Your provider must:
+
+- Resolve the authenticated actor on each request
+- Return a stable user identifier
+- Map the identity into Second's `users` and membership model
+- Sync workspace memberships and roles into Second's `workspace_memberships`
+- Send and reconcile workspace invitations when collaboration is enabled
+
+If `external` mode is set but no provider extension is present, the app fails fast on startup — you'll see a clear error rather than silent misbehavior.
+
+External providers should map each workspace to the provider's organization or
+tenant concept. Accepted invitations must upsert the Second user, upsert the
+workspace membership with a validated role (`owner`, `admin`, or `member`), and
+ensure the user belongs to the workspace's default `General` team.
+
+## How auth mode affects authorization
+
+Authentication mode only changes **where identity comes from**. The authorization flow is the same regardless:
+
+1. Resolve actor (from session cookie or external provider)
+2. Verify workspace membership
+3. Check any route-level workspace permission
+4. Query scoped by `workspaceId`
+
+See [Guard and Tenancy](/guard-and-tenancy) for the full enforcement model.

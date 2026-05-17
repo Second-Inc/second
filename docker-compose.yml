@@ -1,0 +1,95 @@
+name: second
+
+services:
+  mongo:
+    image: mongo:8.0
+    init: true
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-0}:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'try{rs.status().ok}catch(e){rs.initiate({_id:\"rs0\",members:[{_id:0,host:\"localhost:27017\"}]});rs.status().ok}' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-0}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: ./apps/worker
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      NODE_ENV: production
+      PORT: "3001"
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      TOOL_EXECUTE_URL: ${TOOL_EXECUTE_URL:-http://web:3000/api/internal/tool-execute}
+    expose:
+      - "3001"
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: runner
+    image: ${SECOND_WEB_IMAGE:-second/web:local}
+    init: true
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      SECOND_AUTH_MODE: ${SECOND_AUTH_MODE:-none}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/second}
+      SECOND_PUBLIC_URL: ${SECOND_PUBLIC_URL:-http://localhost:${WEB_PORT:-3000}}
+      WORKER_URL: ${WORKER_URL:-http://worker:3001}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      WORKOS_API_KEY: ${WORKOS_API_KEY:-}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-}
+      SECOND_POSTHOG_TOKEN: ${SECOND_POSTHOG_TOKEN:-}
+      SECOND_POSTHOG_HOST: ${SECOND_POSTHOG_HOST:-}
+      SECOND_POSTHOG_DISABLED: ${SECOND_POSTHOG_DISABLED:-}
+      SECOND_TELEMETRY_DISABLED: ${SECOND_TELEMETRY_DISABLED:-}
+      SECOND_SENTRY_DSN: ${SECOND_SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SECOND_SENTRY_DISABLED: ${SECOND_SENTRY_DISABLED:-}
+      SECOND_ERROR_REPORTING_DISABLED: ${SECOND_ERROR_REPORTING_DISABLED:-}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mongo_data:

@@ -1,0 +1,301 @@
+---
+title: "App Data"
+description: "How apps persist scoped data in MongoDB with live updates and governed agent access."
+---
+
+Apps built on Second persist data in MongoDB via a simple SDK. The SDK provides `useCollection` and `useDoc` hooks that work like Firestore's `onSnapshot` — data updates automatically when changed, whether from the app UI or from an approved agent running in the background.
+
+## How it works
+
+```
+App iframe (useCollection / useDoc)
+  → postMessage("second:data:insert", { collection: "leads", data: {...} })
+    → AppDataBridge (parent window)
+      → POST /api/.../data  →  MongoDB insert
+                                    ↓
+                              Change Stream fires
+                                    ↓
+                              SSE endpoint pushes event
+                                    ↓
+                              AppDataBridge receives SSE
+                                    ↓
+                              postMessage("second:data:change") → iframe
+                                    ↓
+                              useCollection hook updates state → re-render
+```
+
+Writes go through REST. Live updates come back through MongoDB Change Streams → SSE → postMessage. The SDK also applies **optimistic updates** — the app that initiated the write sees it instantly without waiting for the Change Stream round-trip.
+
+Draft and published apps use separate data scopes. The published app reads and
+writes the app's normal data scope. Draft preview and draft app-agent runs use
+an internal draft scope, so builders can test data changes without mutating the
+data used by the published app.
+
+## Data SDK
+
+The SDK is included in the workspace template at `src/lib/second-sdk.ts` alongside the agent hooks.
+
+### `useCollection(collectionName)`
+
+List all documents in a collection with live updates.
+
+```typescript
+import { useCollection } from '@/lib/second-sdk';
+
+function LeadList() {
+  const { data: leads, loading, insert, update, remove } = useCollection('leads');
+
+  return (
+    <div>
+      {leads.map(lead => <LeadRow key={lead._id} lead={lead} />)}
+      <button onClick={() => insert({ name: 'New Lead', status: 'new' })}>
+        Add Lead
+      </button>
+    </div>
+  );
+}
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `data` | `Doc[]` | All documents in the collection, updated live |
+| `loading` | `boolean` | `true` during initial fetch |
+| `insert(data)` | `(data: object) => void` | Insert a new document |
+| `update(docId, data)` | `(docId: string, data: object) => void` | Partial update (merges into `data` field) |
+| `remove(docId)` | `(docId: string) => void` | Delete a document |
+
+### `useDoc(collectionName, docId)`
+
+Single document with live updates.
+
+```typescript
+import { useDoc } from '@/lib/second-sdk';
+
+function LeadDetail({ id }: { id: string }) {
+  const { data: lead, loading, update, remove } = useDoc('leads', id);
+
+  return <div>{lead?.name}</div>;
+}
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `data` | `Doc \| null` | The document, updated live |
+| `loading` | `boolean` | `true` during initial fetch |
+| `update(data)` | `(data: object) => void` | Partial update |
+| `remove()` | `() => void` | Delete the document |
+
+### Optimistic updates
+
+The plan originally relied entirely on Change Streams for reactivity (write → MongoDB → Change Stream → SSE → re-render). This round-trip would feel sluggish. The SDK applies optimistic local state updates in `insert`, `update`, and `remove` — the app that initiated the write sees it instantly. The Change Stream event arrives shortly after and reconciles state for all other connected clients.
+
+## Database
+
+### `app_data` collection
+
+All app data lives in one MongoDB collection, partitioned by `workspaceId` + `appId` + `collection`.
+
+```typescript
+type AppDataDocument = {
+  _id: string;
+  workspaceId: string;
+  appId: string;
+  collection: string;       // "leads", "contacts", etc.
+  data: Record<string, unknown>;  // The actual fields
+  createdAt: Date;
+  updatedAt: Date;
+};
+```
+
+### Indexes
+
+| Index | Purpose |
+| --- | --- |
+| `{ workspaceId: 1, appId: 1, collection: 1, updatedAt: -1 }` | Primary query pattern |
+| `{ workspaceId: 1, appId: 1, collection: 1, _id: 1 }` | Single doc lookups |
+
+### Data isolation
+
+All queries include `workspaceId` + a scoped `appId` — an app can never access
+another app's data, and a workspace can never access another workspace's data.
+Published runtime uses the app's normal ID. Draft runtime uses an internal draft
+ID for the same app.
+
+### Schemaless
+
+Apps don't need to define schemas. They just write objects. The builder agent knows the data shape because it wrote the code. No migrations, no schema files.
+
+## REST API
+
+### Collection-level
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/workspaces/[wId]/apps/[aId]/data?collection=leads` | List documents in a collection. `version=draft` uses the draft data scope for collaborators |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/data` | Insert document `{ collection, data }`. `version=draft` uses the draft data scope for collaborators |
+
+### Document-level
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/workspaces/[wId]/apps/[aId]/data/[docId]?collection=leads` | Get single document |
+| `PATCH` | `/api/workspaces/[wId]/apps/[aId]/data/[docId]` | Update document `{ collection, data }` |
+| `DELETE` | `/api/workspaces/[wId]/apps/[aId]/data/[docId]?collection=leads` | Delete document |
+
+All routes use `requireWorkspaceContext` for auth. Draft data access additionally
+requires creator, collaborator, admin, or owner access to the app.
+
+## Live updates (Change Streams + SSE)
+
+When data changes in MongoDB (from any source — app UI, agent, direct API), all connected clients see the update in real time.
+
+### Architecture
+
+```
+MongoDB Change Stream (filtered by workspaceId + appId)
+  ↓
+SSE endpoint: GET /api/workspaces/[wId]/apps/[aId]/data/stream
+  ↓ (EventSource in browser)
+AppDataBridge (parent window)
+  ↓ (postMessage to iframe)
+useCollection / useDoc hooks
+  ↓ (React state update → re-render)
+```
+
+### SSE event format
+
+```
+data: {"type":"insert","collection":"leads","doc":{"_id":"...","name":"Sarah",...}}
+data: {"type":"update","collection":"leads","docId":"...","doc":{"_id":"...","name":"Sarah Updated",...}}
+data: {"type":"delete","collection":"leads","docId":"..."}
+```
+
+The SSE endpoint sends 30-second heartbeats to keep the connection alive.
+In the browser, `AppDataBridge` shares this EventSource across tabs for the
+same app/version with `BroadcastChannel` and Web Locks. This keeps live data
+reactive without opening one persistent MongoDB Change Stream connection per
+tab and exhausting the browser's per-origin connection budget during long
+builder streams.
+
+`AppDataBridge` also buffers live changes before forwarding them into the
+iframe. Bursty agent writes are delivered in small chunks so app data can keep
+up without monopolizing the browser renderer. The platform's Data Explorer only
+subscribes to those parent-state updates while the explorer is open; otherwise
+the iframe receives the live changes directly and the workspace shell does not
+re-render for every inserted document.
+
+### Change event handling in SDK hooks
+
+When a `second:data:change` message arrives from the parent:
+
+- **insert** → add document to local array
+- **update** → merge changes into matching document
+- **delete** → remove document from local array
+
+No refetch needed — the hooks update in-place from the change event.
+
+### Replica set requirement
+
+MongoDB Change Streams require a **replica set**. In local development, `docker-compose.yml` starts MongoDB with `--replSet rs0` and a healthcheck that auto-initiates the replica set. In production (e.g., MongoDB Atlas), replica sets are the default — no extra configuration needed.
+
+## PostMessage protocol
+
+```
+// Data operations (iframe → parent)
+second:data:list        { collection, requestId }
+second:data:doc         { collection, docId, requestId }
+second:data:insert      { collection, data, requestId }
+second:data:update      { collection, docId, data, requestId }
+second:data:delete      { collection, docId, requestId }
+
+// Data responses (parent → iframe)
+second:data:list-response     { collection, docs, requestId }
+second:data:doc-response      { collection, doc, requestId }
+second:data:insert-response   { collection, doc, requestId }
+second:data:update-response   { collection, docId, doc, requestId }
+second:data:delete-response   { collection, docId, requestId }
+
+// Live change events (parent → iframe, from Change Stream SSE)
+second:data:change      { collection, operation: 'insert'|'update'|'delete', doc?, docId? }
+```
+
+Each request includes a `requestId` for request/response matching.
+
+## Agent data access
+
+Agents can read and write to an app's data collections when they have `dataCollections` defined in their agents.json config. Two MCP tools are registered:
+
+### `update_app_data`
+
+Write data to the app's database. Supports `insert`, `update`, `upsert`, and `delete` operations.
+
+```
+Agent calls update_app_data
+  → Worker MCP tool handler validates collection access
+    → POST /api/internal/app-data-write
+      → MongoDB write
+        → Change Stream fires → SSE → app sees update live
+```
+
+The `upsert` operation was added because agents often don't know if a record already exists. The `filter` must include `_id` for update and delete operations.
+
+### `read_app_data`
+
+Read data from the app's database. List all docs in a collection, or fetch a single doc by ID.
+
+```
+Agent calls read_app_data
+  → Worker MCP tool handler validates collection access
+    → POST /api/internal/app-data-read
+      → MongoDB query → returns docs
+```
+
+This tool was added during implementation because agents need to read data too (e.g., "summarize all my todos"). The original plan only included write access.
+
+### Collection access control
+
+The `dataCollections` field in agents.json limits which collections an agent can
+access. The worker validates this before calling internal endpoints, and the web
+internal endpoints validate it again against the approved `agents.json` payload
+for the calling agent. An agent without `dataCollections` gets neither tool.
+
+Draft app-agent data tools use the draft data scope and require the current
+draft `agents.json` hash to match an admin/owner approval. Published app-agent
+data tools use the published data scope and the approved payload promoted with
+the published snapshot.
+
+### Internal endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/internal/app-data-write` | Agent writes data to app collection |
+| `POST` | `/api/internal/app-data-read` | Agent reads data from app collection |
+
+Both endpoints bypass the browser auth proxy and authenticate via `INTERNAL_API_TOKEN`. They still require explicit `workspaceId`, `appId`, source version, agent ID, and `collection` values and execute database queries scoped by those fields. See [Guard and Tenancy — Internal API bypass](/guard-and-tenancy#internal-api-bypass).
+
+## Agent run status from the app
+
+The `useAgent` hook exposes live run status (`idle` → `running` → `completed`).
+`AppAgentBridge` starts the run, listens for compact workspace run events, and
+posts `second:agent:update` messages to the iframe. A low-frequency watchdog
+poll remains as a missed-event fallback, but the bridge does not keep one
+high-frequency polling loop per active app agent.
+
+The original plan proposed watching the `app_agent_runs` collection directly
+from the browser. The implementation uses existing workspace realtime events
+instead, so app-agent status shares the same compact event channel as other
+workspace chrome.
+
+## Key files
+
+| File | Role |
+| --- | --- |
+| `apps/web/src/lib/db/repositories/app-data.ts` | App data CRUD operations |
+| `apps/web/src/components/app-data-bridge.tsx` | postMessage bridge + SSE subscription |
+| `apps/web/src/app/api/.../data/route.ts` | REST API (list/insert) |
+| `apps/web/src/app/api/.../data/[docId]/route.ts` | REST API (get/update/delete) |
+| `apps/web/src/app/api/.../data/stream/route.ts` | Change Stream SSE endpoint |
+| `apps/web/src/app/api/internal/app-data-write/route.ts` | Agent data write |
+| `apps/web/src/app/api/internal/app-data-read/route.ts` | Agent data read |
+| `apps/worker/src/runner.ts` | `buildAppDataMcpServer` — `update_app_data` and `read_app_data` tools |
+| `apps/worker/src/workspace-template.ts` | SDK with `useCollection`, `useDoc` hooks |

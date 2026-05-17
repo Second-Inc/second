@@ -1,0 +1,309 @@
+---
+title: "Deployed Slowness Playbook"
+description: "How to diagnose staging or production slowness with perf traces, Kubernetes events, and request amplification checks."
+---
+
+Local speed is not enough proof that a deployed issue is gone. Deployed
+environments add external auth, real Redis, real Mongo/network latency,
+Kubernetes resource limits, health probes, and a load balancer. Start from
+evidence and avoid guessing.
+
+Use this playbook when the app feels frozen, navigation stalls, settings pages
+hang, chat history appears late, stream attach is slow, or users see temporary
+server errors.
+
+## Before you start
+
+Use safe structured timing only while diagnosing:
+
+```bash
+SECOND_PERF_TRACE=1
+```
+
+Perf traces are designed to be content-minimal. They include route names,
+request IDs, workspace/app/run IDs, elapsed timings, counts, CPU, and memory.
+They must not include prompts, source files, cookies, tokens, headers, secret
+values, or integration secret values.
+
+If tracing is not already enabled in the deployed environment, ask before
+changing deployment config. Turn it back off after diagnosis unless the current
+incident still needs it.
+
+## First cluster read
+
+Run read-only checks from a shell where `kubectl` is configured for the target
+cluster and namespace:
+
+```bash
+kubectl config current-context
+kubectl get pods -o wide
+kubectl top pods
+kubectl get events --sort-by=.lastTimestamp | tail -n 80
+```
+
+Then inspect the active web pod:
+
+```bash
+kubectl describe pod <web-pod-name>
+```
+
+Look for:
+
+- restarts;
+- readiness or liveness probe failures;
+- `/api/health` timeouts;
+- OOM kills;
+- CPU or memory limits;
+- scheduling failures;
+- node scale-up events.
+
+A health probe failure like `/api/health context deadline exceeded` means the
+whole web pod was not answering quickly. That is different from one slow Teams
+query or one slow UI component.
+
+## Capture logs
+
+Capture web and worker logs for the incident window:
+
+```bash
+kubectl logs deploy/second --since=30m --timestamps > /tmp/second-web.log
+kubectl logs deploy/second-worker --since=30m --timestamps > /tmp/second-worker.log
+```
+
+If the current deployment has multiple web pods, capture all matching pods or
+use labels:
+
+```bash
+kubectl logs -l app.kubernetes.io/name=second,app.kubernetes.io/component=web \
+  --since=30m \
+  --timestamps \
+  --all-containers > /tmp/second-web.log
+```
+
+Search for application errors first:
+
+```bash
+rg "Error|Unhandled|Exception|ECONN|timeout|second.perf" /tmp/second-web.log
+rg "Error|Unhandled|Exception|ECONN|timeout" /tmp/second-worker.log
+```
+
+If the browser showed a temporary server error but the web logs do not show a
+route stack trace, compare the timestamp against Kubernetes events. It may have
+been a load-balancer/backend timeout while the web pod was saturated.
+
+## Parse perf traces
+
+Structured perf log lines contain JSON with `"type":"second.perf"`. Group by
+`requestId`, route, and second.
+
+This script gives a quick route-level summary:
+
+```bash
+node - <<'NODE'
+const fs = require("fs");
+const path = "/tmp/second-web.log";
+const rows = fs.readFileSync(path, "utf8").split(/\n/).filter(Boolean);
+const events = [];
+
+for (const line of rows) {
+  const i = line.indexOf('{"type":"second.perf"');
+  if (i === -1) continue;
+  try {
+    events.push(JSON.parse(line.slice(i)));
+  } catch {}
+}
+
+const byReq = new Map();
+for (const e of events) {
+  if (!e.requestId) continue;
+  const r = byReq.get(e.requestId) ?? {
+    route: e.route,
+    response: null,
+    events: [],
+  };
+  r.events.push(e);
+  if (String(e.event).endsWith(".response")) r.response = e;
+  byReq.set(e.requestId, r);
+}
+
+const stats = new Map();
+for (const r of byReq.values()) {
+  const s = stats.get(r.route) ?? {
+    requests: 0,
+    responded: 0,
+    over2s: 0,
+    over5s: 0,
+    max: 0,
+  };
+  s.requests++;
+  if (r.response) {
+    s.responded++;
+    const ms = Number(r.response.totalElapsedMs ?? r.response.sinceStartMs ?? 0);
+    s.max = Math.max(s.max, ms);
+    if (ms > 2000) s.over2s++;
+    if (ms > 5000) s.over5s++;
+  }
+  stats.set(r.route, s);
+}
+
+console.log("perf events", events.length, "requests", byReq.size);
+for (const [route, s] of [...stats.entries()].sort()) {
+  console.log(route, s);
+}
+NODE
+```
+
+This script finds request-start bursts:
+
+```bash
+node - <<'NODE'
+const fs = require("fs");
+const rows = fs.readFileSync("/tmp/second-web.log", "utf8").split(/\n/);
+const buckets = new Map();
+
+for (const line of rows) {
+  const i = line.indexOf('{"type":"second.perf"');
+  if (i === -1) continue;
+  let e;
+  try {
+    e = JSON.parse(line.slice(i));
+  } catch {
+    continue;
+  }
+  if (!String(e.event).endsWith("request_start")) continue;
+  const key = `${String(e.at).slice(0, 19)} ${e.route}`;
+  buckets.set(key, (buckets.get(key) ?? 0) + 1);
+}
+
+for (const [key, count] of [...buckets.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25)) {
+  console.log(count, key);
+}
+NODE
+```
+
+A normal click should not create dozens of identical `Teams`, `Members`,
+`Invitations`, or `Integrations` GETs. If it does, treat that as request
+amplification, not user behavior.
+
+## Split slow requests
+
+For slow `.response` events, inspect the same `requestId` and split elapsed
+time into:
+
+- `auth.workspace`;
+- app access checks;
+- settings read model;
+- DB subqueries;
+- stream readiness wait;
+- resumable stream resume;
+- replay fallback;
+- total elapsed.
+
+Useful searches:
+
+```bash
+rg '"requestId":"<id>"' /tmp/second-web.log
+rg '"event":"auth.workspace"|"event":"settings.|"event":"run.stream_attach' /tmp/second-web.log
+```
+
+If `auth.workspace` is slow across many concurrent requests, suspect external
+auth, membership lookup pressure, or request amplification. If a DB subquery is
+slow for tiny result counts, suspect concurrency, missing indexes, network
+latency, or saturation rather than data size.
+
+## Interpret common patterns
+
+### Request amplification
+
+Symptoms:
+
+- many identical GETs in the same second;
+- settings pages repeatedly loading tiny result sets;
+- web pod health probes timing out;
+- worker mostly quiet.
+
+Likely causes:
+
+- realtime invalidation loop;
+- component remount loop;
+- repeated `useEffect` fetches;
+- component-local polling added on top of workspace realtime;
+- read route publishing mutation events;
+- browser connection pressure from too many EventSource subscriptions.
+
+Start by inspecting:
+
+- `apps/web/src/components/workspace-realtime-provider.tsx`;
+- `apps/web/src/lib/events/workspace-events.ts`;
+- `apps/web/src/lib/workspace-settings/read-models.ts`;
+- `apps/web/src/lib/workspace-settings/request-dedupe.ts`;
+- Members, Teams, Integrations settings clients;
+- routes that publish `member.changed`, `integration.changed`, or app/run events.
+
+### Read-side mutation loop
+
+Treat any write from a GET/read path as suspicious. A read path that repairs
+membership, ensures a default team, upserts metadata, or publishes invalidation
+events can create this loop:
+
+```
+read → publish event → mounted client refetches → read → publish event
+```
+
+Fix by making ensure paths idempotent and publishing only after a real insert,
+update, delete, or status transition.
+
+### Whole-app stall
+
+If `/api/health` probes time out, do not focus only on the UI page that was
+visible. Check request volume, auth latency, CPU throttling, memory pressure,
+and event-loop saturation. A later low `kubectl top pods` sample does not
+disprove a short earlier stall.
+
+### Stream attach delay
+
+Start with:
+
+- `docs/streaming.mdx`;
+- `apps/web/src/components/app-chat.tsx`;
+- `apps/web/src/app/api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat/stream/route.ts`;
+- `apps/web/src/lib/streams/run-replay.ts`.
+
+Check whether the run was already `streaming`, whether `activeStreamId` existed,
+whether the attach path waited for readiness, and whether replay or resumable
+stream was used.
+
+## Capacity checks
+
+Kubernetes node autoscaling is not pod autoscaling.
+
+Check whether more pods can exist:
+
+```bash
+kubectl get deploy second -o jsonpath='{.spec.replicas}{"\n"}'
+kubectl get hpa
+kubectl describe deploy second
+```
+
+Managed GKE Autopilot can add nodes for schedulable pod requests, but it will
+not create more web pods without replicas or an autoscaling policy. A single web
+pod can still become the bottleneck under request amplification or many active
+streams.
+
+Worker scaling needs separate thought because active SDK sessions and workspace
+files live in worker memory/filesystem while durable state is saved through web
+and MongoDB.
+
+## What to record
+
+When the issue teaches a durable lesson, update the active plan or docs with:
+
+- what the user observed;
+- the exact time window checked;
+- pod health and resource state;
+- request counts by route;
+- slow request breakdown by request ID;
+- what was ruled out;
+- the likely root cause;
+- the code or infra change;
+- the exact staging validation that should prove the fix.

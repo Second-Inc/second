@@ -1,0 +1,82 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-darwin-arm64:
+    name: Publish macOS arm64 CLI packages
+    runs-on: macos-15
+    environment: npm-publish
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: second-9r
+      SENTRY_PROJECT: second-next
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Derive version
+        id: release
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: $VERSION" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set package versions
+        shell: bash
+        run: |
+          npm --prefix packages/cli pkg set version="${{ steps.release.outputs.version }}"
+          npm --prefix packages/cli-local-darwin-arm64 pkg set version="${{ steps.release.outputs.version }}"
+          npm --prefix packages/cli install --package-lock-only --ignore-scripts
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          npm ci --prefix apps/web
+          npm ci --prefix apps/worker
+          npm ci --prefix packages/cli
+
+      - name: Validate
+        shell: bash
+        run: |
+          npm --prefix packages/cli run build
+          npm --prefix apps/web run typecheck
+          npm --prefix apps/worker run typecheck
+
+      - name: Build payload
+        shell: bash
+        run: npm --prefix packages/cli-local-darwin-arm64 run build
+
+      - name: Pack check
+        shell: bash
+        run: |
+          (cd packages/cli-local-darwin-arm64 && npm pack --dry-run --ignore-scripts)
+          (cd packages/cli && npm pack --dry-run --ignore-scripts)
+
+      - name: Publish macOS arm64 payload
+        shell: bash
+        run: cd packages/cli-local-darwin-arm64 && npm publish --access public --ignore-scripts
+
+      - name: Publish launcher
+        shell: bash
+        run: cd packages/cli && npm publish --access public --ignore-scripts

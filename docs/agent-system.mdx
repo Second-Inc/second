@@ -1,0 +1,183 @@
+---
+title: "Agent System"
+description: "How Second runs AI agents — the worker, bridge layer, and provider abstraction."
+---
+
+Second delegates AI agent work to a standalone worker process. The worker runs agent sessions through runtime adapters for Claude Code, Codex CLI, and OpenCode, streams normalized events back to Next.js, and Next.js translates them into the Vercel AI SDK's UIMessageStream protocol for the browser.
+
+## Design principles
+
+**One agent contract, multiple runtimes.** There is no separate "general agent" vs "coding agent." Every runtime receives the same Second system prompt, workspace, tool contract, approval-stop rules, and app-agent governance. What differs between runtimes is launch/config/session behavior and the native model parameter surface.
+
+**The worker is stateless infrastructure.** It holds in-memory sessions with a 15-minute TTL, but all durable state lives in MongoDB. When a session expires, the next message restores it from the database.
+
+**Two hops, two protocols.** The worker streams normalized runtime events. Next.js translates them to the AI SDK UIMessageStream protocol. The browser sees standard `useChat` messages, so UI components do not need to know whether Claude, Codex CLI, or OpenCode produced the turn.
+
+## Components
+
+### Worker (`apps/worker/`)
+
+A standalone Hono HTTP server that manages agent sessions. See [Worker](/worker) for details.
+
+- Starts and continues Claude Code, Codex CLI, and OpenCode sessions
+- Streams raw SDK events over SSE
+- Manages session lifecycle with 15-minute TTL
+- No database access, no AI SDK dependency — just the agent runtime
+
+### Bridge (`apps/web/src/lib/agent/worker-bridge.ts`)
+
+Connects to the worker's SSE stream and translates runtime events into AI SDK UIMessageStream chunks that `useChat` understands.
+
+```
+Claude SDK event                    →  AI SDK UIMessage chunk
+─────────────────────────────────      ────────────────────────
+content_block_delta (text_delta)    →  text-start + text-delta
+content_block_delta (thinking)      →  reasoning-start + reasoning-delta
+content_block_start (tool_use)      →  tool-input-start
+content_block_delta (input_json)    →  tool-input-delta
+content_block_stop                  →  tool-input-available
+user message (tool_result)          →  tool-output-available
+```
+
+The bridge also handles:
+- Opening and closing text/reasoning blocks (`text-start`/`text-end`)
+- Tracking pending tool calls and resolving them when the next turn starts
+- Capturing the SDK `result` message (cost, token counts, per-model breakdown) — see [Models & Usage](/models-and-usage)
+- Error propagation from the worker
+
+### System prompt (`apps/web/src/lib/agent/system-prompt.ts`)
+
+Builds the system prompt for each run. Includes the workspace name and instructions for the agent. The system prompt is passed to the worker in every request and forwarded to `query({ options: { systemPrompt } })`.
+
+The system prompt covers:
+- **Project structure** — the workspace is a Vite + React + TypeScript project with Tailwind + Shadcn starter files
+- **Implementation workflow** — edit `src/*`, use React/TSX idioms, and keep changes production-ready
+- **Planning phase** — the `present_plan` tool must be called before first build (see [Worker — Custom tools](/worker#custom-tools-builder))
+- **Agent definition** — the `present_agents` tool presents agents.json for governed approval (see [App Agents](/app-agents))
+- **Integration setup** — `list_app_integration_keys`, `integration-setup.json`, and `present_integration_setup` handle this app's live static-secret and OAuth setup checks, permissions, scopes, provider configs, and secrets only when configuration is needed (see [Integrations](/integrations#integration-setupjson))
+- **Build phase** — the `done_building` tool runs `npm run typecheck` + `npm run build` in parallel, validates artifact output, and triggers live preview (see [App Preview](/app-preview))
+- **Data persistence** — `useCollection`/`useDoc` hooks replace `localStorage` for all app data (see [App Data](/app-data))
+- **Agent SDK usage** — `useAgent`/`useAgentList` hooks for triggering agents from app code
+- **agents.json format** — complete schema rules including mockData requirements, dataCollections, static `{{secrets.NAME}}` injection, and OAuth `integration.auth` metadata
+- **Agent data access** — `read_app_data` and `update_app_data` tools for agent data writing
+- **Security policy** — custom tools must not be combined with WebSearch/WebFetch in the same agent
+
+The system prompt is generated per-request by `getSystemPrompt(workspaceId, workspaceName)`. Integration metadata is not injected into the prompt; the builder calls `mcp__second__list_app_integration_keys` when it needs this app's live configured/requested state. That tool returns metadata only, never secret values, and another app's credential never satisfies this app.
+
+### Approval gates
+
+The first build plan and any `agents.json` proposal are approval stops. The builder calls `mcp__second__present_plan` or `mcp__second__present_agents`, the tool returns a card payload, and the runtime adapter stops the active turn. The chat UI blocks normal input until the card is approved or changes are requested.
+
+Plan approval sends a follow-up user message so the builder continues in a new turn. Agents card approval first records the approved `agents.json` hash and payload when the actor is an admin or owner, then sends the follow-up user message. Requesting changes sends the feedback as the next user message so the builder can revise the plan or agent configuration and present it again.
+
+### Runtime settings (`apps/web/src/lib/agent/runtime-registry.ts`)
+
+Per-message configuration is runtime-specific:
+
+- Claude Code exposes effort and thinking controls.
+- Codex CLI exposes reasoning effort and sandbox controls.
+- OpenCode currently exposes model selection only.
+
+Apps store `runtimeId`, `runtimeModel`, and `runtimeParams`. The runtime registry drives the model picker, defaults, validation, and parameter controls.
+
+### Persistence (`apps/web/src/lib/db/repositories/`)
+
+**Builder agent runs** are stored as `AgentRunDocument` in the `agent_runs` collection:
+
+```typescript
+{
+  _id: string;              // run ID
+  appId: string;
+  workspaceId: string;
+  messages: UIMessage[];    // full AI SDK message array
+  sessionState: ProviderSessionState | null; // runtime-specific resume state
+  activeStreamId: string | null; // for resumable streams
+  status: "pending" | "streaming" | "completed" | "failed";
+  usage: RunUsage | null;   // accumulated cost and token data
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+Runs are created as `pending`, then atomically claimed as `streaming` by the first chat POST that starts the worker query. Duplicate POSTs for the same active run do not start another worker session. Final messages are saved via `onFinish` after the agent completes a response. Provider-aware `sessionState` is saved after each turn for cross-container resume. The `activeStreamId` is set during streaming and cleared on completion, enabling resumable streams via Redis. The chat route also records a short-lived Redis replay buffer of UI stream chunks so another tab or user can catch up by cursor even if the original resumable stream cannot be resumed.
+
+The `usage` field tracks cost and token counts per-model, accumulated from the SDK's `result` messages. See [Models & Usage](/models-and-usage) for the full schema and how to query usage for billing.
+
+**App agent runs** are stored separately as `AppAgentRunDocument` in the `app_agent_runs` collection. See [App Agents — Agent run lifecycle](/app-agents#agent-run-lifecycle) for the schema and flow.
+
+## Runtime architecture
+
+Runtime support is now implemented through a shared registry and worker adapter layer rather than a future provider sketch.
+
+### Registry and UI
+
+`apps/web/src/lib/agent/runtime-registry.ts` is the source of truth for runtime IDs, model lists, defaults, parameter controls, and validation. It defines the persisted settings shape:
+
+```typescript
+type AgentRuntimeSettings = {
+  runtimeId: "claude-code" | "codex-cli" | "opencode";
+  model: string;
+  params: Record<string, string>;
+};
+```
+
+`ModelSelector` groups models by runtime, and `RuntimeParameterSelectors` renders only the controls exposed by the selected runtime:
+
+- Claude Code: effort and thinking.
+- Codex CLI: reasoning effort and sandbox mode.
+- OpenCode: model selection only for now.
+
+The app composer, chat composer, app creation route, settings route, and chat route all send or persist `runtimeId`, `runtimeModel`, and `runtimeParams`. This repo is in active development, so app documents without these fields are treated as old development data rather than a permanent compatibility format.
+
+### Worker dispatch
+
+The web bridge sends normalized runtime settings to `POST /sessions/:appId/messages`. `SessionManager` calls `runRuntimeAgent`, which dispatches to:
+
+- `apps/worker/src/runtimes/claude.ts`
+- `apps/worker/src/runtimes/codex-cli.ts`
+- `apps/worker/src/runtimes/opencode.ts`
+
+Claude continues to use the Claude Agent SDK. Codex CLI uses the Codex app-server protocol over stdio so text deltas stream as they are produced. OpenCode remains a command-backed runtime launched in non-interactive JSON mode. Both are normalized to the same worker message shape so the Next.js bridge can keep emitting the same AI SDK message parts.
+
+### Tool exposure
+
+Second tools are implemented once in `runner.ts` as provider-neutral handlers. They are exposed in two forms:
+
+- Claude receives Claude SDK `tool(...)` definitions through in-process MCP servers.
+- Codex CLI and OpenCode receive remote MCP server entries that point to the worker's scoped MCP broker.
+
+The scoped broker uses one short-lived bearer token per runtime turn. That token grants only the tools allowed for the app/run context and is not `INTERNAL_API_TOKEN`. The worker keeps MongoDB, Redis, WorkOS, internal route tokens, cookies, headers, integration secrets, prompts, and source snapshots out of CLI runtime environment variables and runtime config files.
+
+### Approval Stops
+
+`present_plan` and `present_agents` remain hard approval stops for every runtime. Claude closes the active SDK query after the matching tool result. Command-backed runtimes terminate the active process after the matching MCP tool result. The next user approval or change request resumes through the normal chat path.
+
+The frontend detects the latest completed `mcp__second__present_plan` or `mcp__second__present_agents` dynamic tool part and blocks normal chat input until the user approves or requests changes.
+
+### Session state
+
+Runs store provider-aware session state behind one field:
+
+```typescript
+type ProviderSessionState = {
+  runtimeId: "claude-code" | "codex-cli" | "opencode";
+  sessionId?: string | null;
+  data?: string | null;
+  format?: string;
+  metadata?: Record<string, unknown>;
+};
+```
+
+Claude may persist JSONL data so a different worker can restore the resume file before calling the SDK. Codex CLI and OpenCode store their native session IDs when the JSON stream exposes them.
+
+### Adding or changing a runtime
+
+To add another runtime:
+
+1. Add its models, defaults, parameters, and validation rules to `runtime-registry.ts`.
+2. Add a worker adapter under `apps/worker/src/runtimes/` that emits normalized SDK-style events.
+3. Use the scoped MCP broker for Second tools instead of passing internal API tokens to the runtime process.
+4. Add detection hints in the web and worker `/detect-provider` routes without returning secret values.
+5. Add fixture coverage for its JSON events and verify approval-stop behavior.
+
+Everything downstream of the bridge stays provider-neutral: AI SDK `UIMessage` persistence, Redis stream replay, chat rendering, plan/agent cards, terminal cards, app data cards, custom tool cards, and usage accumulation.

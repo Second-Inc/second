@@ -1,0 +1,38 @@
+---
+title: "Contributing"
+description: "Contribute to Second: local setup, quality checks, and pull request expectations."
+---
+
+Contributions are welcome — whether it's a bug fix, a feature, or a documentation improvement.
+
+## Getting started
+
+Follow the [Quickstart developer setup](/quickstart#developer-setup) to get the app running locally. Once `.second-dev.txt` contains a `url=` value you can open in the browser, you're ready to go.
+
+## Before opening a PR
+
+Make sure lint and build pass:
+
+```bash
+npm run typecheck
+npm --prefix apps/web run lint
+npm --prefix apps/web run build
+npm --prefix apps/worker run typecheck
+```
+
+## Guidelines
+
+- **One concern per PR** — keep changes focused and reviewable.
+- **Preserve workspace isolation** — if you're touching API routes or repositories, make sure `workspaceId` scoping is maintained.
+- **Bridge layer changes** — if you modify `worker-bridge.ts`, test with a real agent session to verify tool calls and streaming work end to end.
+- **No provider-specific details** — don't add private auth provider implementation details to OSS code or docs.
+- **Update docs** — if your change affects behavior or configuration, update the relevant doc page.
+
+## Reporting bugs
+
+When filing an issue, include:
+
+- What you expected to happen
+- What actually happened
+- Steps to reproduce
+- Environment details: `SECOND_AUTH_MODE`, browser, and whether you're using `npm run dev` or Docker

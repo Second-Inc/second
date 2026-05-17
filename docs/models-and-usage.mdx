@@ -1,0 +1,382 @@
+---
+title: "Runtimes, Models & Usage Tracking"
+description: "How runtime/model selection works, what happens under the hood, and how costs are tracked per-app and per-model."
+---
+
+## Runtime selection
+
+Second supports three builder runtimes:
+
+| Runtime | Runtime ID | Model format | Parameter controls |
+| --- | --- | --- | --- |
+| Claude Code | `claude-code` | Claude model IDs such as `claude-sonnet-4-6` | Effort and thinking |
+| Codex CLI | `codex-cli` | OpenAI model IDs such as `gpt-5.4` | Reasoning effort and Codex sandbox |
+| OpenCode | `opencode` | OpenCode `provider/model` IDs such as `openai/gpt-5.4` | No extra controls yet |
+
+Apps persist runtime settings as:
+
+```typescript
+{
+  runtimeId: "claude-code" | "codex-cli" | "opencode";
+  runtimeModel: string;
+  runtimeParams: Record<string, string>;
+}
+```
+
+The model picker is driven by `apps/web/src/lib/agent/runtime-registry.ts`. It groups models by runtime and renders only the parameter controls supported by the selected runtime. The composer and chat transport send `runtimeId`, `runtimeModel`, and `runtimeParams` on every app creation, settings update, and chat POST.
+
+The local onboarding runtime choice is also saved as a browser preference so the app composer opens with the selected runtime instead of falling back to the project default.
+
+## How command runtimes work under the hood
+
+Claude uses the Claude Agent SDK. Codex is launched through the Codex CLI app-server protocol over stdio, which is the same local Codex runtime surface used by the Codex SDK but without adding an extra SDK dependency in the worker. OpenCode is launched in non-interactive JSON mode. The worker normalizes all runtime output into the same Claude-shaped worker SSE events so the existing chat bridge and AI element cards continue to render streamed text, plans, terminal commands, file edits, app data tools, integration setup, and `done_building`.
+
+OpenCode support requires an OpenCode CLI version whose `opencode run --help` includes `--format json`. Older OpenCode binaries are reported during onboarding as installed but not usable for the OpenCode runtime, and the worker returns a clear runtime error instead of starting a non-streamable plain-text run.
+
+### Claude Agent SDK
+
+Understanding model selection requires understanding what `query()` does at the process level.
+
+### Every call spawns a new process
+
+The Claude Agent SDK does not keep a long-running connection to the Anthropic API. Each `query()` call spawns a **brand new CLI process**:
+
+```
+query({ prompt: "hello", options: { model: "claude-sonnet-4-6" } })
+  → child_process.spawn("node", ["cli.js", "--model", "claude-sonnet-4-6", ...])
+```
+
+The CLI binary handles the entire agent loop internally:
+
+1. Sends `POST https://api.anthropic.com/v1/messages` with the specified model
+2. Claude responds with text and/or tool calls
+3. CLI executes tools locally (Read, Edit, Bash, etc.)
+4. CLI appends tool results and sends another API call
+5. Repeat until Claude responds with no tool calls
+6. Process exits
+
+There is no "direct API mode." The SDK is a wrapper around the `claude` CLI binary.
+
+### Sessions are files on disk
+
+The CLI writes every API request and response to a JSONL file:
+
+```
+~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
+```
+
+Each line is a complete message with the raw API response, including the `model` field and full `usage` object. This file is the CLI's own record of what happened — not written by our code.
+
+### The API is stateless
+
+Anthropic's Messages API has no server-side sessions. Every API call includes the entire conversation history as the `messages` array. Resuming a session means re-sending all previous messages as input tokens.
+
+Prompt caching mitigates this: system prompts, tool definitions, and early messages get cached at 0.1x the input price. In practice, most resumed conversations hit the cache heavily.
+
+## Model selection and switching
+
+### Available models
+
+The runtime registry includes Claude Code, Codex CLI, and OpenCode model entries. It stores runtime-native IDs, display names, descriptions, defaults, and parameter constraints.
+
+Claude pricing metadata is available for cost display:
+
+| Display name | Model ID | Description | Input / MTok | Output / MTok | Cache read / MTok |
+|---|---|---|---|---|---|
+| Opus 4.6 | `claude-opus-4-6` | Most capable for ambitious work | $5 | $25 | $0.50 |
+| Sonnet 4.6 | `claude-sonnet-4-6` | Most efficient for everyday tasks | $3 | $15 | $0.30 |
+| Haiku 4.5 | `claude-haiku-4-5` | Fastest for quick answers | $1 | $5 | $0.10 |
+
+The default runtime is Claude Code with Sonnet 4.6. Runtime defaults and model display names are defined in `lib/agent/runtime-registry.ts`.
+
+### Model-specific capabilities
+
+Some features are only available on certain models:
+
+| Feature | Available on | Fallback for other models |
+|---|---|---|
+| Effort: `max` | Opus 4.6 only | `high` |
+| Thinking: `adaptive` | Opus 4.6 only | `enabled` |
+
+The UI enforces these constraints — Opus-only options are disabled in the dropdown when a non-Opus model is selected. If the user switches from Opus to another model, any Opus-only selections are automatically downgraded.
+
+### How switching works
+
+The user selects a runtime model and runtime-specific parameters from the composer. Each message carries the normalized runtime settings through the full stack:
+
+```
+Composer dropdowns → React refs (runtimeId, runtimeModel, runtimeParams)
+    ↓
+Custom fetch on DefaultChatTransport
+  (reads refs, injects runtime settings into POST body)
+    ↓
+POST /api/.../chat  →  body.runtimeId, body.runtimeModel, body.runtimeParams
+    ↓
+worker-bridge  →  POST /sessions/:appId/messages  →  runtime settings
+    ↓
+session.sendMessage(prompt, runtimeSettings)
+    ↓
+runtime adapter dispatches to Claude, Codex CLI, or OpenCode
+```
+
+Switching from Sonnet to Opus mid-conversation means the **next** message spawns a new Claude CLI process with `--model claude-opus-4-6 --resume <sessionId>`. The CLI reads the session JSONL (which includes all previous Sonnet messages), sends the full history to the API with the new model, and continues the conversation. Effort and thinking settings take effect on the same call.
+
+Second stores provider-native session state per runtime on the run document. When the user keeps using a runtime whose native session state is current, the next message sends only the latest user prompt plus that runtime's session state. When the user switches to another runtime, Second uses the persisted provider-agnostic `UIMessage[]` transcript as the handoff layer. The chat route builds a bounded neutral transcript for the messages that the target runtime has not already seen, then appends the latest user message. The target runtime receives that handoff as plain prompt context plus its own provider session state when one exists.
+
+Second does not write vendor-private session files to "convert" a Claude session into a Codex or OpenCode session. The durable source of truth is the stored `UIMessage[]` plus the workspace files on disk; provider session state is an optimization for native resume, not the tenant boundary or the only conversation record.
+
+No re-run and no conversation restart. Same-runtime switches use native resume when possible; cross-runtime switches use the neutral transcript handoff and continue from the same Second run.
+
+### Why custom fetch (not transport body)
+
+The Vercel AI SDK's `useChat` hook captures the `DefaultChatTransport` instance on first render and never swaps it. If you create a new transport when the model changes, `useChat` ignores it.
+
+The solution: create one stable transport (memoized on `chatApi` only) with a custom `fetch` function that reads current values from React refs on every request:
+
+```typescript
+const runtimeSettingsRef = useRef(runtimeSettings);
+
+const transport = useMemo(() => new DefaultChatTransport({
+  api: chatApi,
+  fetch: async (input, init) => {
+    if (init?.method === "POST" && typeof init.body === "string") {
+      const body = JSON.parse(init.body);
+      const latest = runtimeSettingsRef.current;  // always reads latest
+      body.runtimeId = latest.runtimeId;
+      body.runtimeModel = latest.model;
+      body.runtimeParams = latest.params;
+      return globalThis.fetch(input, { ...init, body: JSON.stringify(body) });
+    }
+    return globalThis.fetch(input, init);
+  },
+}), [chatApi]);  // no dependency on selected values
+```
+
+### Composer layout
+
+```
+┌──────────────────────────────────────────────────┐
+│ [textarea]                                       │
+│                                                  │
+│ [+] [Sonnet 4.6 ▼] [runtime params...]       [⬆ / ⏸] │
+└──────────────────────────────────────────────────┘
+```
+
+- **`+` button** — Attach files (placeholder, not wired yet).
+- **Model dropdown** (`components/model-selector.tsx`) — shared between the workspace composer and the chat composer. Shows models grouped by runtime with descriptions and a checkmark on the selected one. Includes an "Add runtime" dialog with setup notes for Claude Code, Codex CLI, and OpenCode.
+- **Runtime parameter dropdowns** (`components/runtime-parameter-selectors.tsx`) — rendered from `runtime-registry.ts`. Claude shows effort and thinking. Codex CLI shows reasoning effort and sandbox mode. OpenCode currently has no additional controls.
+- **Submit button** — Circle with `ArrowUp` icon. Switches to `Pause` while streaming. Clicking during a stream calls `stop()` to abort.
+
+When the user switches runtime or model, settings are normalized against the selected runtime's defaults and supported options. For example, switching from Opus to a non-Opus Claude model downgrades Opus-only selections to supported Claude values.
+
+## Local provider setup
+
+During onboarding in local mode (`SECOND_AUTH_MODE=none`), a provider setup screen at `/onboarding/provider` auto-detects what's available:
+
+1. **Claude CLI on PATH** — checked via `which claude` on the worker, or `SECOND_CLAUDE_PATH` when an operator pins a custom executable path
+2. **Codex CLI on PATH** — checked via `which codex` on the worker, or `SECOND_CODEX_PATH` when configured
+3. **OpenCode CLI on PATH with JSON events** — checked via `which opencode` and `opencode run --help` on the worker, or `SECOND_OPENCODE_PATH` when configured
+4. **Runtime auth env hints** — `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, and `GEMINI_API_KEY` are reported only as booleans, never values
+
+If the Claude CLI is installed and the user has logged in (`claude login`), everything works automatically — no API key needed. The SDK spawns the user's local `claude` binary, which uses their existing auth.
+
+If `ANTHROPIC_API_KEY` is set, it takes priority — the CLI switches to API billing regardless of whether the user is also logged in via subscription.
+
+Codex CLI can use its own login state or `CODEX_API_KEY`/`OPENAI_API_KEY`, depending on the installed CLI configuration. Detection runs `codex login status` and checks stdout and stderr because Codex may print login status on stderr even when the command succeeds. It reports only a boolean auth result; it never returns token values or reads auth file contents. OpenCode uses the provider credentials required by the selected `provider/model` ID.
+
+This screen only exists in local mode. In enterprise deployments (`SECOND_AUTH_MODE=external`), the API key is configured before deployment and the screen is skipped entirely.
+
+### Files involved
+
+| File | Role |
+|---|---|
+| `apps/worker/src/index.ts` | `GET /detect-provider` — detects `claude`, `codex`, `opencode`, and auth-mode booleans |
+| `apps/web/src/app/api/setup/detect-provider/route.ts` | Proxies to worker |
+| `apps/web/src/app/onboarding/provider/page.tsx` | Server component — guards, renders setup |
+| `apps/web/src/components/provider-setup.tsx` | Client component — calls detect, shows results |
+
+## Billing modes
+
+Second separates runtime authentication from token/cost visibility. Runtimes can emit token counts and API-equivalent dollar estimates even when the local CLI usage is covered by a subscription plan.
+
+| Runtime | Local subscription mode | API billing mode |
+|---|---|---|
+| Claude Code | `SECOND_AUTH_MODE=none`, no `ANTHROPIC_API_KEY`, Claude CLI logged in via Claude.ai | `ANTHROPIC_API_KEY` configured |
+| Codex CLI | `SECOND_AUTH_MODE=none`, no `CODEX_API_KEY`/`OPENAI_API_KEY`, Codex CLI logged in with ChatGPT | `CODEX_API_KEY` or `OPENAI_API_KEY` configured |
+| OpenCode | Not treated as subscription-backed by Second | Provider key required by the selected `provider/model` |
+
+The app usage panel still shows token counts in all modes. In local subscription mode, it treats provider dollar values as API-equivalent estimates: the estimate is struck through and the displayed run cost excludes that subscription-backed model usage. For example, local Claude Code shows "Running on your Claude subscription"; local Codex CLI with ChatGPT login shows "Running through your Codex CLI ChatGPT login."
+
+Detection happens in `page.tsx` from server environment flags, then `AppWorkspace` applies the billing display per model row. This matters for mixed-runtime runs: a Claude subscription row and a Codex ChatGPT-login row can both be struck through, while an API-key-backed OpenCode row still displays as billable.
+
+## Usage tracking
+
+### Where the data comes from
+
+Claude emits a `result` message at the end of every SDK `query()` call:
+
+```json
+{
+  "type": "result",
+  "total_cost_usd": 0.0342,
+  "num_turns": 3,
+  "duration_ms": 12400,
+  "duration_api_ms": 8200,
+  "modelUsage": {
+    "claude-opus-4-6": {
+      "inputTokens": 8420,
+      "outputTokens": 1203,
+      "cacheReadInputTokens": 6100,
+      "cacheCreationInputTokens": 500,
+      "costUSD": 0.0342
+    }
+  }
+}
+```
+
+The `modelUsage` field is computed by the runtime adapter from provider runtime events. Claude includes cost and token data from the Claude CLI result. Codex app-server exposes token usage but not a dollar value, so Second estimates OpenAI cost from the selected model's current input, cached-input, and output token rates. OpenCode emits the same result shape when its JSON stream exposes usage data; when a runtime does not expose cost and Second has no pricing metadata for the selected model, Second records token counts when available and zero cost.
+
+### How it's captured
+
+```
+Runtime result message (emitted or normalized by the worker)
+  → worker SSE stream
+    → worker-bridge captures msg.type === "result"
+      → extracts totalCostUsd + modelUsage
+        → API route calls accumulateRunUsage()
+          → MongoDB $inc on the run document
+```
+
+Usage is accumulated atomically with `$inc`. Each runtime turn adds to the run's totals. Multiple messages in a run accumulate correctly.
+
+### Schema
+
+The `usage` field on `AgentRunDocument`:
+
+```typescript
+type RunUsage = {
+  totalCostUsd: number;              // sum across all runtime turns in this run
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
+  byModel: Record<string, {          // per-model breakdown
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+    costUsd: number;
+  }>;
+};
+```
+
+### Querying for billing
+
+Per-app cost across all runs:
+
+```javascript
+db.agent_runs.aggregate([
+  { $match: { workspaceId: "<workspaceId>" } },
+  { $group: {
+    _id: "$appId",
+    totalCost: { $sum: "$usage.totalCostUsd" },
+    totalInput: { $sum: "$usage.totalInputTokens" },
+    totalOutput: { $sum: "$usage.totalOutputTokens" },
+  }}
+])
+```
+
+Per-workspace cost (all apps):
+
+```javascript
+db.agent_runs.aggregate([
+  { $match: { workspaceId: "<workspaceId>" } },
+  { $group: {
+    _id: null,
+    totalCost: { $sum: "$usage.totalCostUsd" },
+  }}
+])
+```
+
+### UI: info panel
+
+A small `ⓘ` icon in the top-right corner of the app page opens a dropdown showing:
+- Total run cost
+- Input / output / cache-read token counts
+- Per-model breakdown (model name, token count, cost)
+
+The data refreshes automatically when a stream finishes — the frontend detects the streaming → ready transition and fetches `GET /chat` which includes `usage` in the response.
+
+## Verification and debugging
+
+Five levels of proof that the correct runtime/model was used, from lowest (closest to the metal) to highest:
+
+### 1. Runtime-native logs
+
+Claude writes every raw API response to a session JSONL file. The `model` field in each response is what the Anthropic API returned.
+
+```bash
+# Find the session file for a specific app
+ls ~/.claude/projects/-private-tmp-second-workspaces-<appId>/
+
+# Parse it and show which models were used
+python3 -c "
+import json, sys, collections
+models = collections.Counter()
+for line in open(sys.argv[1]):
+    d = json.loads(line)
+    m = d.get('message', {}).get('model', '')
+    if m:
+        u = d.get('message', {}).get('usage', {})
+        models[m] += u.get('output_tokens', 0)
+for m, tokens in models.items():
+    print(f'{m}: {tokens} output tokens')
+" ~/.claude/projects/-private-tmp-second-workspaces-<appId>/*.jsonl
+```
+
+Each line in the JSONL contains the full API response:
+
+```json
+{
+  "type": "assistant",
+  "message": {
+    "id": "msg_01HnLBE9DJDSMKxTRNMZWqvj",
+    "model": "claude-sonnet-4-6",
+    "usage": {
+      "input_tokens": 3,
+      "output_tokens": 66,
+      "cache_read_input_tokens": 7294,
+      "cache_creation_input_tokens": 2725
+    }
+  }
+}
+```
+
+The `msg_01...` ID is assigned by Anthropic's API. Different IDs = different API calls. Different `model` values = different models served the request.
+
+Codex CLI and OpenCode keep their own runtime/session records depending on the installed CLI configuration. Use those native logs together with Second's stored `sessionState` when debugging resume behavior.
+
+### 2. Provider console
+
+For API-key backed runtimes, use the provider's console or usage logs. For example, Anthropic logs Claude API calls with model, token counts, and cost.
+
+### 3. MongoDB
+
+```bash
+mongosh second --eval \
+  'db.agent_runs.find({}, {"usage.byModel":1}).sort({updatedAt:-1}).limit(1).pretty()'
+```
+
+Shows the accumulated `modelUsage` from all `result` messages in the run.
+
+### 4. Worker terminal
+
+The worker logs each request:
+
+```
+[worker] appId=69c6f381... model=claude-opus-4-6
+```
+
+### 5. Browser Network tab
+
+Open devtools → Network → filter by `chat`. Inspect the POST request payload. It contains `runtimeId`, `runtimeModel`, and `runtimeParams` injected by the custom fetch.

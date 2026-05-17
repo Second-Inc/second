@@ -1,0 +1,427 @@
+---
+title: "App Agents"
+description: "How apps trigger approved AI agents with scoped tools, streaming, and background execution."
+---
+
+Apps built on Second can trigger AI agents defined in an `agents.json` file. Each agent has its own system prompt, scoped tools (built-in or custom HTTP), and optional write access to the app's data. Live runtime uses the approved agent configuration for that app version, so draft changes cannot quietly expand what an agent can call.
+
+## How it works
+
+```
+App iframe (useAgent hook)
+  → postMessage("second:agent:trigger")
+    → AppAgentBridge (parent window)
+      → POST /api/.../agent-runs              (create run)
+      → POST /api/.../agent-runs/{runId}/stream?startOnly=1
+        (start agent without opening a browser SSE stream)
+        → Worker POST /sessions/{appId}__agent__{runId}/agent-run
+          → AgentRunManager runs agent in background
+          → Worker calls tools, writes data
+          → Worker POSTs /api/internal/agent-run-complete when done
+```
+
+The app triggers an agent via the SDK. The platform creates a run record and starts the agent on the worker with a short server request. Opening the Agent Runs drawer later attaches an SSE viewer for that specific run, but normal app-agent execution does not reserve a browser connection for every running agent. The worker owns the agent lifecycle — closing the browser doesn't stop it.
+
+App-agent routes are scoped by the full `{workspaceId, appId, runId}` tuple. A run from one app cannot be loaded or streamed through another app route, even inside the same workspace.
+
+## agents.json
+
+Agents are defined in a JSON file in the app workspace, persisted alongside source files in MongoDB. The builder agent creates this file during the build flow and presents it via the `present_agents` tool for approval.
+
+```json
+{
+  "agents": [
+    {
+      "id": "lead-enricher",
+      "name": "Lead Enricher",
+      "description": "Searches the web to find current information about leads",
+      "systemPrompt": "You are a lead enrichment specialist...",
+      "dataCollections": ["leads"],
+      "tools": [
+        {
+          "type": "builtin",
+          "name": "WebSearch",
+          "enabled": true,
+          "recommended": true
+        },
+        {
+          "type": "custom",
+          "name": "hubspot_fetch_contacts",
+          "displayName": "Fetch Contacts",
+          "description": "Search and retrieve contacts from HubSpot CRM",
+          "enabled": true,
+          "recommended": true,
+          "integration": {
+            "name": "HubSpot",
+            "domain": "hubapi.com",
+            "setupSearchQuery": "How to get HubSpot API key"
+          },
+          "endpoint": {
+            "method": "GET",
+            "url": "https://api.hubapi.com/crm/v3/objects/contacts",
+            "headers": { "Authorization": "Bearer {{secrets.HUBSPOT_PRIVATE_APP_TOKEN}}" },
+            "queryParams": { "query": "{{query}}", "limit": "10" }
+          },
+          "responseSchema": {
+            "type": "object",
+            "description": "HubSpot contacts response"
+          },
+          "mockData": [
+            { "id": "101", "properties": { "firstname": "Sarah", "lastname": "Chen" } },
+            { "id": "102", "properties": { "firstname": "Marcus", "lastname": "Johnson" } },
+            { "id": "103", "properties": { "firstname": "Priya", "lastname": "Patel" } }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Key fields
+
+| Field | Purpose |
+| --- | --- |
+| `id` | Unique identifier the SDK uses to trigger the agent |
+| `tools[].type` | `"builtin"` (WebSearch/WebFetch) or `"custom"` (HTTP request via [tool-execute](/integrations#tool-execution)) |
+| `tools[].displayName` | Optional human-readable action label for tool cards (for example `"Company Lookup"` while `name` remains `clearbit_company_lookup`) |
+| `tools[].enabled` | Toggle — user can disable from the agents page |
+| `tools[].recommended` | UI label — "Highly Recommended" badge. Does not enforce anything |
+| `tools[].integration` | Links to an app-scoped [integration](/integrations) grant, matched by `domain` and `keySlug` (`"default"` when omitted) |
+| `tools[].endpoint` | HTTP request spec with static named secret placeholders such as `{{secrets.SLACK_BOT_TOKEN}}`, normal tool-input placeholders for OAuth tools, or public no-auth requests |
+| `tools[].integration.auth` | Optional auth metadata. Missing means either a static-secret tool when the endpoint uses `{{secrets.NAME}}`, or a public unauthenticated tool when the official API requires no credentials; `type: "oauth2"` means the broker resolves the triggering user's connected account |
+| `tools[].mockData` | Sample responses used when the integration is not configured. Must contain 3+ entries for variety |
+| `dataCollections` | Collections this agent can read/write via `update_app_data` and `read_app_data` tools. See [App Data](/app-data#agent-data-access) |
+
+Endpoint specs can also use placeholders from the tool input, such as `{{symbol}}`, `{{query}}`, or `{{company.ticker}}`, in the URL, headers, query params, and body. The agent must pass a JSON string with those fields when calling the custom tool. Missing placeholders fail clearly instead of calling broad static endpoints.
+
+`present_agents` validates every custom tool before approval. Custom tools must include `integration.name`, `integration.domain`, `endpoint.method`, and `endpoint.url`. Static tools must include a named secret placeholder such as `{{secrets.SLACK_BOT_TOKEN}}` where the saved integration secret is injected. OAuth tools must include `integration.auth.type = "oauth2"`, `providerKey`, `identity: "triggering_user"`, authorization URL, token URL, and exact scopes; they must not include `{{oauth.access_token}}`, `{{access_token}}`, `{{token}}`, `{{secrets.*}}`, or an explicit `Authorization` header. Public unauthenticated tools may omit secrets and auth metadata when the official API requires no API key, OAuth client, or token. Custom tools that need setup should include `integration.keySlug` and use the same slug in `integration-setup.json`; Second normalizes missing slugs to `"default"`. If a model omits the endpoint or uses unsafe placeholders, the agents card is marked as needing changes and cannot be approved until the builder fixes `agents.json` and calls `present_agents` again.
+
+If an agent passes tool input to a custom tool whose endpoint does not reference any input placeholders, execution fails rather than calling a static bulk endpoint. This protects integrations from returning broad datasets when the intended request was a lookup.
+
+`report_tool_call_failed` is a reserved platform tool name in the `app_tools` namespace. Generated custom tools cannot use it. The worker exposes `mcp__app_tools__report_tool_call_failed` to app agents so a blocked custom-tool failure can be sent back to the builder agent for repair.
+
+## Automatic tool failure recovery
+
+When a custom HTTP tool fails with a real execution error, the worker keeps a bounded, redacted record of the failed call for that app-agent run. The record includes the custom tool name, parsed tool input, endpoint and integration metadata from the approved agent configuration, the internal `tool-execute` status, and the structured error/response details. It does not include injected secret values, OAuth tokens, cookies, or full unbounded responses.
+
+If the failed tool blocks the requested app-agent task, the app agent should finish any unaffected work and then call `mcp__app_tools__report_tool_call_failed`. That tool posts the report to `/api/internal/tool-failure-report`, which verifies the app-agent run by `{ workspaceId, appId, runId }`, creates a builder repair run for the same app, and records an audit event with compact metadata and hashes. The builder repair run starts with a platform-generated prompt that tells the builder to inspect `agents.json`, app code, integration setup, and the app-agent prompt, then re-present governed agents or setup instructions when they change.
+
+Workspace realtime only carries compact builder-run hints such as run id, status, and `runReason: "app_tool_failure"`. The sidebar derives its "Call failed - builder fixing it" badge from the latest authorized builder-run projection and clears it when that run completes or fails.
+
+## Agent config approval
+
+`agents.json` is draft source, but it is also runtime policy. Second treats it
+as a governed artifact:
+
+1. `present_agents` reads and validates the file on disk.
+2. The Agents card shows the exact parsed payload.
+3. A workspace admin or owner approves that payload.
+4. The platform stores the canonical JSON hash, the approved payload, the
+   approver, and the approval time.
+5. Draft app-agent runtime can start from the draft file, but live custom
+   tools and app-data tools are usable only while the current `agents.json`
+   hash matches that approval.
+
+Creating `agents.json` or showing the Agents card does not send the app to
+review. It only pauses the builder until an admin/owner approves or someone
+requests changes. Review is created later from the publish dialog.
+
+If the builder, the user, a file edit, or a shell command changes `agents.json`
+after approval, the draft approval becomes stale. Draft agent runs may still
+start so the in-progress app can be tested, but custom HTTP tools and agent
+data tools are blocked until an admin or owner approves the new payload. When a
+review is approved or an admin/owner publishes directly, the approved payload
+is promoted with the published source snapshot.
+
+This prevents a draft from quietly adding a new integration domain, endpoint,
+secret placeholder, permission, or data collection after IT has reviewed a
+different config.
+
+## integration-setup.json
+
+When custom tools require an external service, the builder may also create `integration-setup.json` at the app workspace root. This file is separate from agents.json. agents.json defines what the agent can call; `integration-setup.json` explains what a human needs to configure in the provider.
+
+The builder creates this file only when setup is needed:
+
+- this app has no connected integration grant for that domain/key slug
+- the app grant exists, but this app requires new permission groups, exact permissions/scopes, or named secrets that are not marked configured
+
+```json
+{
+  "integrations": [
+    {
+      "name": "Slack",
+      "domain": "slack.com",
+      "keySlug": "default",
+      "keyName": "Slack post key for this app",
+      "capabilityLabel": "Slack post",
+      "why": "This app sends Slack messages.",
+      "permissionGroups": [
+        {
+          "name": "Send messages",
+          "description": "Allows the app to post messages into selected Slack channels.",
+          "permissions": ["chat:write"]
+        }
+      ],
+      "secrets": [
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "label": "Slack bot token",
+          "description": "Paste the Bot User OAuth Token that starts with xoxb-.",
+          "required": true
+        }
+      ],
+      "setupInstructions": {
+        "overview": "Create or update a Slack app, grant the bot scope, install it to the workspace, and paste the bot token in Second.",
+        "steps": [
+          {
+            "title": "Open Slack apps",
+            "description": "Go to [Slack | API apps](https://api.slack.com/apps) and create a new app or open the existing app you want Second to use.",
+            "url": "https://api.slack.com/apps"
+          }
+        ],
+        "links": [
+          { "label": "Slack API apps", "url": "https://api.slack.com/apps" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Before writing the file, the builder calls `list_app_integration_keys` to check the current app's grant state without receiving secret values. Another app's credential does not satisfy this app. After the agent configuration is approved, the builder writes `integration-setup.json` and calls `present_integration_setup` before app implementation continues. The chat UI shows a compact "Instructions on how to set up ..." card, and the worker syncs the setup metadata into the integrations settings page immediately. If requirements change later, the builder updates `integration-setup.json` with the complete current requirements and calls `present_integration_setup` again, which replaces this app's grant set and re-syncs the integrations page. If the file is missing or invalid JSON, the platform does not register the integration. The file should use simple human language and verified links, not developer-only notes.
+
+### Security policy
+
+An agent with access to organization tools (HubSpot, Slack, etc.) must **not** also have internet access (WebSearch/WebFetch). These should be separate agents in a multi-agent setup. The builder agent's system prompt enforces this separation.
+
+## App agent SDK
+
+The SDK is included in the workspace template at `src/lib/second-sdk.ts`. It communicates with the platform via `postMessage`.
+
+### `useAgent(agentId)`
+
+Triggers an agent and watches its status live.
+
+```typescript
+import { useAgent } from '@/lib/second-sdk';
+
+function EnrichButton({ leadId }: { leadId: string }) {
+  const { trigger, status, isRunning } = useAgent('lead-enricher');
+
+  return (
+    <button
+      onClick={() => trigger(`Enrich lead ${leadId}`)}
+      disabled={isRunning}
+    >
+      {isRunning ? 'Enriching...' : 'Enrich'}
+    </button>
+  );
+}
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `trigger(prompt)` | `(prompt: string) => void` | Start the agent with a user prompt |
+| `status` | `'idle' \| 'running' \| 'completed' \| 'failed'` | Current run status |
+| `isRunning` | `boolean` | `true` while the agent is executing |
+| `error` | `string \| null` | Error message if the run failed |
+| `runId` | `string \| null` | Current run ID |
+
+### `useAgentList()`
+
+Returns all agents defined in `agents.json`.
+
+```typescript
+const { agents } = useAgentList();
+// agents: Array<{ id: string; name: string; description: string }>
+```
+
+### PostMessage protocol
+
+```
+// App → Platform
+second:agent:trigger      { agentId, prompt }
+second:agents:list-request  {}
+
+// Platform → App
+second:agent:update       { agentId, runId, status, result?, error? }
+second:agents:list-response { agents: [...] }
+```
+
+## present_agents tool
+
+The builder agent calls `present_agents` after writing `agents.json`. This renders an interactive card in the chat showing each agent with its tools, integration requirements, and recommended labels. It is an approval stop: the tool returns the card payload, the runtime adapter stops the active turn, and the chat composer stays blocked until an admin/owner approves or someone requests changes from the agents card.
+
+The tool is registered as `mcp__second__present_agents` in the worker's `second` MCP server alongside `present_plan`, `list_app_integration_keys`, `present_integration_setup`, and `done_building`.
+
+```typescript
+const presentAgents = tool(
+  "present_agents",
+  "Present the agent configuration to the user for approval...",
+  {},
+  async () => {
+    const agentsConfig = JSON.parse(readFileSync("agents.json", "utf-8"));
+    // Validate agentsConfig.agents and return the card payload.
+  },
+);
+```
+
+`present_agents` validates the `agents.json` file on disk as the source of truth, including custom integration tool shape, and returns a fix-it message if the file is missing, invalid JSON, empty, or uses invalid custom-tool placeholders.
+
+When an admin or owner approves, `AppChat` first records the governed approval for the exact Agents card payload, then sends the follow-up user message that continues the build. On requested changes, it sends the feedback as the next user message and the builder must update `agents.json` and call `present_agents` again.
+
+## Agent run lifecycle
+
+### Database
+
+App agent runs are stored in the `app_agent_runs` collection, separate from builder agent runs (`agent_runs`).
+
+```typescript
+type AppAgentRunDocument = {
+  _id: string;
+  appId: string;
+  workspaceId: string;
+  triggeredByUserId: string;
+  triggeredByUserEmail: string;
+  triggeredByUserName: string;
+  sourceVersion?: "draft" | "published";
+  agentId: string;
+  agentName: string;
+  prompt: string;
+  status: "pending" | "running" | "streaming" | "completed" | "failed";
+  result: unknown | null;
+  messages: unknown[];
+  sessionId: string | null;
+  activeStreamId: string | null;
+  usage: RunUsage | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+```
+
+### Flow
+
+1. **App triggers agent** — SDK sends `second:agent:trigger` via postMessage.
+2. **Bridge creates run** — `AppAgentBridge` calls `POST /api/.../agent-runs` → creates `AppAgentRunDocument` with `status: "pending"` and the server-resolved triggering user.
+3. **Bridge starts run** — Calls `POST /api/.../agent-runs/{runId}/stream?startOnly=1`.
+4. **Stream route starts worker** — Calls `POST {WORKER_URL}/sessions/{appId}__agent__{runId}/agent-run` (fire-and-forget). Worker returns `{ status: "started" }` immediately.
+5. **Worker runs agent** — `AgentRunManager` spawns the agent in the background. Buffers messages via `EventEmitter`. When a custom tool runs, the worker sends `runId` to `/api/internal/tool-execute`; it does not send a user ID for OAuth.
+6. **Optional drawer viewer reads events** — If someone opens the run details drawer, the stream route connects to `GET {WORKER_URL}/sessions/{appId}__agent__{runId}/agent-run/{runId}/events` and translates SDK events to UIMessageStream via the bridge, same as builder agent streaming.
+7. **Agent finishes** — Worker calls `POST /api/internal/agent-run-complete` with status, result, usage, and the SDK message transcript. The web route converts that transcript to UI messages and updates the run document.
+8. **Bridge receives completion** — The bridge listens for compact workspace run events and posts `second:agent:update` to the iframe. A low-frequency summary poll is kept only as a missed-event fallback.
+
+### Streaming in the agents drawer
+
+App agent execution and viewing are separate. Triggering an app agent starts it with `startOnly=1`, which returns quickly and leaves the worker-owned run active in `AgentRunManager`. The browser opens an app-agent SSE stream only when the user explicitly opens a run in the Agent Runs drawer, so several app agents can run without consuming several long-lived browser connections.
+
+App agent viewer streams use the same UI message format as the builder agent. When a viewer stream exists, the route records UI chunks in the Redis replay buffer used by builder runs. Reopening the agents drawer first tries the active resumable stream; if that handle is stale, it can replay a complete captured buffer, or rebuild the transcript from the worker events endpoint while the worker still has the run in memory. Replay buffers are only used when they start at the beginning of the run, so the UI is not asked to process a `tool-input-delta` without the matching `tool-input-start`.
+
+Closing the run viewer aborts the browser fetch and the web route forwards that
+disconnect signal to the worker events fetch. This releases the viewer
+connection without stopping the background app-agent run, and clears the
+transient active stream id if that viewer owned it.
+
+The drawer and iframe status bridge use projected run summaries for list and status polling. Full `UIMessage[]` transcripts stay behind the explicit run viewer path, keeping navigation and the Agent Runs dropdown off the hot transcript path.
+
+## Async execution (AgentRunManager)
+
+The worker runs app agents via `AgentRunManager` (`apps/worker/src/agent-run-manager.ts`), an in-memory event-driven system that decouples agent execution from the SSE viewer. Each app-agent run is keyed by `runId`, and the web server uses a per-run worker session key so multiple app agents can run at the same time without sharing one SDK transport.
+
+### Design
+
+- **Fire-and-forget**: `start(config)` spawns the agent in the background and returns immediately.
+- **Event buffering**: All SDK messages are buffered in memory. Late-joining SSE viewers catch up on buffered messages, then receive live events.
+- **EventEmitter**: Each run has its own `EventEmitter`. Viewers subscribe via `events(runId)` — an async generator that yields buffered messages first, then live messages.
+- **Callback**: When the agent finishes, the manager POSTs to `callbackUrl` (`/api/internal/agent-run-complete`) with the final status, result, and usage.
+- **Cleanup**: Completed runs are kept for 30 minutes (for late-joining viewers), then evicted. Max 100 concurrent runs with LRU eviction of completed/failed runs.
+
+### Why this exists
+
+The original plan described a simple fire-and-forget with a callback. In practice, the SSE viewer needs to both catch up on past messages AND receive live events from a background agent. The `AgentRunManager` with its event buffering and `EventEmitter` solves this — it's the bridge between the background agent and any number of SSE viewers.
+
+## Worker endpoints
+
+### `POST /sessions/:appId/agent-run`
+
+Start a background agent run. Returns immediately.
+
+**Request body:**
+
+```json
+{
+  "runId": "abc-123",
+  "prompt": "Enrich lead Sarah Chen",
+  "systemPrompt": "You are a lead enrichment specialist...",
+  "agentConfig": { "id": "lead-enricher", "tools": [...], "dataCollections": ["leads"] },
+  "allowedTools": ["WebSearch", "WebFetch", "mcp__app_data__update_app_data"],
+  "workspaceId": "ws-1",
+  "appId": "app-1",
+  "callbackUrl": "http://web:3000/api/internal/agent-run-complete",
+  "sourceFiles": { "src/App.tsx": "..." }
+}
+```
+
+**Response:** `{ "status": "started", "runId": "abc-123" }`
+
+### `GET /sessions/:appId/agent-run/:runId/events`
+
+SSE stream of raw SDK messages from a running (or recently completed) agent. Yields buffered messages first, then live events.
+
+## API routes
+
+### App agent runs
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/agent-runs` | Create a new run (status: pending) |
+| `GET` | `/api/workspaces/[wId]/apps/[aId]/agent-runs/[rId]` | Get run status and result |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/agent-runs/[rId]/stream` | Start agent + return SSE stream |
+| `GET` | `/api/workspaces/[wId]/apps/[aId]/agent-runs/[rId]/stream` | Resume disconnected stream |
+
+### Agents config
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/workspaces/[wId]/apps/[aId]/agents` | Get draft agents.json for app creators/collaborators or published agents.json for viewers |
+| `PATCH` | `/api/workspaces/[wId]/apps/[aId]/agents` | Admin/owner/app creator: update draft agents.json in the draft source snapshot |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/agents/approval` | Admin/owner: approve the exact draft agents.json payload |
+
+### Internal (worker → web)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/internal/agent-run-complete` | Worker callback when agent finishes |
+| `POST` | `/api/internal/tool-execute` | Execute custom HTTP tool (see [Integrations](/integrations)) |
+| `POST` | `/api/internal/tool-failure-report` | Create a builder repair run from a blocked app-agent custom-tool failure |
+| `POST` | `/api/internal/integration-requirements` | Sync builder-requested integration setup metadata |
+| `POST` | `/api/internal/workspace-integrations` | Return live integration metadata to the builder without secret values |
+
+Internal endpoints bypass the browser auth proxy and authenticate via `INTERNAL_API_TOKEN`. Local development can omit the token; production requires it on both web and worker. See [Guard and Tenancy — Internal API bypass](/guard-and-tenancy#internal-api-bypass).
+
+## Custom tool execution
+
+Custom tools (type `"custom"` in agents.json) are HTTP requests to external APIs. The agent never sees API secrets, OAuth client secrets, refresh tokens, or access tokens. Tool execution is proxied through the web server's `/api/internal/tool-execute` endpoint, which verifies that the requested tool is present in the approved `agents.json` payload for the calling agent.
+
+For static tools, `tool-execute` injects named secrets and non-secret tool input placeholders at call time. For OAuth tools, it loads the app-agent run by `{ workspaceId, appId, runId }`, resolves `triggeredByUserId` from that server-created row, checks the user's connected account and scopes, refreshes the access token on demand if needed, injects `Authorization: Bearer <token>` server-side, and calls the provider API. See [Integrations](/integrations) for the full flow.
+
+When an integration is not configured, the tool returns a random entry from `mockData` so development can continue without real API credentials. This includes OAuth missing-account, revoked-account, missing-scope, or provider-config failures.
+
+When a custom tool fails after execution begins, the app agent may call `mcp__app_tools__report_tool_call_failed`. The report route is internal-token protected and creates a normal builder run, so repair uses the same chat streaming, source persistence, `present_agents`, `present_integration_setup`, and `done_building` controls as any other build change.
+
+## Key files
+
+| File | Role |
+| --- | --- |
+| `apps/worker/src/runner.ts` | `list_app_integration_keys`, `present_agents`, `present_integration_setup`, `buildCustomToolsMcpServer`, `buildAppDataMcpServer` |
+| `apps/worker/src/agent-run-manager.ts` | Background agent execution with event buffering |
+| `apps/worker/src/index.ts` | `/sessions/:appId/agent-run` and events endpoints |
+| `apps/web/src/components/app-agent-bridge.tsx` | postMessage bridge — triggers agents, listens for status events |
+| `apps/web/src/app/api/.../agent-runs/route.ts` | Create run |
+| `apps/web/src/app/api/.../agent-runs/[rId]/stream/route.ts` | Start agent + SSE stream |
+| `apps/web/src/app/api/internal/agent-run-complete/route.ts` | Worker completion callback |
+| `apps/web/src/app/api/internal/tool-execute/route.ts` | Custom tool execution with secret injection |
+| `apps/web/src/app/api/internal/tool-failure-report/route.ts` | App-agent tool failure recovery bridge to the builder |
+| `apps/web/src/app/api/internal/integration-requirements/route.ts` | Integration requirement sync from builder tools |
+| `apps/worker/src/workspace-template.ts` | SDK with `useAgent`, `useAgentList` hooks |

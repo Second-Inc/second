@@ -1,0 +1,550 @@
+---
+title: "Worker"
+description: "The standalone agent worker — HTTP API, session management, workspace isolation, tool permissions, and SDK integration."
+---
+
+The worker is a standalone Node.js HTTP server (`apps/worker/`) that runs AI agent sessions. It's separate from the Next.js app so agent processes don't block web requests. It supports Claude Code, Codex CLI, and OpenCode through a runtime adapter layer.
+
+## Runtime adapters
+
+Builder and app-agent runs enter the worker with:
+
+```typescript
+{
+  runtimeId: "claude-code" | "codex-cli" | "opencode",
+  runtimeModel: string,
+  runtimeParams: Record<string, string>
+}
+```
+
+`SessionManager` dispatches to a runtime adapter:
+
+- `claude-code` wraps the existing Claude Agent SDK path.
+- `codex-cli` launches `codex app-server --listen stdio://` with `approval_policy = "never"` in private config, the selected Codex sandbox, and the worker system prompt as app-server base instructions. The worker consumes app-server JSON-RPC notifications such as `item/agentMessage/delta` so Codex text streams live instead of arriving as one final `exec --json` event.
+- `opencode` launches `opencode run --format json` with a private OpenCode config and a `second-builder` agent.
+
+Each adapter emits normalized worker SSE messages. The browser-facing bridge still receives text, reasoning, tool input, tool output, and result messages in one canonical shape.
+
+## Workspace model
+
+Each app gets its own workspace directory. The runtime process starts with that directory as its `cwd`, and Second only persists source and artifact snapshots from that directory.
+
+```
+/tmp/second-workspaces/          ← base (configurable via WORKSPACES_DIR)
+├── {appId-1}/                   ← app 1's workspace
+│   ├── package.json             ← Vite project manifest
+│   ├── src/                     ← source files (React + TS)
+│   ├── dist/                    ← compiled artifact (created by done_building)
+│   └── ...
+├── {appId-2}/                   ← app 2's workspace (completely separate)
+│   └── ...
+```
+
+New workspaces are scaffolded from a Vite + TS + Tailwind + Shadcn template (`WORKSPACE_TEMPLATE` in `workspace-template.ts`). If the app has a persisted source snapshot in MongoDB from a previous build, the web app sends that snapshot as `sourceFiles` and those files are restored instead. See [App Preview](/app-preview) for the full lifecycle.
+
+The workspace directory is a tenant/app working boundary, not by itself a complete OS sandbox. Runtime adapters must keep CLI config and environment scoped to the run, and production deployments should add process/container isolation, filesystem restrictions, and network policy in the deployment layer.
+
+### Key properties
+
+- **One directory per app** — keyed by `appId`. Created automatically on the first message.
+- **Persistent across messages** — within a session (15-min TTL), the agent sees files from previous turns. After TTL, the directory still exists on the host (or container volume).
+- **The agent's `cwd`** — passed to the selected runtime. Built-in file tools are expected to operate relative to this directory; shell tools still need runtime sandboxing and deployment hardening if the operator needs an OS-enforced boundary.
+- **Configurable base path** — set `WORKSPACES_DIR` env var to change the base. Default: `/tmp/second-workspaces`.
+- **Build step** — the `done_building` tool runs `npm run typecheck` and `npm run build` in parallel, validates `dist/index.html`, and persists a bounded workspace snapshot. See [App Preview](/app-preview).
+
+### In development vs. production
+
+| Mode | Workspace location | Persistence |
+| --- | --- | --- |
+| `npm run dev` (host) | `/tmp/second-workspaces/{appId}` | Survives restarts (host filesystem) |
+| `npx --yes @second-inc/cli` | `~/.second/data/workspaces/{appId}` | Survives CLI stop/start and normal machine restarts |
+| Docker container | `/tmp/second-workspaces/{appId}` or mounted volume | Lost when container is destroyed (unless volume-mounted) |
+| Production (K8s) | Ephemeral container filesystem or PVC | Depends on deployment config |
+
+In production, workspace contents are stored in MongoDB source snapshots and restored to the container when needed. The workspace directory is a working copy, not the source of truth. See [App Preview — Persistence and conditional hydration](/app-preview#persistence-and-conditional-hydration).
+
+## Agent tools and permissions
+
+The Claude runtime runs with `permissionMode: "bypassPermissions"` and an explicit `allowedTools` list. Command-backed runtimes receive the same canonical tool allowlist through runtime-specific config, MCP broker scoping, and adapter-level blocking behavior.
+
+### Default tools
+
+```typescript
+const DEFAULT_ALLOWED_TOOLS = [
+  "Read",       // Read files
+  "Write",      // Create/overwrite files
+  "Edit",       // Patch files (search & replace)
+  "Bash",       // Run shell commands
+  "Glob",       // Find files by pattern
+  "Grep",       // Search file contents
+  "WebSearch",  // Search the web
+  "WebFetch",   // Fetch a URL
+  "mcp__second__present_plan",    // Custom: present a build plan for approval
+  "mcp__second__list_app_integration_keys", // Custom: list current app integration keys
+  "mcp__second__present_agents",  // Custom: present agents.json for governed approval
+  "mcp__second__present_integration_setup", // Custom: present setup instructions
+  "mcp__second__done_building",   // Custom: run build & trigger live preview
+];
+```
+
+Built-in tools are runtime-specific but normalized to canonical names such as `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`, `WebSearch`, and `WebFetch`. Claude exposes Claude-style file tools directly. Codex CLI does not expose a standalone Claude-style `Write` tool; it normally creates structured `fileChange` events when it edits through its patch/file-edit path, and the adapter maps those events to `Write` or `Edit` UI cards. Custom tools (prefixed `mcp__second__`, `mcp__app_tools__`, or `mcp__app_data__`) are defined in the worker and exposed through either Claude in-process MCP servers or the scoped MCP broker.
+
+### Built-in tools
+
+Each runtime provides its own built-in file, shell, and web tools. The worker normalizes their events into the same tool names for the UI:
+
+- **Read/Write/Edit/Glob/Grep** — operate on the filesystem, scoped to `cwd`; runtime adapters normalize provider-specific file events to these names where the provider emits them
+- **Bash** — runs shell commands with `cwd` as the working directory. The agent can `npm install`, `npx`, `node`, `git`, etc.
+- **WebSearch/WebFetch** — make HTTP requests (when enabled)
+
+Shell tools can access standard CLI tools available in the runtime environment (node, npm, git, grep, find, etc.). In development, that is the host environment. In deployment, the operator controls the image and process sandbox.
+
+Before spawning the Claude SDK subprocess, the runner removes Second infrastructure secrets from the environment (`INTERNAL_API_TOKEN`, `MONGODB_URI`, `REDIS_URL`, WorkOS secrets, cookies, auth headers, and internal URLs). Codex CLI and OpenCode use a stricter allowlist environment: only stable process variables, private per app/run `HOME`/config paths, and a scoped MCP token are passed. Codex API keys are sent through the app-server login request instead of being placed in the Codex process environment. Codex-spawned shell commands then use Codex's `shell_environment_policy` with core environment inheritance, token/key/secret exclusions, shell profile loading disabled, and a separate shell `HOME` that does not point at Codex auth/config. Agents should use MCP tools for app data and integrations, not raw platform secrets from environment variables.
+
+For local Codex login mode, the worker can seed the private Codex home with only the user's `auth.json` from `SECOND_CODEX_HOME`, `CODEX_HOME`, or `~/.codex`. This is enabled automatically outside `NODE_ENV=production`; production must use `CODEX_API_KEY`/`OPENAI_API_KEY` unless an operator explicitly sets `SECOND_ALLOW_CODEX_LOCAL_AUTH=1`. The worker does not copy the user's full Codex config, sessions, prompts, or skills into the app workspace.
+
+Codex's Linux `workspace-write` sandbox depends on kernel/container support for the underlying Linux sandbox. In production, the worker treats the normal Codex build mode as externally sandboxed by the deployed worker environment and sends `danger-full-access` to Codex for `workspace-write` requests. This avoids the `bwrap` namespace failure in Kubernetes-style containers while keeping local development on Codex's normal `workspace-write` sandbox. The production security boundary is therefore the worker/container isolation plus Second's runtime env/config/tool isolation, not Codex's inner Linux sandbox.
+
+### Scoped MCP broker
+
+Second tools are implemented once in the worker and exposed two ways:
+
+- Claude receives in-process MCP servers from the Claude Agent SDK.
+- Codex CLI and OpenCode receive remote MCP server entries that point back to the worker's scoped MCP broker.
+
+Every command-backed runtime turn gets a short-lived tool broker session with one random token. That token is not `INTERNAL_API_TOKEN`; it is scoped to one app/run/runtime session, expires automatically, and only authorizes the tool set for that run. The scoped token may be passed to the CLI through a private runtime env var or private runtime config file outside the app workspace. Tool handlers may call web internal APIs with the worker's real internal token, but that internal token stays inside the worker process and is never written to runtime env, runtime config, stdout, stderr, browser responses, or app workspace files.
+
+The MCP broker exposes:
+
+- `second`: `present_plan`, `list_app_integration_keys`, `present_agents`, `present_integration_setup`, `done_building`
+- `app_tools`: approved custom HTTP tools from `agents.json`, plus the platform-owned `report_tool_call_failed` recovery tool
+- `app_data`: `update_app_data` and `read_app_data` when the approved agent has data collections
+
+Codex app-server asks the client to approve each remote MCP tool call through an MCP elicitation before it sends `tools/call`. Second auto-accepts only those Codex elicitations that are explicitly marked as MCP tool-call approvals, target one of the worker's scoped broker servers, and match the canonical `allowedTools` list for the run. General MCP elicitations are declined so a remote tool cannot collect arbitrary user input through the runtime adapter.
+
+`present_plan` and `present_agents` are approval-stop tools. They return a card payload, then the runtime adapter stops the active turn so the model cannot continue past the approval point in the same turn.
+
+### Custom tools (builder)
+
+Custom tools for the builder agent are implemented as provider-neutral handlers in `runner.ts`. Claude wraps those handlers with the Claude Agent SDK's `tool()` function and an in-process MCP server. Codex CLI and OpenCode call the same handlers through the scoped MCP broker.
+
+Five builder tools are registered in the `second` tool namespace:
+
+| Tool | MCP name | Purpose |
+| --- | --- | --- |
+| `list_app_integration_keys` | `mcp__second__list_app_integration_keys` | List only the current app's app-scoped integration key grants without secret values |
+| `present_plan` | `mcp__second__present_plan` | Present build plan for approval |
+| `present_agents` | `mcp__second__present_agents` | Present agent configuration for governed approval. See [App Agents](/app-agents#present_agents-tool) |
+| `present_integration_setup` | `mcp__second__present_integration_setup` | Present setup instructions for app-scoped integration keys that are not connected or are missing newly required permissions/secrets. See [Integrations](/integrations#integration-setupjson) |
+| `done_building` | `mcp__second__done_building` | Run build & trigger preview. See [App Preview](/app-preview#build-step-done_building) |
+
+```typescript
+import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+
+const presentPlan = tool(
+  "present_plan",
+  "Present a structured build plan to the user for approval before writing any code.",
+  {
+    overview: z.string().describe("High-level summary of what will be built"),
+    features: z.array(z.object({
+      name: z.string(),
+      description: z.string(),
+    })).describe("Main features / capabilities"),
+    dataFlow: z.string().describe("How data moves through the app"),
+    agents: z.string().nullable().describe("Agent definitions, null if not available"),
+    backend: z.string().nullable().describe("Custom backend, null if not available"),
+  },
+  async (args) => ({
+    content: [{ type: "text", text: `Plan presented to user.\n\n${args.overview}` }],
+  }),
+);
+
+function createSecondToolsMcpServer(config: SessionConfig) {
+  return createSdkMcpServer({
+    name: "second",
+    version: "1.0.0",
+    tools: [
+      createListAppIntegrationKeysTool(config),
+      presentPlan,
+      createPresentAgentsTool(config),
+      createPresentIntegrationSetupTool(config),
+      createDoneBuildingTool(config.workingDirectory),
+    ],
+  });
+}
+```
+
+When a workspace is scaffolded or restored, the worker writes runtime guidance into the workspace. Claude receives `.claude/skills/add-integrations/SKILL.md`; command-backed runtimes receive the same integration rules through the shared system prompt and tool descriptions. The goal is that provider research, setup instructions, named secret placeholders, and permission grouping follow the same rules across apps.
+
+When agents contain custom tools, the builder calls `list_app_integration_keys` to get the live grant state for the current app before deciding whether setup is needed. Integration metadata is intentionally not injected into the builder system prompt; the tool returns the current app's configured/requested permission groups, exact permissions/scopes, named secrets, setup instructions, and grant metadata at the moment the builder needs it. A credential configured for another app does not satisfy this app.
+
+`present_agents` reads `agents.json` from the workspace root and validates that file before approval. A custom tool must include integration metadata, endpoint method, and endpoint URL. Static-secret tools must include a named secret placeholder such as `{{secrets.SLACK_BOT_TOKEN}}` in the endpoint template. OAuth tools must declare `integration.auth.type = "oauth2"` with provider key, triggering-user identity, authorization URL, token URL, and exact scopes, and must not declare token placeholders or an `Authorization` header. Public unauthenticated tools may omit secrets and auth metadata when the provider's official API requires no credentials. If validation fails, the tool result tells the builder to fix `agents.json` and call `present_agents` again; the UI card is marked as needing changes and approval is disabled. When an admin or owner approves the card, the web app stores the canonical hash and approved payload so draft runtime can verify the exact config before running live tools.
+
+When agents contain custom tools that need setup, the builder writes `integration-setup.json` after the agent configuration is approved and calls `present_integration_setup` before app implementation continues. The setup tool reads `integration-setup.json` from disk and posts that file's metadata to `/api/internal/integration-requirements`, so the integrations settings page can show the app, requester, permission groups, exact permissions, secret names, key slug, and setup instructions before the final build completes. If requirements change later, the builder updates `integration-setup.json` with the complete current requirements and calls `present_integration_setup` again; that replaces this app's grant set and re-syncs the chat card and integrations page. If the file is missing or invalid JSON, the tool does not sync anything.
+
+The `done_building` custom tool runs `npm run typecheck` + `npm run build` in parallel and signals that the app is ready for preview. See [App Preview — Build step](/app-preview#build-step-done_building) for details.
+
+### Approval stops
+
+`present_plan` and `present_agents` are hard approval stops. Their tool handlers return the card payload immediately, and the runtime adapter ends the active turn after the tool result is emitted.
+
+Claude uses `query.close()` after the matching tool result. Codex app-server and OpenCode terminate the active command-backed process after the matching MCP tool result. The next user approval or change request starts a normal follow-up turn with the saved provider session state when available.
+
+The frontend treats the latest completed `mcp__second__present_plan` or `mcp__second__present_agents` dynamic-tool part as a pending approval. `AppChat` disables normal message submission and changes the composer placeholder until Approve or Request Changes is clicked on the `PlanCard` or `AgentsCard`. Agents approval writes the governed hash/payload, then sends the follow-up user message that continues the build.
+
+Custom tools follow the MCP naming convention: `mcp__{server_name}__{tool_name}`. The `present_plan` tool becomes `mcp__second__present_plan`. Add new builder tools to `createSecondToolsMcpServer()` and include them in `DEFAULT_ALLOWED_TOOLS`.
+
+`done_building` is created with the current `workingDirectory` as a closure. This avoids shared mutable state between concurrent agent runs and ensures the build step always runs in the workspace for that specific app/run.
+
+#### Adding a new builder tool
+
+1. Define the provider-neutral handler and schema in `runner.ts`.
+2. Add it to the Claude SDK MCP server and the scoped MCP broker tool list.
+3. Add `mcp__second__{tool_name}` to the default allowed tool names where appropriate.
+4. Handle the tool's UI rendering in `app-chat.tsx` (in the `dynamic-tool` section).
+
+### Custom tools (app agents)
+
+When an app agent runs, the worker dynamically exposes additional tools based on the approved agent configuration from `agents.json`:
+
+**Custom HTTP tools** — the `app_tools` namespace exposes one tool per approved custom tool definition. Each tool calls `POST /api/internal/tool-execute` on the web server, including the server-created `runId`. The web server handles static secret injection, OAuth connected-account lookup and token refresh, and mock/static fallback behavior. See [Integrations](/integrations).
+
+**Tool failure recovery** — the `app_tools` namespace also exposes `report_tool_call_failed`, which is reserved for the platform and cannot be declared by generated `agents.json` files. When a custom HTTP tool returns a blocking execution failure, the worker keeps the latest bounded, redacted failure records in the app-agent session. If the app agent calls `mcp__app_tools__report_tool_call_failed`, the worker posts that report and the captured failure details to `/api/internal/tool-failure-report`; the web app verifies `{ workspaceId, appId, runId }`, creates a builder repair run, and publishes only compact recovery status hints.
+
+**App data tools** — the `app_data` namespace exposes `update_app_data` and `read_app_data` when the agent has `dataCollections` defined. See [App Data — Agent data access](/app-data#agent-data-access).
+
+```typescript
+const allowedTools = [
+  ...agent.allowedTools,
+  ...agent.tools
+    .filter((tool) => tool.type === "custom" && tool.enabled)
+    .map((tool) => `mcp__app_tools__${tool.name}`),
+  "mcp__app_tools__report_tool_call_failed",
+  ...(agent.dataCollections?.length
+    ? ["mcp__app_data__update_app_data", "mcp__app_data__read_app_data"]
+    : []),
+];
+```
+
+The `allowedTools` list is extended to include custom tool names (`mcp__app_tools__{name}`), the platform recovery tool (`mcp__app_tools__report_tool_call_failed`), and data tool names (`mcp__app_data__update_app_data`, `mcp__app_data__read_app_data`).
+
+Custom tool definitions can also include `displayName`, which is not used for execution. The runtime still calls the stable `name`, while the UI can show the human-readable action label alongside the integration name and favicon.
+
+For OAuth tools, the worker sends only `runId`. It never sends or claims the user whose Gmail/Calendar/Zoom/etc. account should be used. The web route loads `app_agent_runs` by `{ workspaceId, appId, runId }` and resolves the triggering user from that trusted row before reading any connected account.
+
+Each runtime turn gets isolated tool server state. Claude gets fresh in-process MCP server instances because the Claude Agent SDK does not allow the same MCP protocol instance to connect to multiple transports at the same time. Codex CLI and OpenCode get fresh broker sessions with separate bearer tokens.
+
+## Worker API auth
+
+The worker's HTTP API requires `INTERNAL_API_TOKEN` when the token is configured. `/health` is public. `/mcp/*` skips the shared internal token but requires the per-run scoped MCP bearer token issued by the worker.
+
+In local development, the token can be omitted. In production, the web runtime requires `INTERNAL_API_TOKEN`, and the worker rejects missing or wrong tokens on `/sessions/*`. The web server attaches the token automatically through `workerFetch()`.
+
+## HTTP API
+
+### `POST /sessions/:appId/messages`
+
+Start a new session or send a message to an existing one. Returns an SSE stream of raw SDK events.
+
+A single app session can process only one message at a time. If another message is sent while the session is busy, the worker rejects it with a clear error; clients should reconnect to the active stream instead of starting a second query for the same app/run.
+
+**Request body:**
+
+```json
+{
+  "prompt": "Build me a React dashboard",
+  "systemPrompt": "You are Second, an AI agent...",
+  "runtimeId": "codex-cli",
+  "runtimeModel": "gpt-5.4",
+  "runtimeParams": {
+    "reasoningEffort": "high",
+    "sandbox": "workspace-write"
+  },
+  "workingDirectory": "/tmp/second-workspaces/abc123",
+  "allowedTools": ["Read", "Write", "Edit", "Bash"],
+  "maxTurns": 50,
+  "sessionState": {
+    "runtimeId": "codex-cli",
+    "sessionId": "abc-123"
+  },
+  "sourceFiles": { "src/main.tsx": "...", "dist/index.html": "...", "dist/assets/index-abc123.js": "..." }
+}
+```
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `prompt` | Yes | The user's message |
+| `systemPrompt` | Yes | System instructions for the agent |
+| `runtimeId` | Yes | Runtime adapter ID: `claude-code`, `codex-cli`, or `opencode` |
+| `runtimeModel` | Yes | Runtime-native model ID |
+| `runtimeParams` | Yes | Runtime-specific parameter bag |
+| `workingDirectory` | No | Override workspace path (defaults to `/tmp/second-workspaces/{appId}`) |
+| `allowedTools` | No | Tool whitelist (defaults to all default tools) |
+| `maxTurns` | No | Max agent turns before stopping |
+| `sessionState` | No | Provider-aware session state for cross-container resume |
+| `sourceFiles` | No | Workspace snapshot to restore when needed (source + built artifact from MongoDB). See [App Preview](/app-preview#persistence-and-conditional-hydration) |
+
+When `sessionState` is provided, the worker passes it to the selected runtime adapter. Claude state may include JSONL data to restore before `query({ resume })`; Codex CLI and OpenCode use runtime-native session IDs when available.
+
+**Response:** SSE stream (`text/event-stream`)
+
+```
+data: {"type":"system","subtype":"init","session_id":"..."}
+data: {"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}
+data: {"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Bash","id":"tc_1"}}}
+data: {"type":"assistant","message":{"content":[...]}}
+data: {"type":"result","result":"Done.","total_cost_usd":0.05}
+data: [DONE]
+```
+
+### `GET /sessions/:appId/status`
+
+Check if a session exists and its current state.
+
+```json
+{
+  "exists": true,
+  "status": "idle",
+  "sessionId": "abc-123",
+  "ttlRemainingMs": 840000,
+  "workspaceExists": true,
+  "workspaceHasFiles": true,
+  "restoreNeeded": false,
+  "createdAt": "2026-03-24T12:00:00Z",
+  "lastActiveAt": "2026-03-24T12:05:00Z"
+}
+```
+
+### `DELETE /sessions/:appId`
+
+Kill a session immediately.
+
+### `GET /sessions/:appId/session-file`
+
+Returns provider-aware session state for an active session. Used by the bridge to persist resume state to MongoDB for cross-container recovery.
+
+```json
+{
+  "sessionState": {
+    "runtimeId": "claude-code",
+    "sessionId": "abc-123",
+    "data": {
+      "jsonl": "..."
+    }
+  }
+}
+```
+
+Returns `{ sessionState: null }` if no session exists or no provider state is available.
+
+Claude state may include the JSONL file content from `~/.claude/projects/{cwdKey}/{sessionId}.jsonl` so a different worker can restore it before resuming. Codex CLI and OpenCode store native session IDs when their JSON stream exposes them.
+
+### `GET /sessions/:appId/files`
+
+Returns all source files from the workspace directory as a JSON object.
+
+Used in two places:
+- by the bridge to collect files after `done_building` completes
+- by the web app file explorer to refresh live files after tool calls
+
+The worker endpoint only reports the current workspace filesystem. The web file API merges live files over the app's persisted MongoDB source snapshot, so current source edits can show while the last compiled `dist/**` artifact remains available after navigation, sandbox churn, or TTL expiry.
+
+```json
+{
+  "files": {
+    "src/main.tsx": "import React from \"react\";\n...",
+    "dist/index.html": "<!doctype html>...",
+    "dist/assets/index-abc123.js": "import { ... } from \"react\";\n..."
+  }
+}
+```
+
+Excludes `node_modules`, `.git`, and other ignored infrastructure folders. Snapshot collection enforces per-file and total-size guardrails (512KB per file, 12MB total hard limit). Returns `{ files: {} }` if the workspace doesn't exist.
+
+### `POST /sessions/:appId/agent-run`
+
+Start a background agent run. Returns immediately with `{ status: "started" }`. The agent executes asynchronously via `AgentRunManager`.
+
+**Request body:**
+
+```json
+{
+  "runId": "abc-123",
+  "prompt": "Enrich lead Sarah Chen",
+  "systemPrompt": "You are a lead enrichment specialist...",
+  "agentConfig": { "id": "lead-enricher", "tools": [...], "dataCollections": ["leads"] },
+  "allowedTools": ["WebSearch", "mcp__app_data__update_app_data"],
+  "runtimeId": "codex-cli",
+  "runtimeModel": "gpt-5.4",
+  "runtimeParams": { "reasoningEffort": "high", "sandbox": "workspace-write" },
+  "workspaceId": "ws-1",
+  "appId": "app-1",
+  "callbackUrl": "http://web:3000/api/internal/agent-run-complete",
+  "sourceFiles": { "src/App.tsx": "..." }
+}
+```
+
+The worker scaffolds the workspace, then fires `AgentRunManager.start()` which runs the agent in the background and calls the `callbackUrl` when done. See [App Agents — Async execution](/app-agents#async-execution-agentrunmanager).
+
+The web app uses a worker session key of `{appId}__agent__{runId}` for app-agent runs. That keeps background app-agent sessions independent from the builder chat session and from each other.
+
+### `GET /sessions/:appId/agent-run/:runId/events`
+
+SSE stream of raw SDK messages from a running (or recently completed) agent run. Yields buffered messages first (catch-up), then live events. Returns `404` if the run is not found.
+
+### `GET /health`
+
+Returns worker health and active sessions.
+
+## Session management
+
+Sessions are held in memory, keyed by `appId`. Each session wraps one selected runtime adapter and its provider-specific resume state.
+
+### Lifecycle
+
+1. **First message** — No session exists. Worker creates one, starts the selected runtime, and captures provider session state when available. Session goes to `"busy"`.
+2. **Subsequent messages (within TTL)** — Session exists. Worker starts the selected runtime with the saved provider state. The agent picks up with full context when the runtime supports resume.
+3. **TTL expiry** — After 15 minutes of idle time, the session is destroyed. The next message restores context from MongoDB (session file + session ID) and creates a fresh session.
+
+### Concurrency model
+
+- **Same builder app session:** serialized. One active runtime turn at a time per `appId`.
+- **Different builder apps:** concurrent. Each app has its own workspace directory, session object, and MCP server instances.
+- **App-agent runs:** concurrent. Each run is keyed by run ID in `AgentRunManager` and uses a separate worker session key.
+- **Stream viewers:** multiple browsers can attach to the same active run stream; they should not start a second worker query.
+
+### TTL behavior
+
+- TTL is 15 minutes, reset on every message.
+- While a session is `"busy"` (agent is running), TTL is paused.
+- When the agent finishes, TTL starts counting down.
+- On expiry, the session is removed from memory.
+
+### Cross-container resume flow
+
+When provider-aware `sessionState` is provided in the request:
+
+1. Worker restores any provider-specific state that needs files on disk.
+2. Worker creates a new in-memory session with the saved provider session state.
+3. The runtime adapter resumes the provider session using its native mechanism.
+
+From the agent's perspective, it's as if the process never died.
+
+## Claude Agent SDK integration
+
+The worker uses `@anthropic-ai/claude-agent-sdk`:
+
+```typescript
+import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
+
+const q = query({
+  prompt: "Build a dashboard",
+  options: {
+    model: "claude-sonnet-4-6",           // per-message model selection
+    effort: "high",                        // "low" | "medium" | "high" | "max" (Opus only)
+    thinking: { type: "adaptive" },        // adaptive (Opus), enabled, or disabled
+    systemPrompt: "You are Second...",
+    cwd: "/tmp/second-workspaces/abc123",
+    allowedTools: ["Read", "Write", "Edit", "Bash", "mcp__second__present_plan"],
+    maxTurns: 50,
+    includePartialMessages: true,          // enables stream_event messages
+    mcpServers: { second: createSecondToolsMcpServer(config) },
+    // resume: sessionId,  // for continuing a session
+  },
+});
+
+for await (const message of q) {
+  // message.type: "system" | "stream_event" | "assistant" | "user" | "result"
+}
+```
+
+Key options:
+
+| Option | Purpose |
+| --- | --- |
+| `model` | Claude model ID (`claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`). Can differ per call — see [Models & Usage](/models-and-usage) |
+| `effort` | `"low"`, `"medium"`, `"high"` (default), or `"max"` (Opus only). Controls reasoning depth |
+| `thinking` | `{ type: "adaptive" }` (Opus only, default for supported models), `{ type: "enabled" }`, or `{ type: "disabled" }`. Controls extended thinking. See [Thinking mapping](#thinking-mapping) below |
+| `systemPrompt` | Custom system prompt (replaces default) |
+| `cwd` | Working directory — all file/Bash operations happen here |
+| `allowedTools` | Which tools the agent can use (built-in + MCP tool names) |
+| `maxTurns` | Safety limit on agent turns |
+| `includePartialMessages` | Enables `stream_event` messages for real-time streaming |
+| `mcpServers` | In-process MCP servers providing custom tools |
+| `resume` | Session ID to continue a previous session |
+
+### Thinking mapping
+
+The UI and transport layer pass thinking as a simple string (`"adaptive"`, `"enabled"`, `"disabled"`). The runner in `runner.ts` maps this to the SDK's typed object format:
+
+```typescript
+// runner.ts — string → SDK object mapping
+thinking: thinking === "adaptive"
+  ? { type: "adaptive" as const }        // model decides when/how much to think (Opus only)
+  : thinking === "enabled"
+    ? { type: "enabled" as const }        // always think with SDK default budget
+    : { type: "disabled" as const }       // no extended thinking
+```
+
+| UI string | SDK object | Behavior | Models |
+|---|---|---|---|
+| `"adaptive"` | `{ type: "adaptive" }` | Model decides when and how much to reason | Opus 4.6+ only |
+| `"enabled"` | `{ type: "enabled" }` | Fixed thinking budget (SDK default) | All models |
+| `"disabled"` | `{ type: "disabled" }` | No extended thinking | All models |
+
+The string format keeps the HTTP API and transport simple — only the runner needs to know about the SDK's type system.
+
+### How `query()` works under the hood
+
+The Claude Agent SDK spawns the `claude` CLI binary and communicates via stdin/stdout NDJSON. There is no "direct API mode" — the SDK IS a CLI wrapper. This means:
+
+- In development: uses the user's locally installed `claude` CLI and their auth from `~/.claude/`
+- In Docker: `claude` CLI is installed in the image, `ANTHROPIC_API_KEY` is in the env
+- Same code path either way
+
+## Runtime authentication
+
+In development (`npm run dev`), the worker runs on the host. Claude can use the user's existing `~/.claude/` auth. Codex can use `CODEX_API_KEY`/`OPENAI_API_KEY` or a local Codex login seeded from `SECOND_CODEX_HOME`, `CODEX_HOME`, or `~/.codex/auth.json`. OpenCode uses the provider keys required by the selected `provider/model`.
+
+In production, configure only the provider keys needed by enabled runtimes: for example `ANTHROPIC_API_KEY` for Claude Code, `CODEX_API_KEY` or `OPENAI_API_KEY` for Codex CLI, and provider-specific keys such as `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `GEMINI_API_KEY` for OpenCode models. If a CLI is not on the worker `PATH`, set `SECOND_CLAUDE_PATH`, `SECOND_CODEX_PATH`, or `SECOND_OPENCODE_PATH` to the executable path. Do not mount a shared Codex login home in production unless the deployment is intentionally single-tenant or otherwise isolated and `SECOND_ALLOW_CODEX_LOCAL_AUTH=1` is part of that explicit deployment policy. Also set `INTERNAL_API_TOKEN` on both web and worker so worker HTTP routes and web internal routes authenticate each other.
+
+Claude Code subprocess environment scrubbing is enabled by default. On Linux,
+Claude Code requires `bubblewrap` (`bwrap`) for that mode. The worker Dockerfile
+installs it; custom production images must keep it installed or Claude detection
+will mark the runtime unavailable. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0` disables
+Claude's inner subprocess env scrubber and should only be used when the worker is
+externally isolated and that tradeoff is intentional.
+
+Codex CLI and OpenCode are launched with allowlisted environments and private per app/run `HOME`/config directories. In production, Codex `workspace-write` requests run as Codex `danger-full-access` inside the already-isolated worker environment because Linux sandboxing can be unavailable inside containers. Do not rely on CLI permission systems as the only production boundary; deployment-level container/process/network controls are recommended and belong outside this repo.
+
+## File structure
+
+```
+apps/worker/
+├── package.json
+├── Dockerfile
+├── tsconfig.json
+└── src/
+    ├── index.ts              # Hono HTTP server + route handlers + session file I/O
+    ├── session-manager.ts    # TTL-based session lifecycle
+    ├── runner.ts             # Provider-neutral Second tool handlers + Claude tool wrappers
+    ├── tool-broker.ts        # Scoped MCP broker for command-backed runtimes
+    ├── runtimes/             # Claude, Codex CLI, and OpenCode adapters
+    ├── builder-skills.ts     # Local Claude skills injected into app workspaces
+    ├── agent-run-manager.ts  # Background agent execution with event buffering
+    ├── event-stream.ts       # SSE encoding helpers
+    ├── dep-warmup.ts         # Background npm install at scaffold time
+    └── workspace-template.ts # Vite + TS + Shadcn scaffold + SDK (useAgent, useCollection, etc.)
+```
+
+## Adding a new runtime
+
+To add another runtime:
+
+1. Add its model and parameter metadata to `apps/web/src/lib/agent/runtime-registry.ts`.
+2. Add a worker adapter under `apps/worker/src/runtimes/` and register it in `runtimes/index.ts`.
+3. Normalize its JSON/event stream into the canonical worker message shape.
+4. Expose Second tools through the scoped MCP broker unless the runtime has a safe in-process tool API.
+5. Add provider detection hints without returning secret values.
+6. Validate blocking `present_plan` and `present_agents` behavior before enabling it in the picker.

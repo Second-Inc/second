@@ -1,0 +1,42 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Second",
+  "colors": {
+    "primary": "#0D9373"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": ["index", "quickstart", "enterprise", "development"]
+      },
+      {
+        "group": "Architecture",
+        "pages": [
+          "architecture",
+          "app-governance",
+          "agent-system",
+          "app-agents",
+          "app-data",
+          "integrations",
+          "worker",
+          "app-preview",
+          "streaming",
+          "models-and-usage",
+          "guard-and-tenancy",
+          "authentication",
+          "product-analytics"
+        ]
+      },
+      {
+        "group": "Deployment",
+        "pages": ["self-hosting", "deployed-slowness-playbook"]
+      },
+      {
+        "group": "Community",
+        "pages": ["contributing"]
+      }
+    ]
+  }
+}

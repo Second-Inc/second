@@ -1,0 +1,126 @@
+---
+title: "Audit Logs"
+description: "How Second records workspace-scoped governance, app, agent, integration, and data-change events."
+---
+
+Second stores durable audit events in MongoDB so owners and admins can answer
+what changed in a workspace without reading prompts, source files, secrets, or
+raw app data.
+
+Audit logs are different from the existing realtime systems:
+
+- Workspace events are Redis invalidation hints for mounted UI.
+- Builder and app-agent streams are ordered user-visible run streams.
+- Audit events are append-only, queryable workspace records.
+
+## Permissions
+
+Workspace-wide audit logs require `audit:read`. Owners and admins have this
+permission by default; members do not.
+
+Audit reads always go through `requireWorkspaceContext`, then check
+`audit:read`, then query `audit_events` with `workspaceId`. Looking up an audit
+event by ID also includes `workspaceId`, so an event from another workspace
+returns `404`.
+
+Exports are not part of the open-source v1 implementation, so there is no
+`audit:export` permission yet.
+
+## Event shape
+
+Every audit event records:
+
+| Field | Purpose |
+| --- | --- |
+| `workspaceId` | Tenant boundary. Every query includes it. |
+| `occurredAt` / `observedAt` | When the action happened and when the platform stored it. |
+| `eventName` | Stable dot-delimited name such as `member.role_changed`. |
+| `category` | Broad area such as `apps`, `members`, `integrations`, or `app_data`. |
+| `actor` | User, agent, worker, app, or system identity known by the server. |
+| `source` | Platform, builder agent, app iframe, app agent, worker, or system provenance. |
+| `target` | Workspace object affected by the event. |
+| `outcome` / `severity` | Success, denial, failure, started, completed, plus importance. |
+| `metadata` | Small sanitized facts needed for investigation. |
+| `changes` | Changed field names and before/after hashes when useful. |
+| `relatedIds` | Safe IDs such as app, run, review, integration, or app-data document IDs. |
+
+The schema is intentionally close to OpenTelemetry-style log fields, but Second
+keeps a first-party store so local and on-prem deployments work without an
+external SIEM.
+
+## What is recorded
+
+Open-source v1 records the core governance and platform events:
+
+| Area | Example events |
+| --- | --- |
+| Apps and builder runs | `app.created`, `builder_run.created`, `builder_run.started`, `builder_run.completed`, `builder_run.failed`, `builder_message.submitted` |
+| Source snapshots | `app.source_snapshot.updated` with hash, file count, byte size, and artifact flag only |
+| App metadata | `app.renamed`, `app.deleted`, `app.visibility_changed`, `app.teams_changed`, `app.collaborator_added`, `app.collaborator_removed`, `app.collaborators_changed` |
+| Review and publishing | `review.requested`, `review.approved`, `review.changes_requested`, `review.superseded`, `app.published` |
+| Members and teams | `member.invited`, `member.invitation_revoked`, `member.role_changed`, `member.removed`, `team.created`, `team.renamed`, `team.deleted`, `member.team_added`, `member.team_removed` |
+| Integrations | `integration.requested`, `integration.configured`, `integration.secret_rotated`, `integration.reset`, `integration.deleted`, `oauth.provider_configured`, `oauth.provider_secret_rotated`, `oauth.connected`, `oauth.connect_failed`, `oauth.revoked`, `oauth.token_refreshed` |
+| Permission denials | `access.denied` for safe same-workspace authorization failures |
+| App-agent governance and runs | `app.agents_config.approved`, `app.agents_config.stale`, `app_agent_run.created`, `app_agent_run.started`, `app_agent_run.completed`, `app_agent_run.failed` |
+| Custom tools | `tool.custom.executed`, `tool.custom.denied`, `tool.custom.mocked`, `tool.custom.failed` |
+| App data writes | `app_data.document.inserted`, `app_data.document.updated`, `app_data.document.upserted`, `app_data.document.deleted` |
+| Audit usage | `audit.viewed` through an explicit rate-limited POST |
+
+The audit settings page includes an event-explanation catalog with the same
+coverage map. It also marks enterprise-later rows such as generated-app SDK
+business events, exports, SIEM export, live audit streaming, advanced analytics,
+saved views, legal hold, and retention controls.
+
+## Redaction
+
+Audit metadata is sanitized before storage. The recorder strips control
+characters, caps metadata depth/size, truncates long strings and arrays, and
+redacts sensitive keys.
+
+Never store these in audit events:
+
+- source files, compiled artifacts, sourcemaps
+- prompts, assistant messages, reasoning, full transcripts
+- full app documents or full app-data documents
+- integration secret values, OAuth tokens, API keys, cookies, sessions
+- raw request headers, request bodies, or provider responses
+- internal tokens, connection strings, private keys
+
+For app data writes, audit events store collection name, document ID, operation,
+source version, changed field names, and before/after hashes. They do not store
+the document body.
+
+For custom tools, audit events store the tool name, integration name/domain,
+mock-vs-live mode, outcome class, and HTTP status. They do not store headers,
+secret-injected URLs, request bodies, or response bodies.
+
+For OAuth, audit events store safe facts such as provider key, provider config
+ID, integration ID, connected account ID, requested tool name, outcome, and
+scope names. They do not store authorization codes, OAuth client secrets,
+refresh tokens, access tokens, Vault references, token endpoint request bodies,
+provider response bodies, email bodies, calendar event bodies, or request
+headers.
+
+## Performance model
+
+Audit history is not loaded on app lists, sidebar navigation, settings shells,
+chat routes, or access checks. The audit settings page uses bounded read APIs
+and manual refresh.
+
+Open-source v1 does not add an audit EventSource route. If live audit streaming
+is added later, it should use compact projections and must still authorize the
+connection with `audit:read`.
+
+Builder chat and app-agent streaming paths use nonblocking audit writes where
+waiting on audit storage would make stream startup or completion feel slower.
+The durable run/app mutation remains the source of truth if an audit insert
+fails.
+
+## Tenant isolation
+
+Every stored event has `workspaceId`. Every audit read includes `workspaceId`.
+Target IDs are never used alone for lookup.
+
+Browser-origin data is never trusted for actor, workspace, app, or source trust.
+The server sets those fields from authenticated workspace context or from
+validated internal worker context.

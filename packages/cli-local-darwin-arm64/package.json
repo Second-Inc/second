@@ -1,0 +1,32 @@
+{
+  "name": "@second-inc/cli-local-darwin-arm64",
+  "version": "0.1.24",
+  "description": "Second local app payload for macOS arm64",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Second-Inc/second.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Second-Inc/second/issues"
+  },
+  "homepage": "https://github.com/Second-Inc/second#readme",
+  "bin": {
+    "second-local": "./bin/second-local.js"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "scripts": {
+    "build": "node ../cli/scripts/bundle-worker.mjs --out dist",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
+  "license": "Apache-2.0"
+}
