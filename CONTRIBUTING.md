@@ -6,6 +6,16 @@ Start with the contributor guide in the docs:
 
 - [docs/contributing.mdx](docs/contributing.mdx)
 
+## Contributor License Agreement
+
+Before we can accept outside contributions, contributors must agree to the
+Second Contributor License Agreement. This keeps the project legally clear and
+preserves Second's ability to relicense future versions if the project needs to
+change direction later.
+
+Do not merge outside pull requests until the CLA check is configured and passing
+for the contributor.
+
 Before opening a pull request, run the checks that match your change:
 
 ```bash
