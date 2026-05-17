@@ -419,7 +419,9 @@ Source development (Docker mode) works on any platform with Docker Desktop.
 
 ## Contributing
 
-We welcome contributions. See the [docs](https://docs.second.dev) for architecture details and development setup.
+We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[docs](https://docs.second.dev) for architecture details and development setup.
+Report security issues privately; see [SECURITY.md](SECURITY.md).
 
 ```bash
 git clone https://github.com/Second-Inc/second.git
