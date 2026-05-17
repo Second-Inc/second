@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code:
+    name: Code checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix apps/web
+          npm ci --prefix apps/worker
+          npm ci --prefix packages/cli
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint web
+        run: npm --prefix apps/web run lint
+
+      - name: Build web
+        run: npm --prefix apps/web run build
+
+      - name: Validate CLI launcher
+        run: npm --prefix packages/cli run build
+
+  docs:
+    name: Docs check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Mintlify CLI
+        run: npm install -g mint@latest
+
+      - name: Validate Mintlify docs
+        working-directory: docs
+        run: mint validate
