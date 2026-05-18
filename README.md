@@ -27,10 +27,6 @@
   <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 </p>
 
----
-
-<br>
-
 ## What is Second?
 
 Second is a factory for building custom internal software, where humans and AI agents collaborate on real work, on the same shared custom interfaces.
@@ -52,7 +48,36 @@ Above all, every app built on Second treats agents as first-class citizens. They
 
 <br>
 
----
+## Quick Start
+
+```bash
+npx --yes @second-inc/cli
+```
+
+**Supported platforms**
+
+| Platform | Status |
+|:---|:---|
+| Apple Silicon Mac (M1-M5) | **Available now** |
+| Intel Mac | Coming soon |
+| Linux | Coming soon |
+| Windows / WSL2 | Coming soon |
+
+<br>
+
+<details>
+<summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
+<br>
+
+```bash
+npx --yes @second-inc/cli              # Start Second
+npx --yes @second-inc/cli stop         # Stop all services
+npx --yes @second-inc/cli reset        # Stop + delete all data
+npx --yes @second-inc/cli --port 4000  # Custom port
+npx --yes @second-inc/cli --disable-telemetry  # No analytics
+```
+
+</details>
 
 <br>
 
@@ -83,9 +108,6 @@ Bring your own agent harness, switch runtimes and models per message, per app, w
     <td align="center"><sub>Coming soon</sub></td>
   </tr>
 </table>
-
-
----
 
 ## Why Second?
 
@@ -123,61 +145,6 @@ Companies like **Ramp** and **Deel** have built their own custom platforms to so
   </tr>
 </table>
 
----
-
-## Quick Start
-
-One command, designed to run fully locally and stay free forever.
-
-```bash
-npx --yes @second-inc/cli
-```
-
-**Supported platforms**
-
-| Platform | Status |
-|:---|:---|
-| Apple Silicon Mac (M1-M4) | **Available now** |
-| Intel Mac | Coming soon |
-| Linux | Coming soon |
-| Windows / WSL2 | Coming soon |
-
-<br>
-
-<details>
-<summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
-<br>
-
-```bash
-npx --yes @second-inc/cli              # Start Second
-npx --yes @second-inc/cli stop         # Stop all services
-npx --yes @second-inc/cli reset        # Stop + delete all data
-npx --yes @second-inc/cli --port 4000  # Custom port
-npx --yes @second-inc/cli --disable-telemetry  # No analytics
-```
-
-</details>
-
-<details>
-<summary>&nbsp;&nbsp;<strong>Development from Source</strong></summary>
-<br>
-
-**Prerequisites:** Node.js 20+, npm 10+, Docker Desktop
-
-```bash
-git clone https://github.com/Second-Inc/second.git
-cd second
-npm run dev
-```
-
-This starts MongoDB + Redis in Docker, and the web + worker processes on your host. Open the URL printed by the script or check `.second-dev.txt`.
-
-</details>
-
-<br>
-
----
-
 ## Agent-Native Software
 
 This is the core paradigm of Second. Every app treats agents as **first-class citizens**:
@@ -200,9 +167,6 @@ From a single prompt, build an app where agents:
 - Collect and store **PDFs and case studies** found across the web
 
 Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, with no export, no copy-paste, and no context switching.
-
----
-
 
 ## Security & Governance
 
@@ -263,10 +227,6 @@ Every app's agent capabilities are declared, version-controlled, and approved:
 
 </td></tr>
 </table>
-
-<br>
-
----
 
 <br>
 
@@ -336,10 +296,6 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 <br>
 
----
-
-<br>
-
 ## Architecture
 
 ```
@@ -378,10 +334,6 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 <br>
 
----
-
-<br>
-
 ## What You Can Build
 
 Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
@@ -403,10 +355,6 @@ The flexibility is unlimited. If your workflow involves humans and agents collab
 
 <br>
 
----
-
-<br>
-
 ## Platform Support
 
 | Platform | Status |
@@ -417,10 +365,6 @@ The flexibility is unlimited. If your workflow involves humans and agents collab
 | Windows (WSL2) | Coming soon |
 
 Source development (Docker mode) works on any platform with Docker Desktop.
-
-<br>
-
----
 
 <br>
 
@@ -437,8 +381,6 @@ npm run dev
 ```
 
 <br>
-
----
 
 <p align="center">
   <sub>Second is licensed under the <a href="LICENSE">Apache License 2.0</a>.</sub>
