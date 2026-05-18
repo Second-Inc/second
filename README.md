@@ -94,7 +94,7 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
 <tr>
 <td align="center" width="33%">
 <h3>🔧 Self-Building Integrations</h3>
-A unique part of Second: integrations are generated on demand with exact connection instructions. Second is a self-building app.
+Second builds itself: integrations are generated on demand with exact connection instructions.
 </td>
 <td align="center" width="33%">
 <h3>🔌 Bring Your Own Agent</h3>
