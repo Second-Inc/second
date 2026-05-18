@@ -48,39 +48,28 @@ Instead of adapting your workflows to pre-built agent management interfaces or g
 
 It's a single, beautifully governed workspace.
 
-**Why?** Text and long-running chats are the wrong abstraction for real work with AI. A text input and text streams don't give you visibility, control, or collaboration. When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom interfaces where your team sees what agents are doing, steers their work, and stays in control.
+## Why Second?
+
+Text and long-running chats are the wrong abstraction for real work with AI. A text input and text streams don't give you visibility, control, or collaboration. When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom interfaces where your team sees what agents are doing, steers their work, and stays in control.
 
 Most platforms get this wrong. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated — forcing you into their idea of how agent work should look (a kanban board, a chat thread, a static pipeline). We don't know what work you're doing, and we don't pretend to. Second is a factory: you build your own. 
 
 **Think of it as an internal, self-hosted, collaborative Lovable, where humans and agents collaborate on the same custom interfaces your team builds.** Prompt an app → Second generates an agent control plane for your workflow: already deployed in your workspace, **with a real-time database, RBAC, and audit logs out of the box. Air-gapped on your k8s.**
 
-### Agent-Native Software
-
-This is the core paradigm. Every app treats agents as **first-class citizens**:
-
-| Capability | How It Works |
-|---|---|
-| **Shared real-time database** | Agents read and write to the same live database as your team, with optimistic updates, change streams, and instant sync |
-| **Scoped & secure tools** | Each agent gets precisely the tools it needs via `agents.json`, nothing more |
-| **Collaborative UI** | Agents work alongside your team on the same custom-built interface |
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting — not just chat |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
-
-#### Example: Competitor Research
-
-From a single prompt, build an app where agents:
-- Produce a live **news feed** of latest competitor updates
-- Run a scheduled job that **alerts on pricing changes**
-- Maintain a **research overview** page with structured analysis
-- Collect and store **PDFs and case studies** found across the web
-
-Your team sees everything in one collaborative interface. Agents write to the same database your team reads from — no export, no copy-paste, no context switching.
-
 > [!TIP]
 > **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
 >
 > Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
+
+## Core Philosophy: Agent-Native Software
+
+Every app treats **agents as first-class citizens**: they read and write to the same real-time DB your team is working on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans on the same custom interfaces.
+
+On top of that, Second handles the hard parts:
+
+- **Multi-agent orchestration** - Run multiple specialized agents per app: one for research, one for alerts, one for enrichment
+- **Long-running async work** - Agents run scheduled jobs, periodic research, and alerting, not just chat
+- **Live data persistence** - MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn
 
 <br>
 
@@ -197,6 +186,16 @@ Second excels at apps where teams collaborate with agents on long-running, async
 | **Customer success dashboards** | Pull data from CRMs and support tools; teams act on insights |
 | **Internal knowledge bases** | Continuously index and organize docs; teams search and annotate |
 | **Compliance monitoring** | Scan for policy violations; approvers review and resolve |
+
+### Example: Competitor Research
+
+From a single prompt, build an app where agents:
+- Produce a live **news feed** of latest competitor updates
+- Run a scheduled job that **alerts on pricing changes**
+- Maintain a **research overview** page with structured analysis
+- Collect and store **PDFs and case studies** found across the web
+
+Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
 
 The flexibility is unlimited. If your workflow involves humans and agents collaborating on structured data, Second handles the infrastructure so you can focus on the work.
 
