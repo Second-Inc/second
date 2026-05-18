@@ -61,7 +61,7 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 
 Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable, but most of these projects never reach production because of various reasons (security, integrations, governance, safe deployments, maintenance, agent access control, and so on...).
 
-**To solve this, they built internal platforms for themselves. Second lets every organization do the same.**
+**To solve this, they built internal platforms for themselves. Second lets every organization have a platform like that.**
 
 <table>
   <tr>
