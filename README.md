@@ -108,10 +108,10 @@ Each app gets real-time data, audit logs, RBAC, agent RBAC, and governance in th
 <tr>
 <td align="center">
 <h3>👥 Multiplayer Agent Sessions</h3>
-Humans and agents work in the same app, on the same data, without losing context.
+Talk with Claude Code or Codex, invite teammates into the session, and collaborate with shared context.
 </td>
 <td align="center">
-<h3>🔒 Zero-Trust Governance</h3>
+<h3>🔒 Zero Trust Permissions</h3>
 Agents get only approved tools, data, and integrations. Everything is scoped and audited.
 </td>
 <td align="center">
