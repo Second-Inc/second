@@ -101,8 +101,8 @@ Second builds itself: integrations are generated on demand with exact connection
 Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message.
 </td>
 <td align="center" width="33%">
-<h3>🧱 App Runtime Included</h3>
-Each app gets real-time data, audit logs, RBAC, agent RBAC, and governance in the workspace.
+<h3>🧠 Workspace-Wide Agents</h3>
+Create reusable agents with prompts, skills, models, and team visibility. Use them across conversations.
 </td>
 </tr>
 <tr>
@@ -117,6 +117,20 @@ Agents get only approved tools, data, and integrations. Everything is scoped and
 <td align="center">
 <h3>⚡ Real-Time Collaboration</h3>
 Change streams and optimistic updates keep teams and agents synced as work happens.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>🏗️ Prompt-to-App Generation</h3>
+Generate internal apps with UI, data, agents, and workflows from a single prompt.
+</td>
+<td align="center">
+<h3>📚 Shared Skills Library</h3>
+Define reusable instructions once, then attach them to agents across the workspace.
+</td>
+<td align="center">
+<h3>✅ Governed App Lifecycle</h3>
+Draft, review, approve, and publish apps with agents and integrations under control.
 </td>
 </tr>
 </table>
