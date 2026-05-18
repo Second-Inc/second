@@ -61,7 +61,7 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 
 Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable, but most of these projects never reach production because of various reasons (security, integrations, governance, safe deployments, maintenance, agent access control, and so on...).
 
-**To solve this, they built internal platforms for themselves. Second lets every organization have a platform like that.**
+**To solve this, they built internal platforms for themselves. Second lets every organization have that.**
 
 <table>
   <tr>
@@ -93,30 +93,30 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
 <table>
 <tr>
 <td align="center" width="33%">
-<h3>🔌 Bring Your Own Agent</h3>
-Any agent, any runtime, one workspace. Claude Code, Codex, OpenCode, and more. Switch per message, per app, without restarting conversations.
-</td>
-<td align="center" width="33%">
 <h3>🔧 Self-Building Integrations</h3>
-No MCP. Second builds scoped, custom tools on the fly for each agent. OAuth-connected, domain-locked, secrets injected server-side. Connects to literally anything.
+A unique part of Second: integrations are generated on demand with exact connection instructions. Second is a self-building app.
 </td>
 <td align="center" width="33%">
-<h3>☁️ Open Platform</h3>
-Your cloud, your agents, your integrations. Runs on your k8s cluster, your VPC, your rules. No vendor lock-in, no data leaving your network.
+<h3>🔌 Bring Your Own Agent</h3>
+Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message.
+</td>
+<td align="center" width="33%">
+<h3>🧱 App Runtime Included</h3>
+Each app gets real-time data, audit logs, RBAC, agent RBAC, and governance in the workspace.
 </td>
 </tr>
 <tr>
 <td align="center">
 <h3>👥 Multiplayer Agent Sessions</h3>
-Every workspace ships with multiplayer Claude Code and Codex sessions in your cloud, with scoped access control. Not a separate feature. Just how the platform works.
+Humans and agents work in the same app, on the same data, without losing context.
 </td>
 <td align="center">
 <h3>🔒 Zero-Trust Governance</h3>
-Agent RBAC, human RBAC, audit logs, approval flows. Nothing runs without explicit declaration and sign-off. Full tenant isolation per workspace.
+Agents get only approved tools, data, and integrations. Everything is scoped and audited.
 </td>
 <td align="center">
 <h3>⚡ Real-Time Collaboration</h3>
-Agents and humans on the same page, same database, same UI. Change streams, optimistic updates, instant sync. Data survives browser close, agent restarts, and worker churn.
+Change streams and optimistic updates keep teams and agents synced as work happens.
 </td>
 </tr>
 </table>
@@ -134,6 +134,26 @@ On top of that, Second handles the hard parts:
 | **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
 | **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
 | **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
+
+## Second Is Right For You If
+
+- ✅ Your team has Claude, Codex, or Lovable prototypes that need to become real production software.
+- ✅ You need internal tools where humans and agents work on the same workflows.
+- ✅ You need agents to work with real systems while keeping access scoped, approved, and auditable.
+- ✅ You want to keep using your own agent harness (e.g. Claude Code or Codex) to ship powerful internal apps.
+- ✅ You need RBAC, agent access control, approval flows, audit logs, integrations, and safe deployments from the start.
+- ✅ You want agents inside the app, not off to the side in a separate chat window.
+- ✅ You have security constraints that require local, self-hosted, or on-prem deployment.
+
+## Problems Second Solves
+
+| Without Second | With Second |
+|---|---|
+| Prototypes work in Claude, Codex, or Lovable, then stall before production. | Apps are generated inside a governed workspace with the runtime pieces already there. |
+| Agents work in separate chats and lose the context your team is acting on. | Agents and humans share the same app, real-time DB, and interface. |
+| Every integration becomes a one-off security project. | Second generates scoped tools and keeps secrets server-side. |
+| Agent permissions are hard to explain, approve, and audit. | `agents.json`, RBAC, approvals, and audit logs make access explicit. |
+| Every team rebuilds deployment, governance, and collaboration from scratch. | One workspace gives teams and platform engineers the same foundation. |
 
 <br>
 
