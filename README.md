@@ -42,19 +42,21 @@ npx --yes @second-inc/cli
 
 ## What is Second?
 
-Second lets every team ship custom internal software for managing agents and collaborating with them on async work.
+Second is a factory for shipping internal software built for human-agent collaboration.
 
-Instead of adapting how you work to pre-built agent management software or generic SAAS, Second comes with the right primitives so every team can ship the exact interfaces and apps they need for managing and working alongside agents.
+Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
 
-It's a single, beautifully governed workspace.
+**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built, and work alongside your team around your exact use cases.
+
+Every app comes with a real-time DB, audit logs, RBAC, agent RBAC, and governance controls inside the workspace.
 
 ## Why Second?
 
-When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom apps where your team sees what agents are doing, steers their work, and stays in control.
+Teams are already building powerful internal tools with Claude, Codex, and Lovable. But most of those tools never reach production.
 
-Most platforms get this wrong. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated — forcing you into their idea of how agent work should look (a kanban board, a chat thread, a static pipeline). We don't know what work you're doing, and we don't pretend to. Second is a factory: you build your own apps and interfaces.
+The hard part is no longer generating a prototype. The hard part is turning it into secure, shared, governed software that agents and humans can actually use together.
 
-**Think of it as an internal, self-hosted, collaborative Lovable, where humans and agents collaborate on the same custom apps your team builds.** Prompt an app → Second generates an agent control plane for your workflow: already deployed in your workspace, **with a real-time database, RBAC, and audit logs out of the box. Air-gapped on your k8s.**
+Second gives every organization that foundation: open-source, bring your own agent harness, and self-hosted.
 
 > [!TIP]
 > **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.

@@ -6,17 +6,15 @@ Run Second locally with one command.
 npx --yes @second-inc/cli
 ```
 
-Second is an open-source, self-hostable workspace for building secure internal tools where humans and agents work together.
+Second is an open-source, self-hosted platform for creating internal apps where AI agents and humans collaborate on the same workflows, data, and interfaces.
 
 ## What is Second?
 
-Second lets every team ship custom internal interfaces for managing agents and collaborating with them on async work.
+Most apps were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated, forcing your team into workflows that do not really fit how you work. And when humans and agents need to coordinate around real team workflows, the whole thing gets hard, fragile, and easy to break.
 
-It is a single, governed workspace. Instead of adapting your workflows to pre-built agent management interfaces, Second gives you the primitives to build the exact internal interfaces your team needs. Prompt an app, and Second generates a full internal interface with a real-time database, permissions, and audit logs out of the box.
+**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) that treats agents as first-class citizens: agents read and write to the same real-time database as humans, get scoped tools generated dynamically for the app, and work alongside your team inside the interfaces built around your exact use case.
 
-Every app built on Second treats agents as first-class citizens. Agents read and write to the same real-time database your team is working on, get scoped and secure tools inside the apps you build, and work alongside humans on the same custom interfaces.
-
-Think of it as an internal, secure, collaborative Lovable that runs on-prem and is purpose-built for long-running, asynchronous work with agents.
+Every app comes with a real-time DB, audit logs, RBAC, agent RBAC, and governance controls inside the workspace.
 
 ## Quick Start
 
@@ -28,7 +26,7 @@ The local CLI currently supports Apple Silicon Macs.
 
 | Platform | Status |
 |:---|:---|
-| Apple Silicon Mac (M1-M4) | Available now |
+| Apple Silicon Mac (M1-M5) | Available now |
 | Intel Mac | Coming soon |
 | Linux | Coming soon |
 | Windows / WSL2 | Coming soon |
@@ -57,13 +55,11 @@ Current agent runtime support:
 
 ## Why Second?
 
-Every team is hitting the same wall: you build a v1 of an internal tool with Codex, Claude, or Lovable. Then comes the "OK, now what?" phase:
+Teams are already building powerful internal tools with Claude, Codex, and Lovable. But most of those tools never reach production.
 
-- How do you deploy and share it safely?
-- How do you make your software accessible for agents?
-- What about real-time collaboration, RBAC, agent RBAC, secure integrations, audit logs, and cost management?
+The hard part is no longer generating a prototype. The hard part is turning it into secure, shared, governed software that agents and humans can actually use together.
 
-Second is the infrastructure for teams that want to build internal software with agents and still keep governance, security, and collaboration under control.
+Second gives every organization that foundation: open-source, bring your own agent harness, and self-hosted.
 
 ## Agent-Native Software
 
