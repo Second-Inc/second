@@ -9,7 +9,7 @@
 <h1 align="center">Second</h1>
 
 <p align="center">
-  A factory for custom internal interfaces<br>where humans and agents work together.
+  The factory for custom internal software,<br>purpose-built for human–agent work.
 </p>
 
 <p align="center">
@@ -27,57 +27,131 @@
   <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 </p>
 
-## What is Second?
-
-Second is a factory for building custom internal software, where humans and AI agents collaborate on real work, on the same shared custom interfaces.
-
-Instead of adapting your workflows to pre-built agent management interfaces or generic SAAS, Second comes with the right primitives — so every team can ship the exact interfaces they need for managing and collaborating with agents.
-
-It's a single, beautifully governed workspace.
-
-Prompt an app, and Second generates an agent control plane for your workflow — already deployed in your workspace, with a real-time database, permissions, and audit logs out of the box. Air-gapped on your k8s.
-
-Above all, every app built on Second treats agents as first-class citizens. They read and write to the same real-time DB your team is working on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans on the same custom interfaces.
-
-> [!TIP]
-> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
->
-> Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
-
-<strong>Think of it as:</strong> An internal, secure, and collaborative Lovable that runs on-prem — purpose-built for long-running, asynchronous work with agents.
-
-<br>
-
 ## Quick Start
 
 ```bash
 npx --yes @second-inc/cli
 ```
 
-**Supported platforms**
-
 | Platform | Status |
 |:---|:---|
 | Apple Silicon Mac (M1-M5) | **Available now** |
-| Intel Mac | Coming soon |
-| Linux | Coming soon |
-| Windows / WSL2 | Coming soon |
+| Intel Mac, Linux, Windows | Coming soon |
 
 <br>
 
-<details>
-<summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
+## What is Second?
+
+Second is a factory for building custom internal software, where humans and AI agents collaborate on real work, on the same shared custom interfaces.
+
+Instead of adapting your workflows to pre-built agent management interfaces or generic SAAS, Second comes with the right primitives so every team can ship the exact interfaces and apps they need for managing and working alongside agents.
+
+It's a single, beautifully governed workspace.
+
+**Why?** Text and long-running chats are the wrong abstraction for real work with AI. A text input and text streams don't give you visibility, control, or collaboration. When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom interfaces where your team sees what agents are doing, steers their work, and stays in control.
+
+Most platforms get this wrong. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated — forcing you into their idea of how agent work should look (a kanban board, a chat thread, a static pipeline). We don't know what work you're doing, and we don't pretend to. Second is a factory: you build your own. 
+
+**Think of it as an internal, self-hosted, collaborative Lovable, where humans and agents collaborate on the same custom interfaces your team builds.** Prompt an app → Second generates an agent control plane for your workflow: already deployed in your workspace, **with a real-time database, RBAC, and audit logs out of the box. Air-gapped on your k8s.**
+
+### Agent-Native Software
+
+This is the core paradigm. Every app treats agents as **first-class citizens**:
+
+| Capability | How It Works |
+|---|---|
+| **Shared real-time database** | Agents read and write to the same live database as your team, with optimistic updates, change streams, and instant sync |
+| **Scoped & secure tools** | Each agent gets precisely the tools it needs via `agents.json`, nothing more |
+| **Collaborative UI** | Agents work alongside your team on the same custom-built interface |
+| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
+| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting — not just chat |
+| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
+
+#### Example: Competitor Research
+
+From a single prompt, build an app where agents:
+- Produce a live **news feed** of latest competitor updates
+- Run a scheduled job that **alerts on pricing changes**
+- Maintain a **research overview** page with structured analysis
+- Collect and store **PDFs and case studies** found across the web
+
+Your team sees everything in one collaborative interface. Agents write to the same database your team reads from — no export, no copy-paste, no context switching.
+
+> [!TIP]
+> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
+>
+> Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
+
 <br>
 
-```bash
-npx --yes @second-inc/cli              # Start Second
-npx --yes @second-inc/cli stop         # Stop all services
-npx --yes @second-inc/cli reset        # Stop + delete all data
-npx --yes @second-inc/cli --port 4000  # Custom port
-npx --yes @second-inc/cli --disable-telemetry  # No analytics
-```
+## The Wall Everyone Hits
 
-</details>
+You've already seen it happen.
+
+Someone on your team builds something amazing with Claude Code, Codex, or Lovable. A prototype, an internal tool, an automation that genuinely works. Then they try to take it further — and hit the wall:
+
+- How do you deploy and share it safely?
+- How do you give agents scoped access to critical systems?
+- What about real-time collaboration? RBAC? Agent RBAC?
+- Secure integrations? Audit logs? Cost management?
+
+There are beautiful initiatives happening inside organizations right now. Teams are building genuinely useful things with AI — literally anything is possible today — and most of it will never reach production. It'll never connect to critical systems. It'll never get the governance sign-off. It'll stay as demos, prototypes, and Slack messages that say *"check out what I built."*
+
+Companies like **Ramp** and **Deel** have already figured this out — they built their own internal platforms.
+
+**Second is the infrastructure to let every team do the same.**
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>For Teams</h3>
+      <ul>
+        <li>Build custom apps from a single prompt</li>
+        <li>Run multiple agents in parallel across workflows</li>
+        <li>Real-time collaborative UI with agents and humans on the same page</li>
+        <li>No code required — designed for non-technical teams</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>For Platform Engineers</h3>
+      <ul>
+        <li>One-time workspace setup, unlimited apps</li>
+        <li>Full governance: draft/review/publish lifecycle</li>
+        <li>Fine-grained access control per app, per agent, per integration</li>
+        <li>Deploy on your own k8s, air-gapped or on-prem</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<br>
+
+## What Makes Second Different
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>Agent-Native, Not Agent-Bolted</h3>
+<p>Every app treats agents as first-class citizens. They read and write to the same real-time database your team uses, get scoped and secure tools, and work alongside humans on the same custom interfaces. Agents aren't a feature — they're the core primitive.</p>
+</td>
+<td width="50%" valign="top">
+<h3>A Factory, Not a Template</h3>
+<p>We don't tell you how to work with agents. We give you the primitives to build exactly the interfaces your team needs. A competitor research dashboard looks nothing like a lead enrichment pipeline — and it shouldn't have to.</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<h3>Self-Building Integrations</h3>
+<p>Second doesn't rely on generic integration protocols. Instead, it builds extremely scoped, custom tools on the fly — purpose-built for each agent's work. OAuth-connected, domain-locked, secrets injected server-side. Inspired by the original Second project — a self-morphing coding agent that builds its own integrations. Full control, connects to literally anything.</p>
+</td>
+<td width="50%" valign="top">
+<h3>Open Platform</h3>
+<p>Bring your own cloud. Bring your own agents. Bring your own integrations. Second runs on your infrastructure — your k8s cluster, your VPC, your rules. No vendor lock-in, no data leaving your network.</p>
+</td>
+</tr>
+</table>
+
+> **What you get for free:** Every Second workspace ships with multiplayer Claude Code and Codex sessions running in your cloud — with scoped access control and permissions. It's not a feature we built separately. It's just how the platform works.
 
 <br>
 
@@ -109,71 +183,30 @@ Bring your own agent harness, switch runtimes and models per message, per app, w
   </tr>
 </table>
 
-## Why Second?
+<br>
 
-Every team is hitting the same wall: you build a v1 of an internal tool with Codex, Claude, or Lovable. Then comes the **"Ok, now what?"** phase:
+## What You Can Build
 
-- How do you deploy and share it safely?
-- How do you make your software accessible for agents?
-- What about real-time collaboration? RBAC? Agent RBAC?
-- Secure integrations? Audit logs? Cost management?
+Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
 
-Companies like **Ramp** and **Deel** have built their own custom platforms to solve this.
+| Use Case | What Agents Do |
+|:---|:---|
+| **Competitor intelligence** | Monitor competitors, aggregate news, alert on pricing changes, collect case studies |
+| **Lead enrichment pipelines** | Research and qualify leads while your team reviews and acts |
+| **Content operations** | Draft, research, and organize while editors review in real-time |
+| **Customer success dashboards** | Pull data from CRMs and support tools; teams act on insights |
+| **Internal knowledge bases** | Continuously index and organize docs; teams search and annotate |
+| **Compliance monitoring** | Scan for policy violations; approvers review and resolve |
 
-**Second is the infrastructure to let everyone else do the same.**
+The flexibility is unlimited. If your workflow involves humans and agents collaborating on structured data, Second handles the infrastructure so you can focus on the work.
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>For Teams</h3>
-      <ul>
-        <li>Build custom apps from a single prompt</li>
-        <li>Run multiple agents in parallel across workflows</li>
-        <li>Real-time collaborative UI with agents and humans on the same page</li>
-        <li>No code required, designed for non-technical teams</li>
-      </ul>
-    </td>
-    <td width="50%" valign="top">
-      <h3>For Platform Engineers</h3>
-      <ul>
-        <li>One-time workspace setup, unlimited apps</li>
-        <li>Full governance: draft/review/publish lifecycle</li>
-        <li>Fine-grained access control per app, per agent, per integration</li>
-        <li>Deploy on your own k8s, air-gapped or on-prem</li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
-## Agent-Native Software
-
-This is the core paradigm of Second. Every app treats agents as **first-class citizens**:
-
-| Capability | How It Works |
-|---|---|
-| **Shared real-time database** | Agents read and write to the same live database as your team, with optimistic updates, change streams, and instant sync |
-| **Scoped & secure tools** | Each agent gets precisely the tools it needs via `agents.json`, nothing more |
-| **Collaborative UI** | Agents work alongside your team on the same custom-built interface |
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
-
-### Example: Competitor Research
-
-From a single prompt, build an app where agents:
-- Produce a live **news feed** of latest competitor updates
-- Run a scheduled job that **alerts on pricing changes**
-- Maintain a **research overview** page with structured analysis
-- Collect and store **PDFs and case studies** found across the web
-
-Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, with no export, no copy-paste, and no context switching.
+<br>
 
 ## Security & Governance
 
 Second is designed for enterprise teams that need complete control over what agents can access and do.
 
-**The platform follows a zero-trust architecture for agents.** No agent is granted implicit access to anything. Every capability, every data collection, every integration must be explicitly declared, scoped, and approved before an agent can act.
-
+**Zero-trust architecture for agents.** No agent is granted implicit access to anything. Every capability, every data collection, every integration must be explicitly declared, scoped, and approved before an agent can act.
 
 | Feature | Description |
 |:---|:---|
@@ -334,24 +367,15 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 <br>
 
-## What You Can Build
+## CLI
 
-Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
-
-<br>
-
-| Use Case | What Agents Do |
-|:---|:---|
-| **Competitor intelligence** | Monitor competitors, aggregate news, alert on pricing changes, collect case studies |
-| **Lead enrichment pipelines** | Research and qualify leads while your team reviews and acts |
-| **Content operations** | Draft, research, and organize while editors review in real-time |
-| **Customer success dashboards** | Pull data from CRMs and support tools; teams act on insights |
-| **Internal knowledge bases** | Continuously index and organize docs; teams search and annotate |
-| **Compliance monitoring** | Scan for policy violations; approvers review and resolve |
-
-<br>
-
-The flexibility is unlimited. If your workflow involves humans and agents collaborating on structured data, Second handles the infrastructure so you can focus on the work.
+```bash
+npx --yes @second-inc/cli              # Start Second
+npx --yes @second-inc/cli stop         # Stop all services
+npx --yes @second-inc/cli reset        # Stop + delete all data
+npx --yes @second-inc/cli --port 4000  # Custom port
+npx --yes @second-inc/cli --disable-telemetry  # No analytics
+```
 
 <br>
 
@@ -359,7 +383,7 @@ The flexibility is unlimited. If your workflow involves humans and agents collab
 
 | Platform | Status |
 |:---|:---|
-| Apple Silicon (M1–M4) | **Available** |
+| Apple Silicon (M1–M5) | **Available** |
 | Intel Mac | Coming soon |
 | Linux (x86_64) | Coming soon |
 | Windows (WSL2) | Coming soon |
