@@ -42,19 +42,19 @@ npx --yes @second-inc/cli
 
 ## What is Second?
 
-Second is a factory for building custom internal software, where humans and AI agents collaborate on real work, on the same shared custom interfaces.
+Second lets every team ship custom internal software for managing agents and collaborating with them on async work.
 
-Instead of adapting your workflows to pre-built agent management interfaces or generic SAAS, Second comes with the right primitives so every team can ship the exact interfaces and apps they need for managing and working alongside agents.
+Instead of adapting how you work to pre-built agent management software or generic SAAS, Second comes with the right primitives so every team can ship the exact interfaces and apps they need for managing and working alongside agents.
 
 It's a single, beautifully governed workspace.
 
 ## Why Second?
 
-Text and long-running chats are the wrong abstraction for real work with AI. A text input and text streams don't give you visibility, control, or collaboration. When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom interfaces where your team sees what agents are doing, steers their work, and stays in control.
+When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom interfaces where your team sees what agents are doing, steers their work, and stays in control.
 
-Most platforms get this wrong. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated — forcing you into their idea of how agent work should look (a kanban board, a chat thread, a static pipeline). We don't know what work you're doing, and we don't pretend to. Second is a factory: you build your own. 
+Most platforms get this wrong. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated — forcing you into their idea of how agent work should look (a kanban board, a chat thread, a static pipeline). We don't know what work you're doing, and we don't pretend to. Second is a factory: you build your own apps and interfaces.
 
-**Think of it as an internal, self-hosted, collaborative Lovable, where humans and agents collaborate on the same custom interfaces your team builds.** Prompt an app → Second generates an agent control plane for your workflow: already deployed in your workspace, **with a real-time database, RBAC, and audit logs out of the box. Air-gapped on your k8s.**
+**Think of it as an internal, self-hosted, collaborative Lovable, where humans and agents collaborate on the same custom apps your team builds.** Prompt an app → Second generates an agent control plane for your workflow: already deployed in your workspace, **with a real-time database, RBAC, and audit logs out of the box. Air-gapped on your k8s.**
 
 > [!TIP]
 > **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
@@ -63,7 +63,7 @@ Most platforms get this wrong. They either treat agents as an afterthought bolte
 
 ## Core Philosophy: Agent-Native Software
 
-Every app treats **agents as first-class citizens**: they read and write to the same real-time DB your team is working on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans on the same custom interfaces.
+Every app built in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
 
 On top of that, Second handles the hard parts:
 
@@ -117,61 +117,37 @@ Companies like **Ramp** and **Deel** have already figured this out — they buil
 
 <br>
 
-## What Makes Second Different
+## Features
 
 <table>
 <tr>
-<td width="50%" valign="top">
-<h3>Agent-Native, Not Agent-Bolted</h3>
-<p>Every app treats agents as first-class citizens. They read and write to the same real-time database your team uses, get scoped and secure tools, and work alongside humans on the same custom interfaces. Agents aren't a feature — they're the core primitive.</p>
+<td align="center" width="33%">
+<h3>🔌 Bring Your Own Agent</h3>
+Any agent, any runtime, one workspace. Claude Code, Codex, OpenCode, and more. Switch per message, per app, without restarting conversations.
 </td>
-<td width="50%" valign="top">
-<h3>A Factory, Not a Template</h3>
-<p>We don't tell you how to work with agents. We give you the primitives to build exactly the interfaces your team needs. A competitor research dashboard looks nothing like a lead enrichment pipeline — and it shouldn't have to.</p>
+<td align="center" width="33%">
+<h3>🔧 Self-Building Integrations</h3>
+No MCP. Second builds scoped, custom tools on the fly for each agent. OAuth-connected, domain-locked, secrets injected server-side. Connects to literally anything.
+</td>
+<td align="center" width="33%">
+<h3>☁️ Open Platform</h3>
+Your cloud, your agents, your integrations. Runs on your k8s cluster, your VPC, your rules. No vendor lock-in, no data leaving your network.
 </td>
 </tr>
 <tr>
-<td width="50%" valign="top">
-<h3>Self-Building Integrations</h3>
-<p>Second doesn't rely on generic integration protocols. Instead, it builds extremely scoped, custom tools on the fly — purpose-built for each agent's work. OAuth-connected, domain-locked, secrets injected server-side. Inspired by the original Second project — a self-morphing coding agent that builds its own integrations. Full control, connects to literally anything.</p>
+<td align="center">
+<h3>👥 Multiplayer Agent Sessions</h3>
+Every workspace ships with multiplayer Claude Code and Codex sessions in your cloud, with scoped access control. Not a separate feature. Just how the platform works.
 </td>
-<td width="50%" valign="top">
-<h3>Open Platform</h3>
-<p>Bring your own cloud. Bring your own agents. Bring your own integrations. Second runs on your infrastructure — your k8s cluster, your VPC, your rules. No vendor lock-in, no data leaving your network.</p>
+<td align="center">
+<h3>🔒 Zero-Trust Governance</h3>
+Agent RBAC, human RBAC, audit logs, approval flows. Nothing runs without explicit declaration and sign-off. Full tenant isolation per workspace.
+</td>
+<td align="center">
+<h3>⚡ Real-Time Collaboration</h3>
+Agents and humans on the same page, same database, same UI. Change streams, optimistic updates, instant sync. Data survives browser close, agent restarts, and worker churn.
 </td>
 </tr>
-</table>
-
-> **What you get for free:** Every Second workspace ships with multiplayer Claude Code and Codex sessions running in your cloud — with scoped access control and permissions. It's not a feature we built separately. It's just how the platform works.
-
-<br>
-
-## Bring Your Agent
-
-Bring your own agent harness, switch runtimes and models per message, per app, without restarting conversations.
-
-<table>
-  <tr>
-    <td width="120" align="center">
-      <img src="apps/web/public/icons/claude-code.svg" width="28" height="28" alt="Claude Code">
-    </td>
-    <td width="120" align="center">
-      <img src="apps/web/public/icons/codex.svg" width="28" height="28" alt="Codex">
-    </td>
-    <td width="120" align="center">
-      <img src="apps/web/public/icons/opencode.svg" width="28" height="28" alt="OpenCode">
-    </td>
-  </tr>
-  <tr>
-    <td align="center"><sub><strong>Claude Code</strong></sub></td>
-    <td align="center"><sub><strong>Codex</strong></sub></td>
-    <td align="center"><sub><strong>OpenCode</strong></sub></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>✅</sub></td>
-    <td align="center"><sub>✅</sub></td>
-    <td align="center"><sub>Coming soon</sub></td>
-  </tr>
 </table>
 
 <br>
