@@ -50,7 +50,7 @@ It's a single, beautifully governed workspace.
 
 ## Why Second?
 
-When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom interfaces where your team sees what agents are doing, steers their work, and stays in control.
+When a team of humans and agents need to work together on actual workflows like research pipelines, enrichment, or monitoring - collaboration breaks. You need **control planes**: custom apps where your team sees what agents are doing, steers their work, and stays in control.
 
 Most platforms get this wrong. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated — forcing you into their idea of how agent work should look (a kanban board, a chat thread, a static pipeline). We don't know what work you're doing, and we don't pretend to. Second is a factory: you build your own apps and interfaces.
 
