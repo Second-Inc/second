@@ -9,7 +9,7 @@
 <h1 align="center">Second</h1>
 
 <p align="center">
-  The factory for custom internal software,<br>purpose-built for human–agent work.
+  The factory for custom internal software,<br>purpose-built for human2agent work.
 </p>
 
 <p align="center">
@@ -48,51 +48,18 @@ Most platforms were not built for deep, multiplayer, asynchronous work with AI a
 
 **Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built, and work alongside your team around your exact use cases.
 
-Every app comes with a real-time DB, audit logs, RBAC, agent RBAC, and governance controls inside the workspace.
-
-## Why Second?
-
-Teams are already building powerful internal tools with Claude, Codex, and Lovable. But most of those tools never reach production.
-
-The hard part is no longer generating a prototype. The hard part is turning it into secure, shared, governed software that agents and humans can actually use together.
-
-Second gives every organization that foundation: open-source, bring your own agent harness, and self-hosted.
-
 > [!TIP]
 > **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
 >
 > Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
 
-## Core Philosophy: Agent-Native Software
+## Personal Software Factory
 
-Every app built in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
+Every app gets a real-time DB, audit logs, RBAC, agent RBAC, and governance controls through the workspace.
 
-On top of that, Second handles the hard parts:
+Companies like **Ramp** and **Deel** have already figured out that teams are building amazing stuff internally with Claude, Codex, and Lovable, but most of those projects never reach production because of security, integrations, governance, deployment, and agent access.
 
-| Capability | How It Works |
-|---|---|
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
-
-<br>
-
-## The Wall Everyone Hits
-
-You've already seen it happen.
-
-Someone on your team builds something amazing with Claude Code, Codex, or Lovable. A prototype, an internal tool, an automation that genuinely works. Then they try to take it further — and hit the wall:
-
-- How do you deploy and share it safely?
-- How do you give agents scoped access to critical systems?
-- What about real-time collaboration? RBAC? Agent RBAC?
-- Secure integrations? Audit logs? Cost management?
-
-There are beautiful initiatives happening inside organizations right now. Teams are building genuinely useful things with AI — literally anything is possible today — and most of it will never reach production. It'll never connect to critical systems. It'll never get the governance sign-off. It'll stay as demos, prototypes, and Slack messages that say *"check out what I built."*
-
-Companies like **Ramp** and **Deel** have already figured this out — they built their own internal platforms.
-
-**Second is the infrastructure to let every team do the same.**
+So they built internal platforms for themselves. Second gives every organization that foundation.
 
 <table>
   <tr>
@@ -116,6 +83,18 @@ Companies like **Ramp** and **Deel** have already figured this out — they buil
     </td>
   </tr>
 </table>
+
+## Core Philosophy: Agent-Native Software
+
+Every app built in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
+
+On top of that, Second handles the hard parts:
+
+| Capability | How It Works |
+|---|---|
+| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
+| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
+| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
 
 <br>
 
