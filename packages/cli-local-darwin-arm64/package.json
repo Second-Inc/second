@@ -1,7 +1,7 @@
 {
   "name": "@second-inc/cli-local-darwin-arm64",
   "version": "0.1.24",
-  "description": "Second local app payload for macOS arm64",
+  "description": "Platform payload for @second-inc/cli on Apple Silicon Macs.",
   "type": "module",
   "repository": {
     "type": "git",

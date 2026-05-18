@@ -1,7 +1,7 @@
 {
   "name": "@second-inc/cli",
   "version": "0.1.24",
-  "description": "Run Second locally with one command",
+  "description": "Local launcher for Second, the open-source internal software factory.",
   "type": "module",
   "repository": {
     "type": "git",

@@ -33,11 +33,13 @@
 
 ## What is Second?
 
-Second lets every team ship custom internal interfaces for managing agents and collaborating with them on async work.
+Second is a factory for building custom internal software, where humans and AI agents collaborate on real work, on the same shared custom interfaces.
+
+Instead of adapting your workflows to pre-built agent management interfaces or generic SAAS, Second comes with the right primitives — so every team can ship the exact interfaces they need for managing and collaborating with agents.
 
 It's a single, beautifully governed workspace.
 
-Instead of adapting your workflows to pre-built agent management interfaces, Second is a workspace that comes with the right primitives to build exactly the interfaces your team needs. Prompt an app, and Second generates a full internal interface, already deployed in your workspace, with a real-time database, permissions, and audit logs out of the box. Air-gapped on your k8s.
+Prompt an app, and Second generates an agent control plane for your workflow — already deployed in your workspace, with a real-time database, permissions, and audit logs out of the box. Air-gapped on your k8s.
 
 Above all, every app built on Second treats agents as first-class citizens. They read and write to the same real-time DB your team is working on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans on the same custom interfaces.
 
