@@ -55,31 +55,33 @@ Most platforms were not built for deep, multiplayer, asynchronous work with AI a
 
 ## Personal Software Factory
 
-Every app gets a real-time DB, audit logs, RBAC, agent RBAC, and governance controls through the workspace.
+Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools for full control through the workspace.
 
-Companies like **Ramp** and **Deel** have already figured out that teams are building amazing stuff internally with Claude, Codex, and Lovable, but most of those projects never reach production because of security, integrations, governance, deployment, and agent access.
+Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable, but most of these projects never reach production because of various reasons (security, integrations, governance, safe deployments, maintenance, agent access control, and so on...).
 
-So they built internal platforms for themselves. Second gives every organization that foundation.
+**To solve this, they built internal platforms for themselves. Second lets every organization do the same.**
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>For Teams</h3>
+      <h3 align="center">👥 For Teams</h3>
       <ul>
         <li>Build custom apps from a single prompt</li>
         <li>Run multiple agents in parallel across workflows</li>
         <li>Real-time collaborative UI with agents and humans on the same page</li>
         <li>No code required — designed for non-technical teams</li>
       </ul>
+      <br>
     </td>
     <td width="50%" valign="top">
-      <h3>For Platform Engineers</h3>
+      <h3 align="center">🛠️ For Platform Engineers</h3>
       <ul>
         <li>One-time workspace setup, unlimited apps</li>
         <li>Full governance: draft/review/publish lifecycle</li>
         <li>Fine-grained access control per app, per agent, per integration</li>
         <li>Deploy on your own k8s, air-gapped or on-prem</li>
       </ul>
+      <br>
     </td>
   </tr>
 </table>
