@@ -3,6 +3,7 @@
 export type AnalyticsConsent = {
   shareUsageData: boolean;
   anonymizeUsageData: boolean;
+  recordScreen: boolean;
   dismissed: boolean;
 };
 
@@ -25,6 +26,7 @@ const MAX_TEXT_PROPERTY_LENGTH = 2000;
 const DEFAULT_CONSENT: AnalyticsConsent = {
   shareUsageData: true,
   anonymizeUsageData: true,
+  recordScreen: false,
   dismissed: false,
 };
 
@@ -154,11 +156,13 @@ function normalizeConsent(value: unknown): AnalyticsConsent {
       ? (value as Record<string, unknown>)
       : {};
   const wasExplicitlyDisabled = record.shareUsageData === false;
+  const anonymizeUsageData = wasExplicitlyDisabled
+    ? true
+    : record.anonymizeUsageData !== false;
   return {
     shareUsageData: true,
-    anonymizeUsageData: wasExplicitlyDisabled
-      ? true
-      : record.anonymizeUsageData !== false,
+    anonymizeUsageData,
+    recordScreen: record.recordScreen === true && !anonymizeUsageData,
     dismissed: record.dismissed === true,
   };
 }

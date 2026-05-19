@@ -11,7 +11,12 @@ import {
   BarChart3Icon,
   CheckIcon,
   ShieldCheckIcon,
+  VideoIcon,
 } from "lucide-react";
+import {
+  Balloons,
+  type BalloonsHandle,
+} from "@/components/ui/balloons";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +37,7 @@ import {
   type AnalyticsIdentity,
 } from "@/lib/analytics";
 import { applySentryConsentState } from "@/lib/sentry-client-consent";
+import { applyPostHogScreenRecordingConsent } from "@/lib/posthog-screen-recording";
 import { cn } from "@/lib/utils";
 
 type AnalyticsConsentDialogProps = {
@@ -103,11 +109,15 @@ export function AnalyticsConsentDialog({
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
   const [settingsUpdatedVisible, setSettingsUpdatedVisible] = useState(false);
+  const balloonsRef = useRef<BalloonsHandle | null>(null);
+  const textBalloonsRef = useRef<BalloonsHandle | null>(null);
   const settingsUpdatedTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const currentConsent = readAnalyticsConsent();
     setAnalyticsIdentity(identity);
-    applySentryConsentState(readAnalyticsConsent(), identity);
+    applySentryConsentState(currentConsent, identity);
+    applyPostHogScreenRecordingConsent(currentConsent, identity);
     void identifyAnalyticsUser();
   }, [identity]);
 
@@ -124,6 +134,7 @@ export function AnalyticsConsentDialog({
     return subscribeAnalyticsConsent((nextConsent) => {
       setConsent(nextConsent);
       applySentryConsentState(nextConsent, identity);
+      applyPostHogScreenRecordingConsent(nextConsent, identity);
     });
   }, [identity]);
 
@@ -191,14 +202,21 @@ export function AnalyticsConsentDialog({
   const updateConsent = useCallback(
     (patch: Partial<AnalyticsConsent>) => {
       persistConsent({
-          ...consent,
-          ...patch,
-          dismissed: true,
-        });
+        ...consent,
+        ...patch,
+        dismissed: true,
+      });
       showSettingsUpdated();
     },
     [consent, persistConsent, showSettingsUpdated],
   );
+
+  const launchRecordingCelebration = useCallback(() => {
+    balloonsRef.current?.launchAnimation();
+    window.setTimeout(() => {
+      textBalloonsRef.current?.launchAnimation();
+    }, 160);
+  }, []);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -217,6 +235,14 @@ export function AnalyticsConsentDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      <Balloons ref={balloonsRef} type="default" />
+      <Balloons
+        ref={textBalloonsRef}
+        type="text"
+        text="You rock!"
+        fontSize={84}
+        color="#111827"
+      />
       <DialogContent className="overflow-hidden p-0 sm:max-w-md">
         <div
           className="flex items-center justify-center px-8 py-10 bg-gradient-to-br from-sky-50 via-indigo-50 to-violet-50 dark:from-sky-950/30 dark:via-indigo-950/20 dark:to-violet-950/30"
@@ -234,7 +260,7 @@ export function AnalyticsConsentDialog({
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
               Second collects product analytics and diagnostic error reports to improve the
-              experience. Control how much details is shared below.
+              experience. Control how much detail is shared below.
             </DialogDescription>
           </DialogHeader>
 
@@ -244,7 +270,44 @@ export function AnalyticsConsentDialog({
             description="Avoid user, workspace, app, prompt, and agent identifiers."
             checked={consent.anonymizeUsageData}
             onCheckedChange={(checked) => {
-              updateConsent({ anonymizeUsageData: checked });
+              updateConsent(
+                checked
+                  ? { anonymizeUsageData: true, recordScreen: false }
+                  : { anonymizeUsageData: false },
+              );
+            }}
+          />
+
+          <div className="rounded-lg border border-border/80 bg-muted/30 px-3.5 py-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground ring-1 ring-border/80">
+                <VideoIcon className="size-3.5" strokeWidth={1.8} />
+              </div>
+              <div className="min-w-0">
+                <div className="inline-flex rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                  Local Second is free to use.
+                </div>
+                <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+                  This would really help improve it. Screen recording captures the
+                  full Second interface in PostHog replay and turns off anonymization
+                  while enabled.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <ConsentToggleRow
+            icon={VideoIcon}
+            title="Record this screen"
+            description="Share full un-anonymized PostHog replay for debugging local product flows."
+            checked={consent.recordScreen}
+            onCheckedChange={(checked) => {
+              if (checked) launchRecordingCelebration();
+              updateConsent(
+                checked
+                  ? { recordScreen: true, anonymizeUsageData: false }
+                  : { recordScreen: false },
+              );
             }}
           />
 

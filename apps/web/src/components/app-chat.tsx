@@ -105,6 +105,7 @@ import {
   captureAnalyticsEvent,
   runtimeModelFamily,
   textAnalyticsProperties,
+  type AnalyticsProperties,
 } from "@/lib/analytics";
 import { reportClientError } from "@/lib/client-error-reporting";
 
@@ -565,9 +566,156 @@ function suggestionsFromPresentSuggestionsInput(input: unknown): BuildSuggestion
   return normalizeBuildSuggestions(record?.suggestions);
 }
 
+function planDataFromPresentPlanInput(input: unknown): PlanData {
+  const toolInput = asRecord(input);
+  return {
+    overview:
+      typeof toolInput?.overview === "string"
+        ? toolInput.overview
+        : null,
+    features: Array.isArray(toolInput?.features)
+      ? (toolInput.features as { name: string; description: string }[])
+      : null,
+    dataFlow:
+      typeof toolInput?.dataFlow === "string"
+        ? toolInput.dataFlow
+        : null,
+    agents:
+      typeof toolInput?.agents === "string"
+        ? toolInput.agents
+        : null,
+    backend:
+      typeof toolInput?.backend === "string"
+        ? toolInput.backend
+        : null,
+  };
+}
+
+const MAX_APPROVAL_ANALYTICS_ITEMS = 10;
+
+function agentAuthKind(agent: AgentsCardData["agents"][number]): string {
+  const tools = Array.isArray(agent.tools) ? agent.tools : [];
+  const hasOAuth = tools.some((tool) => tool.integration?.auth?.type === "oauth2");
+  const hasStaticSecret = tools.some((tool) =>
+    tool.integration?.auth?.type === "static_secret"
+  );
+
+  if (hasOAuth && hasStaticSecret) return "mixed";
+  if (hasOAuth) return "oauth";
+  if (hasStaticSecret) return "static_secret";
+  return "none";
+}
+
+function agentsApprovalAnalytics(
+  input: unknown,
+  output: unknown,
+): AnalyticsProperties {
+  const inputAgents = agentsFromPresentAgentsInput(input);
+  const outputAgents = agentsFromPresentAgentsOutput(output);
+  const agents = inputAgents.length > 0 ? inputAgents : outputAgents;
+  const visibleAgents = agents.slice(0, MAX_APPROVAL_ANALYTICS_ITEMS);
+  const toolCounts = agents.reduce(
+    (totals, agent) => {
+      const tools = Array.isArray(agent.tools) ? agent.tools : [];
+      totals.toolCount += tools.length;
+      totals.enabledToolCount += tools.filter((tool) => tool.enabled !== false).length;
+      totals.recommendedToolCount += tools.filter((tool) => tool.recommended).length;
+      totals.customToolCount += tools.filter((tool) => tool.type === "custom").length;
+      totals.builtinToolCount += tools.filter((tool) => tool.type === "builtin").length;
+      totals.integrationCount += tools.filter((tool) => tool.integration).length;
+      return totals;
+    },
+    {
+      toolCount: 0,
+      enabledToolCount: 0,
+      recommendedToolCount: 0,
+      customToolCount: 0,
+      builtinToolCount: 0,
+      integrationCount: 0,
+    },
+  );
+
+  return {
+    agent_count: agents.length,
+    agent_detail_count: visibleAgents.length,
+    agent_ids: visibleAgents.map((agent) => agent.id),
+    agent_names: visibleAgents.map((agent) => agent.name),
+    agent_tool_count: toolCounts.toolCount,
+    agent_enabled_tool_count: toolCounts.enabledToolCount,
+    agent_recommended_tool_count: toolCounts.recommendedToolCount,
+    agent_custom_tool_count: toolCounts.customToolCount,
+    agent_builtin_tool_count: toolCounts.builtinToolCount,
+    agent_integration_count: toolCounts.integrationCount,
+    agent_data_collection_count: agents.reduce(
+      (sum, agent) => sum + (agent.dataCollections?.length ?? 0),
+      0,
+    ),
+    agents: visibleAgents.map((agent) => {
+      const tools = Array.isArray(agent.tools) ? agent.tools : [];
+      return {
+        id: agent.id,
+        name: agent.name,
+        tool_count: tools.length,
+        enabled_tool_count: tools.filter((tool) => tool.enabled !== false).length,
+        recommended_tool_count: tools.filter((tool) => tool.recommended).length,
+        custom_tool_count: tools.filter((tool) => tool.type === "custom").length,
+        builtin_tool_count: tools.filter((tool) => tool.type === "builtin").length,
+        integration_count: tools.filter((tool) => tool.integration).length,
+        auth_kind: agentAuthKind(agent),
+        data_collection_count: agent.dataCollections?.length ?? 0,
+      };
+    }),
+  };
+}
+
+function suggestionsApprovalAnalytics(
+  input: unknown,
+  output: unknown,
+): AnalyticsProperties {
+  const inputSuggestions = suggestionsFromPresentSuggestionsInput(input);
+  const outputSuggestions = suggestionsFromPresentSuggestionsOutput(output);
+  const suggestions = inputSuggestions.length > 0
+    ? inputSuggestions
+    : outputSuggestions;
+  const visibleSuggestions = suggestions.slice(0, MAX_APPROVAL_ANALYTICS_ITEMS);
+
+  return {
+    suggestion_count: suggestions.length,
+    suggestion_detail_count: visibleSuggestions.length,
+    suggestion_titles: visibleSuggestions.map((suggestion) => suggestion.title),
+    suggestions: visibleSuggestions.map((suggestion) => ({
+      title: suggestion.title,
+      subtitle_length: suggestion.subtitle.length,
+      has_emoji: Boolean(suggestion.emoji),
+    })),
+  };
+}
+
+function planApprovalAnalytics(input: unknown): AnalyticsProperties {
+  const plan = planDataFromPresentPlanInput(input);
+  const features = plan.features ?? [];
+
+  return {
+    plan_has_overview: Boolean(plan.overview),
+    plan_has_features: features.length > 0,
+    plan_has_data_flow: Boolean(plan.dataFlow),
+    plan_has_agents: Boolean(plan.agents),
+    plan_has_backend: Boolean(plan.backend),
+    plan_feature_count: features.length,
+    plan_feature_names: features
+      .slice(0, MAX_APPROVAL_ANALYTICS_ITEMS)
+      .map((feature) => feature.name),
+    plan_overview_length: plan.overview?.length ?? 0,
+    plan_data_flow_length: plan.dataFlow?.length ?? 0,
+    plan_agents_length: plan.agents?.length ?? 0,
+    plan_backend_length: plan.backend?.length ?? 0,
+  };
+}
+
 type PendingApproval = {
   kind: "plan" | "suggestions" | "agents";
   toolCallId: string;
+  analytics: AnalyticsProperties;
 };
 
 function blockingApprovalKind(toolName: string): PendingApproval["kind"] | null {
@@ -599,21 +747,24 @@ function pendingBlockingApprovalFromMessages(
         record.state === "output-available" &&
         record.preliminary !== true
       ) {
+        const analytics = kind === "agents"
+          ? agentsApprovalAnalytics(record.input, record.output)
+          : kind === "suggestions"
+            ? suggestionsApprovalAnalytics(record.input, record.output)
+            : planApprovalAnalytics(record.input);
         if (
           kind === "agents" &&
-          agentsFromPresentAgentsInput(record.input).length === 0 &&
-          agentsFromPresentAgentsOutput(record.output).length === 0
+          analytics.agent_count === 0
         ) {
           continue;
         }
         if (
           kind === "suggestions" &&
-          suggestionsFromPresentSuggestionsInput(record.input).length === 0 &&
-          suggestionsFromPresentSuggestionsOutput(record.output).length === 0
+          analytics.suggestion_count === 0
         ) {
           continue;
         }
-        return { kind, toolCallId: record.toolCallId };
+        return { kind, toolCallId: record.toolCallId, analytics };
       }
     }
   }
@@ -2038,6 +2189,7 @@ export function AppChat({
       run_id: runId,
       tool_call_id: pendingApproval.toolCallId,
       approval_type: pendingApproval.kind,
+      ...pendingApproval.analytics,
     });
   }, [appId, pendingApproval, runId, workspaceId]);
   const latestAgentsToolCallId = useMemo(() => {
@@ -3042,27 +3194,7 @@ export function AppChat({
 
                         // Plan tool → PlanCard
                         if (part.toolName === "mcp__second__present_plan") {
-                          const plan: PlanData = {
-                            overview:
-                              typeof toolInput?.overview === "string"
-                                ? toolInput.overview
-                                : null,
-                            features: Array.isArray(toolInput?.features)
-                              ? (toolInput.features as { name: string; description: string }[])
-                              : null,
-                            dataFlow:
-                              typeof toolInput?.dataFlow === "string"
-                                ? toolInput.dataFlow
-                                : null,
-                            agents:
-                              typeof toolInput?.agents === "string"
-                                ? toolInput.agents
-                                : null,
-                            backend:
-                              typeof toolInput?.backend === "string"
-                                ? toolInput.backend
-                                : null,
-                          };
+                          const plan = planDataFromPresentPlanInput(toolInput);
                           const isCurrentApproval =
                             pendingApproval?.toolCallId === part.toolCallId;
                           return (
