@@ -149,15 +149,33 @@ function ChatFailureRow({
   retryable,
   retryDisabled,
   onRetry,
+  tone = "danger",
+  actionLabel = "Try again",
 }: {
   message: string;
   retryable: boolean;
   retryDisabled: boolean;
   onRetry: () => void;
+  tone?: "danger" | "neutral";
+  actionLabel?: string;
 }) {
+  const Icon = tone === "neutral" ? Info : AlertTriangleIcon;
   return (
-    <div className="not-prose flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-foreground">
-      <AlertTriangleIcon className="size-4 shrink-0 text-destructive" strokeWidth={1.8} />
+    <div
+      className={cn(
+        "not-prose flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-foreground",
+        tone === "neutral"
+          ? "border-border bg-background"
+          : "border-destructive/20 bg-destructive/5",
+      )}
+    >
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          tone === "neutral" ? "text-muted-foreground" : "text-destructive",
+        )}
+        strokeWidth={1.8}
+      />
       <span className="min-w-0 flex-1 text-[13px] leading-5 text-muted-foreground">
         {message}
       </span>
@@ -171,7 +189,7 @@ function ChatFailureRow({
           onClick={onRetry}
         >
           <RotateCcw className="size-3.5" strokeWidth={1.8} />
-          Retry
+          {actionLabel}
         </Button>
       ) : null}
     </div>
@@ -675,7 +693,11 @@ type ChatRunSnapshot = {
   usage?: RunUsage | null;
 };
 
-function latestUserText(messages: UIMessage[]): string {
+function latestUserTurn(messages: UIMessage[]): {
+  index: number;
+  message: UIMessage;
+  text: string;
+} | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== "user") continue;
@@ -684,9 +706,9 @@ function latestUserText(messages: UIMessage[]): string {
       .map((part) => part.text)
       .join("\n")
       .trim();
-    if (text) return text;
+    if (text) return { index, message, text };
   }
-  return "";
+  return null;
 }
 
 function latestAssistantTurnHasStarted(messages: UIMessage[]): boolean {
@@ -704,6 +726,12 @@ function latestAssistantTurnHasStarted(messages: UIMessage[]): boolean {
     if ((message.parts ?? []).some((part) => part != null)) return true;
   }
   return false;
+}
+
+function isUserStoppedFailure(
+  failure: AgentRunFailure | null | undefined,
+): boolean {
+  return failure?.code === "user_stopped";
 }
 
 function permissionKey(groupName: string, permission: string): string {
@@ -2086,6 +2114,8 @@ export function AppChat({
   // work like navigation. Live `messages` is still used by effects for
   // immediate callback dispatch (build-complete, tool-completion).
   const deferredMessages = useDeferredValue(messages);
+  const displayMessages =
+    status === "submitted" ? messages : deferredMessages;
 
 
   const statusRef = useRef(status);
@@ -2607,7 +2637,12 @@ export function AppChat({
     return () => window.cancelAnimationFrame(frame);
   }, [focusComposerKey]);
   const sendMessageSafely = useCallback(
-    (text: string, attachmentsToSend: AttachmentReference[] = []) => {
+    (
+      text: string,
+      attachmentsToSend: AttachmentReference[] = [],
+      extraBody: Record<string, unknown> = {},
+      messageId?: string,
+    ) => {
       statusRef.current = "submitted";
       setLiveSyncSuspended(false);
       setRunFailure(null);
@@ -2616,13 +2651,21 @@ export function AppChat({
         attachmentsToSend.length > 0
           ? { attachments: attachmentsToSend }
           : undefined;
+      const body = {
+        ...extraBody,
+        ...(attachmentBody ?? {}),
+      };
       const metadata =
         attachmentsToSend.length > 0
           ? { attachments: attachmentsToSend }
           : undefined;
       void sendMessage(
-        metadata ? { text, metadata } : { text },
-        attachmentBody ? { body: attachmentBody } : undefined,
+        {
+          text,
+          ...(metadata ? { metadata } : {}),
+          ...(messageId ? { messageId } : {}),
+        },
+        Object.keys(body).length > 0 ? { body } : undefined,
       );
     },
     [clearError, sendMessage],
@@ -3047,9 +3090,7 @@ export function AppChat({
     (attachment) => attachment.status === "uploaded",
   ).length;
   const pendingApprovalPlaceholder =
-    isSyncLoading
-      ? "Connecting to stream..."
-      : pendingApproval?.kind === "plan"
+    pendingApproval?.kind === "plan"
       ? "Approve or request changes to the plan to continue..."
       : pendingApproval?.kind === "suggestions"
         ? "Choose a suggestion to continue..."
@@ -3057,20 +3098,25 @@ export function AppChat({
         ? "Approve or request changes to the agents to continue..."
         : "Send a message...";
   const firstUserMessageId = useMemo(
-    () => deferredMessages.find((message) => message.role === "user")?.id ?? null,
-    [deferredMessages],
+    () => displayMessages.find((message) => message.role === "user")?.id ?? null,
+    [displayMessages],
   );
-  const retryText = useMemo(() => latestUserText(messages), [messages]);
+  const retryTurn = useMemo(() => latestUserTurn(messages), [messages]);
+  const retryText = retryTurn?.text ?? "";
   const hasRenderedErrorPart = useMemo(
     () =>
-      deferredMessages.some((message) =>
-        (message.parts ?? []).some((part) => asRecord(part)?.type === "error"),
-      ),
-    [deferredMessages],
+      displayMessages
+        .slice(retryTurn ? retryTurn.index + 1 : 0)
+        .some((message) =>
+          (message.parts ?? []).some((part) => asRecord(part)?.type === "error"),
+        ),
+    [displayMessages, retryTurn],
   );
   const routeFailureStillCurrent =
     runStatus === "failed" && messages.length <= initialMessages.length;
+  const isUserStopped = isUserStoppedFailure(runFailure);
   const visibleFailureMessage = useMemo(() => {
+    if (isUserStopped) return "Second's response was stopped by the user.";
     if (runFailure?.message) return runFailure.message;
     if (error instanceof TypeError) {
       return "The stream disconnected. Retry the last message to continue.";
@@ -3080,7 +3126,7 @@ export function AppChat({
       return "The run failed. Retry the last message to continue.";
     }
     return null;
-  }, [error, routeFailureStillCurrent, runFailure]);
+  }, [error, isUserStopped, routeFailureStillCurrent, runFailure]);
   const failureRetryable =
     Boolean(retryText) &&
     (runFailure?.retryable ?? (Boolean(error) || routeFailureStillCurrent));
@@ -3089,18 +3135,43 @@ export function AppChat({
     !hasRenderedErrorPart &&
     Boolean(visibleFailureMessage) &&
     (Boolean(error) || Boolean(runFailure) || routeFailureStillCurrent);
-  const restoreRetryMessage = useCallback(() => {
-    if (!retryText) return;
-    setInput(retryText);
-    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  const retryLastTurn = useCallback(() => {
+    if (!retryTurn) return;
+    const attachmentsForRetry = messageAttachments(retryTurn.message);
+    const retryAttachments =
+      attachmentsForRetry.length > 0
+        ? attachmentsForRetry
+        : retryTurn.message.id === firstUserMessageId
+          ? initialRunAttachments
+          : [];
+
+    setRunFailure(null);
+    clearError();
+    sendMessageSafely(
+      retryTurn.text,
+      retryAttachments,
+      { retryLastMessageId: retryTurn.message.id },
+      retryTurn.message.id,
+    );
     captureAnalyticsEvent("chat retry clicked", {
       workspace_id: workspaceId,
       app_id: appId,
       run_id: runId,
-      retry_mode: "restore_composer",
+      retry_mode: "resend_last_turn",
       failure_code: runFailure?.code ?? error?.name ?? "run_failed",
     });
-  }, [appId, error, retryText, runFailure, runId, workspaceId]);
+  }, [
+    appId,
+    clearError,
+    error,
+    firstUserMessageId,
+    initialRunAttachments,
+    retryTurn,
+    runFailure,
+    runId,
+    sendMessageSafely,
+    workspaceId,
+  ]);
 
   // Auto-grow textarea before paint so the empty composer does not flash short.
   useLayoutEffect(() => {
@@ -3123,7 +3194,7 @@ export function AppChat({
           resize="smooth"
         >
           <StickToBottom.Content className={`mx-auto space-y-6 p-4 pb-48 ${panelMode ? "max-w-full px-3" : "max-w-[720px] sm:p-6 sm:pb-48"}`}>
-            {deferredMessages.map((msg) => {
+            {displayMessages.map((msg) => {
               if (msg.role === "user") {
                 const attachmentsForMessage = messageAttachments(msg);
                 const displayAttachments =
@@ -3175,7 +3246,7 @@ export function AppChat({
                             message={errorText}
                             retryable={failureRetryable}
                             retryDisabled={isBusy || !retryText}
-                            onRetry={restoreRetryMessage}
+                            onRetry={retryLastTurn}
                           />
                         );
                       }
@@ -3538,7 +3609,7 @@ export function AppChat({
               );
             })}
 
-            {isBusy && deferredMessages.length > 0 && (() => {
+            {isBusy && displayMessages.length > 0 && (() => {
               // Waiting to join a stream started by another tab.
               if (isSyncLoading && status === "ready") {
                 return (
@@ -3548,7 +3619,7 @@ export function AppChat({
                   </div>
                 );
               }
-              const lastMsg = deferredMessages[deferredMessages.length - 1];
+              const lastMsg = displayMessages[displayMessages.length - 1];
               // Before first assistant response.
               if (lastMsg?.role === "user") {
                 return <WorkingIndicator />;
@@ -3571,7 +3642,8 @@ export function AppChat({
                 message={visibleFailureMessage}
                 retryable={failureRetryable}
                 retryDisabled={isBusy || !retryText}
-                onRetry={restoreRetryMessage}
+                onRetry={retryLastTurn}
+                tone={isUserStopped ? "neutral" : "danger"}
               />
             ) : null}
           </StickToBottom.Content>

@@ -138,6 +138,16 @@ The important invariant is tenant isolation: every browser route must authorize 
 - [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
 - [x] 2026-05-19 - Fixed stale stopped-failure hydration after retry: delayed failed snapshots older than the current local message list no longer briefly re-show "Run stopped by the user" after a successful retry finishes.
 - [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Updated stopped-run UX: partial answers remain visible, user-stopped failures render as a neutral inline callout, and "Try again" rewinds the interrupted local turn and immediately resends the same user message instead of filling the composer.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Fixed stopped-run "Try again" claim rejection by sending an explicit `retryLastMessageId` and allowing retryable failed runs to re-claim the same persisted latest user message instead of returning `stale_input`.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Corrected the stopped-run retry implementation to use the AI SDK same-message replacement path (`messageId`) instead of manually rewinding local messages and creating a new client message id.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Relaxed the server retry claim to trust the explicit retry request's latest user message id while still requiring a retryable failed run and no history truncation. This avoids fragile matching against the persisted stopped-turn user id.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Removed reconnect-state leakage from the composer placeholder and rendered submitted turns from live messages instead of deferred messages, preventing transient "Connecting to stream..." in the composer and pre-user-message Working jitter.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
 - [ ] Browser QA not run.
 
 
@@ -616,6 +626,11 @@ Planning outcome:
 - 2026-05-19 - Added defensive early-stop race handling: the chat POST now re-checks lease ownership immediately before worker connection, worker SSE enqueue/close is safe after cancellation, AppChat uses the AI SDK abort signal for intentional Stop without a second custom abort controller, stopped runs suspend live reconnect observers until the next send, and reconnect sync fetches run state before showing "Connecting to stream...".
 - 2026-05-19 - Simplified the product behavior after regression review: Stop is not available during the unsafe initialization window. The button remains disabled while the latest turn has only the user message; it becomes available once an assistant stream part exists. This avoids racing a half-created worker turn.
 - 2026-05-19 - Ignored stale failed snapshots when the local chat has already advanced past their message count, preventing the previous stopped failure from flashing after a later successful retry.
+- 2026-05-19 - Changed the stopped response row to a neutral "Second's response was stopped by the user." callout with a "Try again" action that removes the interrupted local user/assistant turn and resends it. Typing in the composer remains an append-new-message path.
+- 2026-05-19 - Made "Try again" an explicit retry contract. The client sends the persisted stopped user message id, and the repository permits a retryable failed run to be claimed again when that id matches the latest persisted user message and the request does not truncate history.
+- 2026-05-19 - Fixed the retry contract implementation: the client now resubmits with the original user `messageId`, letting the AI SDK truncate the interrupted assistant response while preserving the message id expected by the server.
+- 2026-05-19 - Relaxed the retry claim predicate: explicit retry now requires `status: failed`, `failure.retryable: true`, request history length at least the persisted history length, and the request's latest user message id matching `retryLastMessageId`; it no longer requires the persisted latest user id to match.
+- 2026-05-19 - Kept local composer sends visually local: the composer no longer shows "Connecting to stream..." for run sync loading, and submitted-message renders use live `messages` so the optimistic user bubble appears before the chat-level Working indicator.
 
 
 ## Captured User Intent (Verbatim)

@@ -76,6 +76,21 @@ function runLeaseId(
   return run.streamLease?.id ?? null;
 }
 
+function latestUserMessageInfo(
+  messages: unknown[],
+): { id: string; index: number } | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      continue;
+    }
+    const record = message as Record<string, unknown>;
+    if (record.role !== "user" || typeof record.id !== "string") continue;
+    return { id: record.id, index };
+  }
+  return null;
+}
+
 function expectedLeaseFilter(expectedLeaseId?: string | null) {
   if (expectedLeaseId === undefined) return {};
   if (expectedLeaseId === null) {
@@ -228,6 +243,7 @@ export async function startRunStream(
     activeStreamId: string | null;
     attachments?: BuilderAttachmentReference[];
     recoveryContext?: AgentRunRecoveryContext | null;
+    retryLastMessageId?: string | null;
   },
 ): Promise<StartRunStreamResult> {
   const collection = await getAgentRunsCollection();
@@ -245,6 +261,7 @@ export async function startRunStream(
         activeStreamId: 1,
         streamLease: 1,
         messages: 1,
+        failure: 1,
         recoveryContext: 1,
         updatedAt: 1,
       },
@@ -255,6 +272,13 @@ export async function startRunStream(
   const effectiveRecoveryContext = hasRecoveryContextInput
     ? input.recoveryContext
     : run?.recoveryContext;
+  const requestRetryUser = latestUserMessageInfo(input.messages);
+  const isExplicitRetry =
+    run.status === "failed" &&
+    run.failure?.retryable === true &&
+    Boolean(input.retryLastMessageId) &&
+    run.messages.length <= input.messages.length &&
+    requestRetryUser?.id === input.retryLastMessageId;
   const $set: Record<string, unknown> = {
     messages: input.messages,
     activeStreamId: input.activeStreamId,
@@ -348,7 +372,8 @@ export async function startRunStream(
   const canClaim =
     run.status === "pending" ||
     ((run.status === "completed" || run.status === "failed") &&
-      run.messages.length < input.messages.length);
+      run.messages.length < input.messages.length) ||
+    isExplicitRetry;
 
   if (!canClaim) {
     return {
@@ -372,6 +397,15 @@ export async function startRunStream(
             $lt: [{ $size: "$messages" }, input.messages.length],
           },
         },
+        ...(isExplicitRetry && requestRetryUser
+          ? [{
+              status: "failed" as const,
+              "failure.retryable": true,
+              $expr: {
+                $lte: [{ $size: "$messages" }, input.messages.length],
+              },
+            }]
+          : []),
       ],
     },
     { $set },

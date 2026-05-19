@@ -531,6 +531,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
     runtimeModel?: string;
     runtimeParams?: Record<string, string>;
     attachments?: unknown;
+    retryLastMessageId?: string;
   };
 
   const { messages } = body;
@@ -663,6 +664,10 @@ export async function POST(request: Request, context: ChatRouteContext) {
     messages: messagesForRun,
     activeStreamId: null,
     attachments: requestAttachments,
+    retryLastMessageId:
+      typeof body.retryLastMessageId === "string"
+        ? body.retryLastMessageId
+        : null,
     ...(shouldClearRecoveryContext ? { recoveryContext: null } : {}),
   });
   if (claimResult.type !== "claimed") {
