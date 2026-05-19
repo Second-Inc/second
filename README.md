@@ -284,38 +284,49 @@ For full environment setup, see the [self-hosting docs](https://docs.second.so/s
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                           Browser                                 │
-│              useChat hook + real-time data subscriptions          │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                      SSE streams + REST
-                               │
-┌──────────────────────────────▼───────────────────────────────────┐
-│                       Web (Next.js)                               │
-│     Auth · Validation · Workspace Context · API Routes · Guard   │
-└────────────┬─────────────────────────────────────┬───────────────┘
-             │                                     │
-      POST /sessions                   Change Streams + REST
-             │                                     │
-┌────────────▼────────────┐           ┌────────────▼───────────────┐
-│     Worker (Hono)       │           │    MongoDB (Replica Set)    │
-│                         │           │                             │
-│    Claude Agent SDK     │           │   apps · runs · app_data    │
-│    Codex CLI            │───────────│   audit_events · members    │
-│    OpenCode             │           │   integrations · creds      │
-└────────────┬────────────┘           └─────────────────────────────┘
-             │
-      Server-side secret injection
-             │
-┌────────────▼────────────┐
-│     Redis               │
-│                         │
-│    Stream resumption    │
-│    Pub/sub events       │
-│    OAuth state          │
-└─────────────────────────┘
++------------------------------------------------------------------------------+
+| Browser                                                                      |
+| App UI, chat, generated app iframe                                           |
++-----------------------------------+------------------------------------------+
+                                    |
+                                    | REST + SSE
+                                    v
++------------------------------------------------------------------------------+
+| Web (Next.js)                                                                |
+| Public entrypoint, auth, workspace guards, API routes, reviews               |
+| Tool execution, secret resolution, app data, auditability                    |
++------------------+--------------------------+--------------------------+------+
+                   |                          |                          |
+                   | private HTTP + SSE       | persistent state         | replay + events
+                   | internal auth            | Change Streams           | OAuth state + locks
+                   v                          v                          v
++---------------------------+     +---------------------------+     +------------------+
+| Worker (Hono)             |     | MongoDB Replica Set       |     | Redis            |
+| Claude Code, Codex        |     | workspaces, apps, runs    |     | stream replay    |
+| OpenCode, app agents      |     | app_data, audit logs      |     | workspace pubsub |
++-------------+-------------+     | integration metadata      |     +------------------+
+              |                   +---------------------------+
+              |
+              | internal callbacks
+              | /api/internal/*
+              v
++------------------------------------------------------------------------------+
+| Web-owned governed layer                                                     |
+| Tool calls, app-data writes, approvals, tenant boundaries                    |
+| Secrets stay server-side before reaching external systems                    |
++-----------------------------------+------------------------------------------+
+                                    |
+                                    | server-side tools
+                                    v
++------------------------------------------------------------------------------+
+| External systems                                                             |
+| OAuth providers, APIs, internal services                                     |
++------------------------------------------------------------------------------+
 ```
+
+Only the Web service is exposed publicly. Worker, MongoDB, and Redis stay on the internal network.
+
+Agent runtimes stream through the Worker, but trusted state changes flow back through Web-owned internal APIs, so workspace authorization, app-data writes, tool execution, secret resolution, auditability, and tenant boundaries stay in one governed layer.
 
 <br>
 
