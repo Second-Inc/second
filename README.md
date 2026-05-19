@@ -88,6 +88,18 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
   </tr>
 </table>
 
+## Core Philosophy: Agent-Native Software
+
+Every app built in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
+
+On top of that, Second handles the hard parts:
+
+| Capability | How It Works |
+|---|---|
+| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
+| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
+| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
+
 ## Features
 
 <table>
@@ -136,18 +148,6 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 </table>
 
 <br>
-
-## Core Philosophy: Agent-Native Software
-
-Every app built in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
-
-On top of that, Second handles the hard parts:
-
-| Capability | How It Works |
-|---|---|
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
 
 <!-- ## Second Is Right For You If
 
