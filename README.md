@@ -51,9 +51,7 @@ Most platforms were not built for deep, multiplayer, asynchronous work with AI a
 Second is open-source, self-hosted, bring your own agent.
 
 > [!TIP]
-> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
->
-> Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
+> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise). It covers customer-owned auth and OAuth apps, agent permission approvals, secret injection, tenant isolation, and auditability.
 
 ## Bring Your Agent
 
