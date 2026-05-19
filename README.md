@@ -55,6 +55,34 @@ Second is open-source, self-hosted, bring your own agent.
 >
 > Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
 
+## Bring Your Agent
+
+Bring your own agent harness, switch runtimes and models per message, per app, without restarting conversations.
+
+<table>
+  <tr>
+    <td width="120" align="center">
+      <img src="apps/web/public/icons/claude-code.svg" width="28" height="28" alt="Claude Code">
+    </td>
+    <td width="120" align="center">
+      <img src="apps/web/public/icons/codex.svg" width="28" height="28" alt="Codex">
+    </td>
+    <td width="120" align="center">
+      <img src="apps/web/public/icons/opencode.svg" width="28" height="28" alt="OpenCode">
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><strong>Claude Code</strong></sub></td>
+    <td align="center"><sub><strong>Codex</strong></sub></td>
+    <td align="center"><sub><strong>OpenCode</strong></sub></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>✅</sub></td>
+    <td align="center"><sub>✅</sub></td>
+    <td align="center"><sub>Coming soon</sub></td>
+  </tr>
+</table>
+
 ## Personal Software Factory
 
 Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
@@ -90,15 +118,17 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
 
 ## Core Philosophy: Agent-Native Software
 
-Every app built in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
+Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
 
 On top of that, Second handles the hard parts:
 
 | Capability | How It Works |
 |---|---|
 | **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
+| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
 | **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
+
+<br>
 
 ## Features
 
@@ -199,7 +229,7 @@ Your team sees everything in one collaborative interface. Agents write to the sa
 
 ## Security & Governance
 
-Second is designed for enterprise teams that need complete control over what agents can access and do.
+Second is designed for enterprise teams that need complete control over what humans and agents can access and do.
 
 **Zero-trust architecture for agents.** No agent is granted implicit access to anything. Every capability, every data collection, every integration must be explicitly declared, scoped, and approved before an agent can act.
 
