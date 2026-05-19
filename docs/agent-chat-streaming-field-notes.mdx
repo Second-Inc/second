@@ -1,0 +1,431 @@
+---
+title: "Agent Chat Streaming Field Notes"
+description: "Internal notes for coding agents working on builder chat streaming, stop/retry behavior, multi-tab resume, and failure reporting."
+---
+
+This is an internal implementation note for coding agents. It is intentionally
+not linked from `docs/docs.json`. Read it alongside
+`docs/streaming.mdx`, `docs/architecture.mdx`,
+`docs/guard-and-tenancy.mdx`, `docs/app-preview.mdx`, and
+`docs/self-hosting.mdx` before changing builder chat, run state,
+workspace realtime, stream resume, Stop, or retry behavior.
+
+The goal of this note is not to replace the product docs. It records the
+practical hotspots, lifecycle edges, and mistakes learned while fixing
+SEC-139-style agent stream failures.
+
+## How to use this for future agent work
+
+For future chat, run, realtime, or worker tasks, hand the coding agent this doc
+as the starting context before asking it to patch code. A good prompt shape is:
+
+```text
+Read docs/agent-chat-streaming-field-notes.mdx first, then read the relevant
+source files it names. Before changing code, explain:
+
+- which code path owns the behavior
+- whether this is sender state, observer state, server run state, worker state,
+  or realtime fanout
+- what invariants and tenant boundaries must be preserved
+- the smallest files that need to change
+- how you will validate single-tab, multi-tab, stop, retry, reload, and Sentry
+  behavior if they are in scope
+```
+
+When giving repro context, be specific about the visible phase. "Working" can
+mean local submitted state, remote observer waiting to attach, worker
+initialization, or a transient post-stream state. Say which tab sent the
+message, which tab observed it, whether the tab was backgrounded, whether the
+assistant had produced any content yet, and whether the dev server was restarted
+after the last code change.
+
+## What to read first
+
+For any future feature or bug in this area, start here:
+
+1. `docs/streaming.mdx` for the two-hop streaming model and resume contract.
+2. `docs/architecture.mdx` for the web/worker/database ownership split.
+3. `docs/guard-and-tenancy.mdx` for authorization and scoped query rules.
+4. `apps/web/src/components/app-chat.tsx` for the browser state machine.
+5. `apps/web/src/app/api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat/route.ts` for the authoritative POST and GET snapshot.
+6. `apps/web/src/app/api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat/stream/route.ts` for observer attach/resume.
+7. `apps/web/src/app/api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat/stop/route.ts` for explicit Stop.
+8. `apps/web/src/lib/db/repositories/agent-runs.ts` for run state transitions.
+9. `apps/web/src/lib/agent/worker-bridge.ts` for worker SSE to AI SDK UIMessageStream translation.
+10. `apps/worker/src/index.ts` and `apps/worker/src/session-manager.ts` for worker stream and cancellation behavior.
+
+## Mental model
+
+Builder chat has one authoritative writer and many observers.
+
+```
+Browser sender
+  -> POST /chat
+  -> startRunStream()
+  -> worker /sessions/:appId/messages
+  -> worker SSE
+  -> web worker-bridge
+  -> UIMessageStream to sender
+  -> Redis resumable stream + replay buffer
+  -> Mongo completeRun()/failRun()
+
+Observer tabs
+  -> workspace realtime run events
+  -> GET /chat snapshot
+  -> GET /chat/stream resume/replay
+```
+
+The sender owns the active worker turn. Observer tabs should never start a
+second worker request for the same run. They should update their local messages
+from authorized snapshots and attach through the stream/replay path.
+
+## Current behavior contract
+
+These are the user-visible behaviors this area is expected to preserve:
+
+- Sending from the composer clears the composer immediately, renders the local
+  user bubble, and shows chat-level `Working` while the agent initializes.
+- The composer must not briefly show `Connecting to stream...`; reconnect state
+  belongs in the transcript for observer tabs.
+- Stop is disabled while the latest turn is only initializing. It becomes
+  available after the assistant turn has started streaming content/tool parts.
+- Stopping after content starts preserves the partial assistant response and
+  shows a neutral inline callout below it.
+- User-stopped is not a dangerous error. It should read like an intentional
+  interruption, with `Try again` as the action.
+- `Try again` retries the interrupted user turn directly. It should not copy the
+  old prompt into the composer.
+- If the user types a new composer message after a stopped turn, that is a new
+  appended turn, not an inline retry.
+- In two tabs, the non-sender tab should show the remote user message and
+  `Connecting to stream...` during initialization, then stream the same
+  assistant chunks when attach is ready.
+- The same two-tab behavior must work no matter which tab sends next. A tab
+  that used to be the sender can later be the observer, and vice versa.
+- Reload or returning to a background tab should catch up from authorized state
+  without duplicate assistant content or stale stopped failures flashing.
+
+## Non-negotiable invariants
+
+- The authoritative chat POST must not be aborted by route navigation. A tab can
+  close observer streams during navigation, but the POST must be allowed to
+  finish so messages persist and `activeStreamId` clears.
+- Only an explicit user Stop should cancel the active turn.
+- GET routes stay read-only. `GET /chat` and `GET /chat/stream` can observe
+  state and return snapshots or stream data. They must not repair, fail, clear,
+  or mutate runs.
+- Every browser route must prove `{ workspaceId, appId, runId }` ownership:
+  `requireWorkspaceContext`, then `resolveAppAccess`, then load the run by full
+  parent scope.
+- Workspace realtime events are compact invalidation hints. They should carry
+  ids, status, and scope only, never prompts, messages, source files, secrets,
+  headers, cookies, or full documents.
+- Do not add component-local polling as the first answer. Prefer existing
+  workspace realtime, stream/replay attach, and focused activation catch-up.
+- Multi-tab behavior is part of the product contract, not a nice-to-have.
+
+## Run state
+
+Builder runs live in `agent_runs` and are managed by
+`apps/web/src/lib/db/repositories/agent-runs.ts`.
+
+The important fields are:
+
+- `status`: `pending`, `streaming`, `completed`, or `failed`
+- `messages`: persisted AI SDK `UIMessage[]`
+- `activeStreamId`: Redis resumable stream id once attachable
+- `streamLease`: generation token for the active stream owner
+- `failure`: compact user/support-safe failure metadata
+- `usage`: accumulated model usage
+- runtime session state fields for provider resume
+
+`startRunStream()` is the only normal claim path for a builder chat POST. It
+must remain atomic enough that duplicate POSTs, Strict Mode remounts, and
+multi-tab races do not start duplicate worker turns.
+
+Terminal writes should be lease-guarded. `completeRun()` and `failRun()` should
+only clear the active stream for the current lease. Old worker streams must not
+overwrite a newer retry or recovery stream.
+
+## Chat POST
+
+The POST route owns:
+
+- authentication and app/run access checks
+- parsing AI SDK request shape
+- runtime settings resolution
+- attachment restoration/upload
+- `startRunStream()` claim
+- optional draft/review invalidation side effects for new builder input
+- worker restore/source hydration
+- system prompt construction
+- `createUIMessageStream`
+- `streamFromWorker(...)`
+- replay/resumable stream creation
+- final persistence through `completeRun()` or `failRun()`
+
+Do not treat `startRunStream()` failure as a silent empty stream. If a claim is
+rejected, the route should return a typed user-visible stream outcome. Silent
+success leaves the UI looking alive while no worker is running.
+
+## Stream attach
+
+`GET /chat/stream` is an observer route. It should:
+
+- authorize the same workspace/app/run scope
+- read current stream state
+- wait briefly for `activeStreamId` when the run is `streaming` but not yet attachable
+- resume the active Redis stream when possible
+- fall back to replay buffer when available
+- return `204` when no stream is attachable
+
+`204` does not mean "done" while the run still says `streaming`. It can mean the
+POST has claimed the run but the resumable stream is not ready yet.
+
+## AppChat responsibilities
+
+`apps/web/src/components/app-chat.tsx` is dense and easy to regress. The rough
+split is:
+
+- `useChat` owns the local sender stream and AI SDK message state.
+- `useRunSync` owns observer/resume behavior.
+- `WorkspaceRealtimeProvider` provides shared workspace events.
+- The composer should only reflect local send/approval/upload state, not
+  observer reconnect internals.
+- Rendering uses deferred messages for performance, but submitted local turns
+  should render from live `messages` so the optimistic user bubble appears
+  before the chat-level `Working` indicator.
+
+The UI distinguishes local sender state from observer state:
+
+- Local sender: user bubble appears, then chat-level `Working` appears until
+  assistant chunks arrive.
+- Observer tab during remote initialization: show `Connecting to stream...` in
+  the transcript, not inside the composer.
+- Observer tab after stream attach: render the same chunks as the sender.
+- Terminal failure: render an inline callout near the failed turn.
+
+Avoid showing `Connecting to stream...` as the textarea placeholder. That makes
+normal sends feel jittery because reconnect state leaks into local composer UX.
+
+## useRunSync
+
+`useRunSync` is the single resume orchestrator. It should be the only code path
+that calls `resumeStream()` for cross-tab or reload attach.
+
+Current responsibilities:
+
+- Listen for workspace realtime `run.starting`, `run.stream_ready`,
+  `run.completed`, and `run.failed`.
+- Ignore events while the local `useChat` status is `submitted` or `streaming`;
+  the sender is already handling the authoritative stream.
+- On `run.starting`, immediately show observer sync-loading so the remote tab
+  has visible feedback during worker initialization.
+- On `run.stream_ready`, follow the snapshot-first resume path to avoid stale
+  reconnect flashes after terminal states.
+- Fetch `GET /chat` before attach when needed so the observer sees the remote
+  user message immediately.
+- Call `resumeStream()` only when the run snapshot still says `streaming`.
+- Fall back to bounded snapshot sync if resume returns no stream while the run
+  is still `streaming`.
+- On `run.completed` or `run.failed`, fetch the final snapshot and clear
+  sync-loading.
+- On tab activation (`visibilitychange`, `focus`, `pageshow`), do a one-shot
+  authorized snapshot catch-up. This covers background tabs that missed or
+  delayed BroadcastChannel-delivered workspace events.
+
+Do not add overlapping `resumeStream()` calls. The AI SDK can duplicate
+assistant content or throw when two resume requests race on the same `useChat`
+instance.
+
+## Workspace realtime and tabs
+
+`WorkspaceRealtimeProvider` uses `subscribeToSharedEventSource(...)` from
+`apps/web/src/lib/tab-events.ts`. Only one browser tab owns the actual
+workspace EventSource; events are relayed to other tabs through
+`BroadcastChannel` and Web Locks.
+
+This is good for connection budgets, but it means a background tab may not
+observe every event at exactly the same time as the leader tab. That is why
+AppChat has an activation catch-up. Freshly opened tabs naturally recover by
+reading current run state; returning tabs need a light version of the same
+check.
+
+Do not assume that because one tab sees `run.starting`, every tab saw it.
+Realtime events are hints, not durable delivery.
+
+## Stop behavior
+
+Stop is intentionally unavailable during the unsafe early initialization phase.
+
+The UI should only allow Stop after the latest assistant turn has actually
+started streaming. In AppChat terms, Stop is enabled when local chat status is
+`streaming` and the latest user turn has an assistant message part after it.
+
+Why: stopping while the run is only in "Working..." / initializing can race the
+web claim, worker connection, and worker session creation. A simpler and more
+predictable product rule is to block Stop until the stream has started.
+
+When Stop is allowed:
+
+- AppChat calls `POST /chat/stop`.
+- The stop route asks the worker to cancel the session if one exists.
+- The run is marked `failed` with compact `failure.code = "user_stopped"`.
+- `activeStreamId` and `streamLease` are cleared.
+- `run.failed` is published.
+- The UI preserves any partial answer and renders a neutral callout.
+
+User-stopped is not a dangerous/error visual state. It should be neutral:
+
+```
+Second's response was stopped by the user.  [Try again]
+```
+
+Use a neutral icon/color, not destructive red.
+
+## Try again behavior
+
+For a stopped or retryable failed turn, `Try again` should not fill the composer.
+It should retry the interrupted turn directly.
+
+The important details:
+
+- Preserve the partial answer above the stopped callout.
+- The inline button says `Try again`.
+- On click, call the AI SDK same-message replacement path by passing the
+  original user `messageId`.
+- Send `retryLastMessageId` in the request body.
+- The AI SDK truncates the interrupted assistant response and resubmits the
+  same user message.
+- The server claim path allows an explicit retry only when the run is failed,
+  `failure.retryable` is true, the request does not truncate persisted history,
+  and the request's latest user message id matches `retryLastMessageId`.
+- Normal composer sends after a stop still append a new message. They should not
+  reuse the inline retry behavior.
+
+Do not manually call `setMessages(...)` to rewind and then send a new message.
+That can create a new client message id and drift from what the server expects.
+
+## Error reporting
+
+Sentry reports should make transport errors diagnosable without leaking data.
+
+Useful server contexts:
+
+- route shape, not raw URL
+- hashed workspace/app/run/stream/lease ids
+- runtime id and model
+- message counts
+- failure phase
+- worker HTTP status
+- sanitized `Error.cause` chain/root cause when available
+
+Do not report:
+
+- prompts
+- message text
+- full source files
+- request bodies
+- headers, cookies, auth tokens
+- full Mongo documents
+- full stack traces in hot read models
+
+The Sentry API token is configured in the developer shell profile. If needed,
+source `~/.zshrc` and read `SENTRY_AUTH_TOKEN`; never print it or ask the human
+to paste it into chat.
+
+## Worker behavior
+
+The worker endpoint `POST /sessions/:appId/messages` streams normalized worker
+messages as SSE. It should be safe if the web/client side disconnects or
+cancels:
+
+- `ReadableStream` enqueue should tolerate closed streams.
+- `cancel()` should call `session.cancelCurrentRun(...)`.
+- `SessionImpl` owns an `AbortController` for the active runtime turn.
+- Runtime adapters should observe the abort signal and terminate provider work.
+
+Worker cancellation can be best-effort. If cancellation cannot be confirmed,
+the web route can still move the authorized run out of permanent `streaming`
+with a retryable failure, but this should be reported.
+
+## UX lessons from SEC-139
+
+Several regressions came from adding defensive state without respecting the
+existing local-vs-observer boundary. The useful lessons:
+
+- Fix the state machine at the owner boundary first, not only the visible UI.
+- Do not let observer reconnect state affect the composer.
+- Do not call `resumeStream()` from multiple places.
+- Avoid making a read route repair stuck state.
+- Before changing Stop, decide whether the product should allow that phase to
+  be stoppable at all. Blocking Stop during initialization was simpler and more
+  reliable than trying to cancel a half-created worker turn.
+- Browser/dev-server hot reload can keep old client/server code around while
+  iterating on this path. If behavior seems impossible after a code change,
+  restart the dev server before forming another theory.
+- A fix that works in a fresh tab but not a returning tab often means missed
+  realtime event or stale local hook state, not a server state failure.
+- A fix that works for the original sender but not observers usually means
+  `useRunSync`, workspace events, or replay/resume.
+- A fix that works for observers but not sender usually means `useChat`, the
+  authoritative POST, or local optimistic rendering.
+
+## Future task context checklist
+
+When asking an agent to work in this area, include:
+
+- Exact user-visible repro steps, including which tab sends which message.
+- Whether the problem is local sender, observer tab, reload, back/forward, or
+  fresh tab.
+- Runtime/model used (`claude-code`, `codex-cli`, or `opencode`).
+- Whether Stop happened during `submitted`/early "Working" or after assistant
+  content started.
+- Whether the desired behavior is local append, inline retry, stream resume, or
+  terminal failure display.
+- Screenshot or screen recording if the problem is a flicker/jitter.
+- Relevant Sentry issue link and whether the event is client, chat POST, stream
+  attach, worker bridge, or worker runtime.
+- Whether the dev server has been restarted since code changes.
+- Confirmation if browser QA is requested. In this repo, browser QA permission
+  allows starting `npm run dev` if needed, then reading `.second-dev.txt` for
+  the URL.
+
+## Validation checklist
+
+Before finishing a change in this area, validate at least:
+
+- `npm run typecheck`
+- Local send starts with user bubble then chat-level `Working`
+- Composer placeholder never shows reconnect text
+- Stop is disabled during early initialization
+- Stop after assistant content shows neutral stopped callout and preserves the
+  partial answer
+- `Try again` retries inline and does not fill the composer
+- Sending a normal composer message after Stop appends a new turn
+- Tab A sender streams correctly
+- Tab B observer sees remote user message and `Connecting to stream...` during
+  initialization
+- Tab B attaches when stream is ready and receives chunks
+- After Tab B sends, Tab A behaves the same way
+- A returning/background tab catches up on focus
+- Reload shows persisted terminal state without reconnect flashes
+
+For browser QA, use the in-app browser and the URL from `.second-dev.txt`.
+Keep prompts tiny, for example "short one paragraph poem" or "tiny todo list".
+
+## Security and performance checklist
+
+When touching this area, explicitly check:
+
+- Hot read models stay compact.
+- GET routes stay read-only.
+- Workspace events remain compact invalidation hints.
+- No prompts, source, secrets, headers, cookies, or full messages are emitted in
+  realtime events or Sentry contexts.
+- All DB reads/writes are scoped by `workspaceId`, `appId`, and `runId` where
+  applicable.
+- Multi-tab resume does not add unbounded polling or duplicate EventSource
+  subscriptions.
+- The authoritative POST remains unmount-safe.
+- Old stream owners cannot complete/fail over a newer lease.
