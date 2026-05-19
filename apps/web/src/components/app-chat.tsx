@@ -101,7 +101,6 @@ import { integrationIconUrl } from "@/lib/integration-icons";
 import {
   integrationRouteSegment,
   normalizeIntegrationDomain as normalizeDomain,
-  slugifyIntegrationRouteSegment,
 } from "@/lib/integration-routes";
 import {
   MAX_ATTACHMENT_FILE_BYTES,
@@ -1059,18 +1058,39 @@ function latestIntegrationSetupFromMessages(
     const parts = msg.parts ?? [];
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
       const part = parts[partIndex];
+      const record = asRecord(part);
       if (
-        part?.type !== "dynamic-tool" ||
-        part.toolName !== "mcp__second__present_integration_setup"
+        record?.type !== "dynamic-tool" ||
+        record.toolName !== "mcp__second__present_integration_setup" ||
+        record.state !== "output-available" ||
+        record.preliminary === true ||
+        !integrationSetupOutputWasSynced(record.output)
       ) {
         continue;
       }
-      const input = asRecord(part.input);
+      const input = asRecord(record.input);
       return normalizeSetupIntegrations(input?.integrations);
     }
   }
 
   return [];
+}
+
+function integrationSetupOutputWasSynced(output: unknown): boolean {
+  const parsed = parseToolTextOutput(output);
+  const record = asRecord(parsed);
+  if (record) {
+    if (record.ok === false || record.synced === false) return false;
+    if (record.ok === true && record.synced === true) return true;
+  }
+
+  if (typeof parsed !== "string") return false;
+  const text = parsed.toLowerCase();
+  return (
+    text.includes("presented to user and synced") &&
+    !text.includes("not synced") &&
+    !text.includes("not fully synced")
+  );
 }
 
 function integrationNeedsSetup(
@@ -1148,14 +1168,10 @@ function IntegrationSetupComposerCallout({
   const primaryLiveIntegration = primaryIntegration
     ? findLiveIntegrationKey(primaryIntegration, liveIntegrationKeys ?? null, appId)
     : undefined;
-  const setupRouteSegment =
-    primaryLiveIntegration && liveIntegrationKeys?.length
-      ? integrationRouteSegment(primaryLiveIntegration, liveIntegrationKeys)
-      : slugifyIntegrationRouteSegment(
-          primaryIntegration?.name || primaryIntegration?.domain || "integration",
-        );
   const integrationSetupTarget = primaryIntegration
-    ? `/w/${workspaceId}/settings/integrations/${encodeURIComponent(setupRouteSegment)}?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`
+    ? primaryLiveIntegration && liveIntegrationKeys?.length
+      ? `/w/${workspaceId}/settings/integrations/${encodeURIComponent(integrationRouteSegment(primaryLiveIntegration, liveIntegrationKeys))}?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`
+      : `/w/${workspaceId}/settings/integrations?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`
     : `/w/${workspaceId}/settings/integrations?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`;
   const trackSetupNavigation = () => {
     captureAnalyticsEvent("integration setup started", {
@@ -2613,6 +2629,7 @@ export function AppChat({
 
     return requestedIntegrationSetup.filter((integration) => {
       const live = findLiveIntegrationKey(integration, appIntegrationKeys, appId);
+      if (!live) return false;
       return integrationNeedsSetup(integration, live);
     });
   }, [appId, requestedIntegrationSetup, appIntegrationKeys]);
@@ -2624,6 +2641,13 @@ export function AppChat({
       !appIntegrationKeys ||
       pendingIntegrationSetup.length !== 0 ||
       trackedIntegrationSetupCompletionKeysRef.current.has(requestedIntegrationSetupKey)
+    ) {
+      return;
+    }
+    if (
+      !requestedIntegrationSetup.every((integration) =>
+        findLiveIntegrationKey(integration, appIntegrationKeys, appId),
+      )
     ) {
       return;
     }

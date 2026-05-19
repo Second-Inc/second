@@ -196,6 +196,7 @@ app.post("/sessions/:appId/messages", async (c) => {
     sourceFiles?: Record<string, string>;
     agentConfig?: AgentConfig;
     workspaceId?: string;
+    runId?: string;
     appName?: string;
     requestedByUserId?: string;
     requestedByUserName?: string;
@@ -272,6 +273,7 @@ app.post("/sessions/:appId/messages", async (c) => {
     internalApiToken: process.env.INTERNAL_API_TOKEN,
     workspaceId: body.workspaceId,
     appId,
+    runId: body.runId,
     appName: body.appName,
     requestedByUserId: body.requestedByUserId,
     requestedByUserName: body.requestedByUserName,

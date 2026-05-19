@@ -13,6 +13,7 @@ import type { RuntimeSkillReference } from "@/lib/db";
 export type WorkerBridgeOptions = {
   workerUrl: string;
   appId: string;
+  runId?: string;
   appName?: string;
   requestedByUserId?: string;
   requestedByUserName?: string;
@@ -672,6 +673,7 @@ export async function streamFromWorker(
         sourceFiles: options.sourceFiles,
         agentConfig: options.agentConfig,
         workspaceId: options.workspaceId,
+        runId: options.runId,
         appName: options.appName,
         requestedByUserId: options.requestedByUserId,
         requestedByUserName: options.requestedByUserName,

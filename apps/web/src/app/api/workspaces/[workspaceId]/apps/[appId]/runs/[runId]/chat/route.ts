@@ -988,6 +988,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
       const bridgeResult = await streamFromWorker(writer, {
           workerUrl,
           appId,
+          runId,
           workspaceId: workspaceContext.workspaceId,
           appName: app.name,
           requestedByUserId: workspaceContext.user._id,

@@ -5,6 +5,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { execFile, execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   accessSync,
   constants,
@@ -908,6 +909,16 @@ function getIntegrationRequirementsUrl(config: SessionConfig): string {
   );
 }
 
+function getIntegrationSetupTelemetryUrl(config: SessionConfig): string {
+  const toolExecuteUrl =
+    config.toolExecuteUrl ??
+    `${process.env.WEB_URL ?? "http://localhost:3000"}/api/internal/tool-execute`;
+  return toolExecuteUrl.replace(
+    /\/api\/internal\/tool-execute$/,
+    "/api/internal/integration-setup-telemetry",
+  );
+}
+
 function getAppIntegrationKeysUrl(config: SessionConfig): string {
   const toolExecuteUrl =
     config.toolExecuteUrl ??
@@ -997,13 +1008,385 @@ function createListAppIntegrationKeysTool(config: SessionConfig) {
   );
 }
 
+type IntegrationSyncGrant = {
+  id?: string;
+  name?: string;
+  domain: string;
+  keySlug: string;
+};
+
+type IntegrationSyncResult =
+  | {
+      ok: true;
+      status: number;
+      grants: IntegrationSyncGrant[];
+      syncedCount: number;
+      requestedCount?: number;
+      skippedCount?: number;
+      deletedStaleCount?: number;
+    }
+  | {
+      ok: false;
+      status?: number;
+      message: string;
+    };
+
+const INTEGRATION_SYNC_ATTEMPTS = 3;
+const DEFAULT_POSTHOG_TOKEN = "phc_Xg1Id4ZaOowXb3UWqiPo8z3XTRXwTUgY0bD3zD7xWex";
+const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
+const DEFAULT_SENTRY_DSN =
+  "https://e520b21c4c457cf44bc5f69717b6f3a0@o4510307894165504.ingest.us.sentry.io/4511401492217856";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function envValue(keys: string[]): string {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function telemetryDisabled(): boolean {
+  return (
+    process.env.SECOND_TELEMETRY_DISABLED === "1" ||
+    process.env.SECOND_POSTHOG_DISABLED === "1"
+  );
+}
+
+function errorMessageForTelemetry(error: unknown): string | null {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.replace(/\s+/g, " ").trim().slice(0, 500);
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error.replace(/\s+/g, " ").trim().slice(0, 500);
+  }
+  return null;
+}
+
+function integrationTelemetryProperties(input: {
+  status: "failed" | "verification_failed";
+  reason: string;
+  config: SessionConfig;
+  httpStatus?: number | null;
+  errorMessage?: string | null;
+  expectedGrants: IntegrationSyncGrant[];
+  persistedGrants?: IntegrationSyncGrant[];
+  requestedCount?: number | null;
+  syncedCount?: number | null;
+  skippedCount?: number | null;
+  deletedStaleCount?: number | null;
+  attemptCount?: number | null;
+}) {
+  return {
+    second_oss: true,
+    status: input.status,
+    source: "worker",
+    reason: input.reason,
+    workspace_id: input.config.workspaceId ?? null,
+    app_id: input.config.appId ?? null,
+    run_id: input.config.runId ?? null,
+    runtime_mode: input.config.runtimeMode ?? "builder",
+    http_status: input.httpStatus ?? null,
+    requested_count: input.requestedCount ?? input.expectedGrants.length,
+    synced_count: input.syncedCount ?? null,
+    skipped_count: input.skippedCount ?? null,
+    deleted_stale_count: input.deletedStaleCount ?? null,
+    attempt_count: input.attemptCount ?? null,
+    error_message: input.errorMessage ?? null,
+    expected_integrations: input.expectedGrants,
+    persisted_integrations: input.persistedGrants ?? [],
+    worker_pid: process.pid,
+    worker_uptime_seconds: Math.round(process.uptime()),
+  };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs = 3000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function reportIntegrationSyncToWebTelemetry(
+  config: SessionConfig,
+  properties: Record<string, unknown>,
+): Promise<void> {
+  if (!config.workspaceId || !config.appId) return;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (config.internalApiToken) {
+    headers["Authorization"] = `Bearer ${config.internalApiToken}`;
+  }
+
+  await fetchWithTimeout(getIntegrationSetupTelemetryUrl(config), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(properties),
+  }).catch(() => undefined);
+}
+
+async function reportIntegrationSyncToPostHog(
+  properties: Record<string, unknown>,
+): Promise<void> {
+  if (telemetryDisabled()) return;
+  const token =
+    envValue(["SECOND_POSTHOG_TOKEN", "NEXT_PUBLIC_POSTHOG_TOKEN"]) ||
+    DEFAULT_POSTHOG_TOKEN;
+  const host =
+    envValue(["SECOND_POSTHOG_HOST", "NEXT_PUBLIC_POSTHOG_HOST"]) ||
+    DEFAULT_POSTHOG_HOST;
+  if (!token) return;
+
+  const event =
+    properties.status === "verification_failed"
+      ? "integration_setup_sync_verification_failed"
+      : "integration_setup_sync_failed";
+  await fetchWithTimeout(new URL("/i/v0/e/", host).toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: token,
+      event,
+      distinct_id:
+        typeof properties.run_id === "string" && properties.run_id
+          ? properties.run_id
+          : typeof properties.app_id === "string" && properties.app_id
+            ? properties.app_id
+            : "unknown-worker",
+      properties,
+    }),
+  }).catch(() => undefined);
+}
+
+function readWorkerSentryDsn(): string {
+  if (
+    process.env.SECOND_TELEMETRY_DISABLED === "1" ||
+    process.env.SECOND_ERROR_REPORTING_DISABLED === "1" ||
+    process.env.SECOND_SENTRY_DISABLED === "1"
+  ) {
+    return "";
+  }
+  return envValue(["SECOND_SENTRY_DSN", "SENTRY_DSN", "NEXT_PUBLIC_SENTRY_DSN"]) ||
+    DEFAULT_SENTRY_DSN;
+}
+
+function sentryEnvelopeUrl(dsn: string): string | null {
+  try {
+    const parsed = new URL(dsn);
+    const projectId = parsed.pathname.split("/").filter(Boolean).at(-1);
+    if (!parsed.username || !projectId) return null;
+    return `${parsed.origin}/api/${projectId}/envelope/?sentry_key=${encodeURIComponent(parsed.username)}`;
+  } catch {
+    return null;
+  }
+}
+
+async function reportIntegrationSyncToSentry(
+  properties: Record<string, unknown>,
+): Promise<void> {
+  const dsn = readWorkerSentryDsn();
+  const url = dsn ? sentryEnvelopeUrl(dsn) : null;
+  if (!url) return;
+
+  const eventId = randomUUID().replace(/-/g, "");
+  const now = new Date().toISOString();
+  const message =
+    typeof properties.error_message === "string" && properties.error_message
+      ? properties.error_message
+      : `Integration setup sync ${properties.status}`;
+  const envelope = [
+    JSON.stringify({ event_id: eventId, dsn, sent_at: now }),
+    JSON.stringify({ type: "event" }),
+    JSON.stringify({
+      event_id: eventId,
+      timestamp: now,
+      platform: "node",
+      level: "warning",
+      logger: "second.worker",
+      message,
+      environment:
+        envValue(["SENTRY_ENVIRONMENT", "SECOND_ENVIRONMENT", "NODE_ENV"]) ||
+        "development",
+      release:
+        envValue(["SENTRY_RELEASE", "SECOND_RELEASE_VERSION", "VERCEL_GIT_COMMIT_SHA"]) ||
+        undefined,
+      tags: {
+        "second.error_source": "integration_setup_sync",
+        "second.source": "worker",
+        "second.status": String(properties.status ?? "unknown"),
+        "second.reason": String(properties.reason ?? "unknown"),
+      },
+      contexts: {
+        integration_setup_sync: properties,
+      },
+    }),
+  ].join("\n");
+
+  await fetchWithTimeout(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-sentry-envelope" },
+    body: envelope,
+  }).catch(() => undefined);
+}
+
+async function reportIntegrationSyncFailure(input: {
+  status: "failed" | "verification_failed";
+  reason: string;
+  config: SessionConfig;
+  httpStatus?: number | null;
+  errorMessage?: string | null;
+  expectedGrants: IntegrationSyncGrant[];
+  persistedGrants?: IntegrationSyncGrant[];
+  requestedCount?: number | null;
+  syncedCount?: number | null;
+  skippedCount?: number | null;
+  deletedStaleCount?: number | null;
+  attemptCount?: number | null;
+}): Promise<void> {
+  const properties = integrationTelemetryProperties(input);
+  console.warn("[worker] integration setup sync failed", JSON.stringify(properties));
+  await Promise.all([
+    reportIntegrationSyncToWebTelemetry(input.config, properties),
+    reportIntegrationSyncToPostHog(properties),
+    reportIntegrationSyncToSentry(properties),
+  ]);
+}
+
+function normalizeIntegrationDomainForSync(domain: string): string {
+  return domain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/^www\./, "");
+}
+
+function normalizeIntegrationKeySlugForSync(value: unknown): string {
+  const normalized = (typeof value === "string" ? value : "default")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "default";
+}
+
+function extractExpectedIntegrationGrants(setupConfig: unknown): IntegrationSyncGrant[] {
+  const record = asRecord(setupConfig);
+  const integrations = Array.isArray(record?.integrations)
+    ? record.integrations
+    : [];
+  const seen = new Set<string>();
+  const expected: IntegrationSyncGrant[] = [];
+
+  for (const item of integrations) {
+    const integration = asRecord(item);
+    const domainInput = integration?.domain;
+    if (typeof domainInput !== "string" || !domainInput.trim()) continue;
+    const domain = normalizeIntegrationDomainForSync(domainInput);
+    if (!domain) continue;
+    const keySlug = normalizeIntegrationKeySlugForSync(integration?.keySlug);
+    const key = `${domain}|${keySlug}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    expected.push({
+      domain,
+      keySlug,
+      name:
+        typeof integration?.name === "string" && integration.name.trim()
+          ? integration.name.trim()
+          : domain,
+    });
+  }
+
+  return expected;
+}
+
+function parseIntegrationSyncResponse(text: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeIntegrationSyncGrants(value: unknown): IntegrationSyncGrant[] {
+  if (!Array.isArray(value)) return [];
+
+  const grants: IntegrationSyncGrant[] = [];
+  for (const item of value) {
+    const record = asRecord(item);
+    const domainInput = record?.domain;
+    if (typeof domainInput !== "string" || !domainInput.trim()) continue;
+    const grant: IntegrationSyncGrant = {
+      domain: normalizeIntegrationDomainForSync(domainInput),
+      keySlug: normalizeIntegrationKeySlugForSync(record?.keySlug),
+    };
+    if (typeof record?.id === "string" && record.id.trim()) {
+      grant.id = record.id.trim();
+    }
+    if (typeof record?.name === "string" && record.name.trim()) {
+      grant.name = record.name.trim();
+    }
+    grants.push(grant);
+  }
+
+  return grants;
+}
+
+function integrationSyncErrorFromBody(
+  body: Record<string, unknown> | null,
+  fallback: string,
+): string {
+  const error = body?.error;
+  if (typeof error === "string" && error.trim()) return error.trim();
+  const message = body?.message;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  return fallback;
+}
+
+function missingIntegrationGrants(
+  expected: IntegrationSyncGrant[],
+  actual: IntegrationSyncGrant[],
+): IntegrationSyncGrant[] {
+  const actualKeys = new Set(
+    actual.map((grant) => `${grant.domain}|${grant.keySlug}`),
+  );
+  return expected.filter(
+    (grant) => !actualKeys.has(`${grant.domain}|${grant.keySlug}`),
+  );
+}
+
+function formatIntegrationGrantRefs(grants: IntegrationSyncGrant[]): string {
+  return grants
+    .map((grant) => `${grant.name ?? grant.domain} (${grant.domain}/${grant.keySlug})`)
+    .join(", ");
+}
+
 async function syncIntegrationRequirements(
   config: SessionConfig,
   payload: {
     setupConfig?: unknown;
   },
-): Promise<void> {
-  if (!config.workspaceId || !config.appId) return;
+): Promise<IntegrationSyncResult> {
+  if (!config.workspaceId || !config.appId) {
+    return {
+      ok: false,
+      message: "workspaceId or appId is not available",
+    };
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -1019,6 +1402,7 @@ async function syncIntegrationRequirements(
       body: JSON.stringify({
         workspaceId: config.workspaceId,
         appId: config.appId,
+        runId: config.runId,
         appName: config.appName,
         requestedByUserId: config.requestedByUserId,
         requestedByUserName: config.requestedByUserName,
@@ -1026,18 +1410,115 @@ async function syncIntegrationRequirements(
       }),
     });
 
+    const text = await response.text().catch(() => "");
+    const body = parseIntegrationSyncResponse(text);
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.warn(
-        `[integration-sync] Failed to sync requirements (HTTP ${response.status}): ${text}`,
-      );
+      return {
+        ok: false,
+        status: response.status,
+        message: `HTTP ${response.status}: ${integrationSyncErrorFromBody(body, "request failed")}`,
+      };
     }
+
+    if (!body) {
+      return {
+        ok: false,
+        status: response.status,
+        message: "sync route returned a non-JSON response",
+      };
+    }
+
+    if (body.success !== true) {
+      return {
+        ok: false,
+        status: response.status,
+        message: integrationSyncErrorFromBody(body, "sync route returned success=false"),
+      };
+    }
+
+    if (!Array.isArray(body.grants)) {
+      return {
+        ok: false,
+        status: response.status,
+        message: "sync route did not return persisted integration grants",
+      };
+    }
+
+    const grants = normalizeIntegrationSyncGrants(body.grants);
+    return {
+      ok: true,
+      status: response.status,
+      grants,
+      syncedCount:
+        typeof body.syncedCount === "number"
+          ? body.syncedCount
+          : grants.length,
+      requestedCount:
+        typeof body.requestedCount === "number" ? body.requestedCount : undefined,
+      skippedCount:
+        typeof body.skippedCount === "number" ? body.skippedCount : undefined,
+      deletedStaleCount:
+        typeof body.deletedStaleCount === "number"
+          ? body.deletedStaleCount
+          : undefined,
+    };
   } catch (err) {
-    console.warn(
-      "[integration-sync] Failed to sync requirements:",
-      err instanceof Error ? err.message : String(err),
-    );
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
+}
+
+async function syncIntegrationRequirementsWithRetry(
+  config: SessionConfig,
+  payload: { setupConfig?: unknown },
+  expectedGrants: IntegrationSyncGrant[],
+): Promise<
+  | {
+      ok: true;
+      result: Extract<IntegrationSyncResult, { ok: true }>;
+      attemptCount: number;
+    }
+  | {
+      ok: false;
+      result: IntegrationSyncResult;
+      missingGrants: IntegrationSyncGrant[];
+      attemptCount: number;
+    }
+> {
+  let lastResult: IntegrationSyncResult | null = null;
+  let lastMissingGrants: IntegrationSyncGrant[] = [];
+  let attemptCount = 0;
+
+  for (let attempt = 1; attempt <= INTEGRATION_SYNC_ATTEMPTS; attempt += 1) {
+    attemptCount = attempt;
+    const result = await syncIntegrationRequirements(config, payload);
+    lastResult = result;
+
+    if (result.ok) {
+      lastMissingGrants = missingIntegrationGrants(expectedGrants, result.grants);
+      if ((result.skippedCount ?? 0) === 0 && lastMissingGrants.length === 0) {
+        return { ok: true, result, attemptCount };
+      }
+    } else if (result.message === "workspaceId or appId is not available") {
+      break;
+    }
+
+    if (attempt < INTEGRATION_SYNC_ATTEMPTS) {
+      await sleep(150 * attempt);
+    }
+  }
+
+  return {
+    ok: false,
+    result: lastResult ?? {
+      ok: false,
+      message: "sync was not attempted",
+    },
+    missingGrants: lastMissingGrants,
+    attemptCount,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -1343,8 +1824,62 @@ export async function executePresentIntegrationSetupTool(
     };
   }
 
-  await syncIntegrationRequirements(config, { setupConfig });
   const names = args.integrations.map((item) => item.name).join(", ");
+  const expectedGrants = extractExpectedIntegrationGrants(setupConfig);
+  const syncAttempt = await syncIntegrationRequirementsWithRetry(
+    config,
+    { setupConfig },
+    expectedGrants,
+  );
+  if (!syncAttempt.ok && !syncAttempt.result.ok) {
+    await reportIntegrationSyncFailure({
+      status: "failed",
+      reason: "worker_sync_request_failed",
+      config,
+      httpStatus: syncAttempt.result.status ?? null,
+      errorMessage: syncAttempt.result.message,
+      expectedGrants,
+      attemptCount: syncAttempt.attemptCount,
+    });
+    return {
+      content: [{
+        type: "text",
+        text: `Integration setup instructions were not synced: ${syncAttempt.result.message}.`,
+      }],
+    };
+  }
+
+  if (!syncAttempt.ok) {
+    const result = syncAttempt.result;
+    await reportIntegrationSyncFailure({
+      status: "verification_failed",
+      reason: "worker_read_after_write_mismatch",
+      config,
+      httpStatus: result.status ?? null,
+      errorMessage: "Integration setup sync did not return every expected persisted grant.",
+      expectedGrants,
+      persistedGrants: result.ok ? result.grants : [],
+      requestedCount: result.ok ? result.requestedCount ?? null : null,
+      syncedCount: result.ok ? result.syncedCount : null,
+      skippedCount: result.ok ? result.skippedCount ?? null : null,
+      deletedStaleCount: result.ok ? result.deletedStaleCount ?? null : null,
+      attemptCount: syncAttempt.attemptCount,
+    });
+    const missingText = syncAttempt.missingGrants.length > 0
+      ? ` Missing persisted grants: ${formatIntegrationGrantRefs(syncAttempt.missingGrants)}.`
+      : "";
+    const skippedCount = result.ok ? result.skippedCount ?? 0 : 0;
+    const skippedText = skippedCount > 0
+      ? ` ${skippedCount} setup item(s) were skipped.`
+      : "";
+    return {
+      content: [{
+        type: "text",
+        text: `Integration setup instructions were not fully synced.${missingText}${skippedText}`,
+      }],
+    };
+  }
+
   return {
     content: [{
       type: "text",

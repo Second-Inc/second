@@ -8,7 +8,8 @@ export type ServerErrorSource =
   | "agent_chat_worker_stream"
   | "agent_chat_persistence"
   | "agent_chat_stop"
-  | "agent_chat_stream_attach";
+  | "agent_chat_stream_attach"
+  | "integration_setup_sync";
 
 type ReportServerErrorInput = {
   source: ServerErrorSource;
