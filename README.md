@@ -324,9 +324,7 @@ For full environment setup, see the [self-hosting docs](https://docs.second.so/s
 +------------------------------------------------------------------------------+
 ```
 
-Only the Web service is exposed publicly. Worker, MongoDB, and Redis stay on the internal network.
-
-Agent runtimes stream through the Worker, but trusted state changes flow back through Web-owned internal APIs, so workspace authorization, app-data writes, tool execution, secret resolution, auditability, and tenant boundaries stay in one governed layer.
+Agents run in the Worker. App-data writes, tool calls, secret resolution, and audit trails go through the Web layer, so the Worker can run agents without becoming the source of truth for permissions or data.
 
 <br>
 
