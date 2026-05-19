@@ -91,6 +91,20 @@ function latestUserMessageInfo(
   return null;
 }
 
+function hasUserMessageId(
+  messages: unknown[],
+  messageId: string | null,
+): boolean {
+  if (!messageId) return false;
+  return messages.some((message) => {
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      return false;
+    }
+    const record = message as Record<string, unknown>;
+    return record.role === "user" && record.id === messageId;
+  });
+}
+
 function expectedLeaseFilter(expectedLeaseId?: string | null) {
   if (expectedLeaseId === undefined) return {};
   if (expectedLeaseId === null) {
@@ -272,13 +286,17 @@ export async function startRunStream(
   const effectiveRecoveryContext = hasRecoveryContextInput
     ? input.recoveryContext
     : run?.recoveryContext;
+  const requestRerunMessageId =
+    typeof input.retryLastMessageId === "string" && input.retryLastMessageId
+      ? input.retryLastMessageId
+      : null;
   const requestRetryUser = latestUserMessageInfo(input.messages);
-  const isExplicitRetry =
-    run.status === "failed" &&
-    run.failure?.retryable === true &&
-    Boolean(input.retryLastMessageId) &&
-    run.messages.length <= input.messages.length &&
-    requestRetryUser?.id === input.retryLastMessageId;
+  const isExplicitRerun =
+    Boolean(requestRerunMessageId) &&
+    requestRetryUser?.id === requestRerunMessageId &&
+    hasUserMessageId(run.messages, requestRerunMessageId) &&
+    (run.status === "completed" ||
+      (run.status === "failed" && run.failure?.retryable === true));
   const $set: Record<string, unknown> = {
     messages: input.messages,
     activeStreamId: input.activeStreamId,
@@ -373,7 +391,7 @@ export async function startRunStream(
     run.status === "pending" ||
     ((run.status === "completed" || run.status === "failed") &&
       run.messages.length < input.messages.length) ||
-    isExplicitRetry;
+    isExplicitRerun;
 
   if (!canClaim) {
     return {
@@ -397,13 +415,21 @@ export async function startRunStream(
             $lt: [{ $size: "$messages" }, input.messages.length],
           },
         },
-        ...(isExplicitRetry && requestRetryUser
+        ...(isExplicitRerun && requestRerunMessageId
           ? [{
-              status: "failed" as const,
-              "failure.retryable": true,
-              $expr: {
-                $lte: [{ $size: "$messages" }, input.messages.length],
+              messages: {
+                $elemMatch: {
+                  role: "user" as const,
+                  id: requestRerunMessageId,
+                },
               },
+              $or: [
+                { status: "completed" as const },
+                {
+                  status: "failed" as const,
+                  "failure.retryable": true,
+                },
+              ],
             }]
           : []),
       ],

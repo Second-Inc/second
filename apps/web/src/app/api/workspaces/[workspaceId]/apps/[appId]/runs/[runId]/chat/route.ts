@@ -535,6 +535,10 @@ export async function POST(request: Request, context: ChatRouteContext) {
   };
 
   const { messages } = body;
+  const requestRerunMessageId =
+    typeof body.retryLastMessageId === "string" && body.retryLastMessageId
+      ? body.retryLastMessageId
+      : null;
   const runAttachments = normalizeBuilderAttachments(run.attachments);
   const pendingAttachments = normalizeBuilderAttachments(run.pendingAttachments);
   const bodyAttachments = normalizeBuilderAttachments(body.attachments);
@@ -573,7 +577,9 @@ export async function POST(request: Request, context: ChatRouteContext) {
   }
   const persistedMessageCount = run.messages.length;
   const hasNewInput =
-    run.status === "pending" || messages.length > persistedMessageCount;
+    run.status === "pending" ||
+    messages.length > persistedMessageCount ||
+    Boolean(requestRerunMessageId);
   const hasNewBuilderInput = hasNewInput && !isWorkspaceAgentRun;
   const viewer = await createWorkspaceResourceViewer(workspaceContext);
   const selectedSkillIds = (run.selectedSkillRefs ?? []).map(
@@ -664,10 +670,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
     messages: messagesForRun,
     activeStreamId: null,
     attachments: requestAttachments,
-    retryLastMessageId:
-      typeof body.retryLastMessageId === "string"
-        ? body.retryLastMessageId
-        : null,
+    retryLastMessageId: requestRerunMessageId,
     ...(shouldClearRecoveryContext ? { recoveryContext: null } : {}),
   });
   if (claimResult.type !== "claimed") {
@@ -854,9 +857,11 @@ export async function POST(request: Request, context: ChatRouteContext) {
       ? run.sessionState
       : null);
   const selectedSessionState =
-    restoreNeeded && !isDurableAcrossWorkerRestore(persistedSessionState)
+    requestRerunMessageId
       ? null
-      : persistedSessionState;
+      : restoreNeeded && !isDurableAcrossWorkerRestore(persistedSessionState)
+        ? null
+        : persistedSessionState;
   const isLegacyActiveSessionState =
     selectedSessionState !== null &&
     run.sessionState?.runtimeId === selectedSessionState.runtimeId &&

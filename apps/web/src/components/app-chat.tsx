@@ -28,11 +28,13 @@ import {
   AlertTriangleIcon,
   CheckIcon,
   ChevronDownIcon,
+  CopyIcon,
   ExternalLinkIcon,
   FileIcon,
   HammerIcon,
   Info,
   Pause,
+  PencilIcon,
   Plus,
   PlugZapIcon,
   RotateCcw,
@@ -89,6 +91,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { integrationIconUrl } from "@/lib/integration-icons";
 import {
@@ -193,6 +200,213 @@ function ChatFailureRow({
         </Button>
       ) : null}
     </div>
+  );
+}
+
+function messageText(message: UIMessage): string {
+  const chunks: string[] = [];
+  for (const part of message.parts ?? []) {
+    if (part?.type === "text" && typeof part.text === "string") {
+      chunks.push(part.text);
+    }
+  }
+  return chunks.join("");
+}
+
+type UserTurn = {
+  index: number;
+  message: UIMessage;
+  text: string;
+};
+
+function assistantHasVisibleContent(message: UIMessage): boolean {
+  return (message.parts ?? []).some((part) => {
+    if (!part || typeof part !== "object") return false;
+    if (part.type === "text") return part.text.trim().length > 0;
+    if (part.type === "reasoning") return part.text.trim().length > 0;
+    return part.type === "dynamic-tool";
+  });
+}
+
+function assistantTurnHasEnded(
+  messages: UIMessage[],
+  assistantIndex: number,
+): boolean {
+  for (let index = assistantIndex + 1; index < messages.length; index += 1) {
+    const role = messages[index]?.role;
+    if (role === "user" || role === "assistant") return true;
+  }
+  return false;
+}
+
+function findUserTurnBeforeMessage(
+  messages: UIMessage[],
+  messageId: string,
+): UserTurn | null {
+  const messageIndex = messages.findIndex((message) => message.id === messageId);
+  if (messageIndex <= 0) return null;
+
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") continue;
+    const text = messageText(message).trim();
+    if (text) return { index, message, text };
+  }
+
+  return null;
+}
+
+function messageWithEditedText(message: UIMessage, text: string): UIMessage {
+  return {
+    ...message,
+    parts: [{ type: "text", text }],
+  };
+}
+
+function MessageActionButton({
+  label,
+  icon: Icon,
+  onClick,
+  disabled = false,
+  active = false,
+  activeIcon,
+}: {
+  label: string;
+  icon: typeof CopyIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  activeIcon?: typeof CheckIcon;
+}) {
+  const ActiveIcon = activeIcon;
+  return (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="size-8 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          <span className="relative flex size-4 items-center justify-center">
+            <Icon
+              className={cn(
+                "absolute size-4 transition-all duration-100 ease-out",
+                active ? "scale-75 opacity-0" : "scale-100 opacity-100",
+              )}
+              strokeWidth={1.8}
+            />
+            {ActiveIcon ? (
+              <ActiveIcon
+                className={cn(
+                  "absolute size-4 text-muted-foreground transition-all duration-100 ease-out",
+                  active ? "scale-100 opacity-100" : "scale-75 opacity-0",
+                )}
+                strokeWidth={1.9}
+              />
+            ) : null}
+          </span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={6} className="font-medium">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function UserMessageEditor({
+  value,
+  attachments,
+  disabled,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  value: string;
+  attachments: AttachmentReference[];
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const textarea = editRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }, []);
+
+  useLayoutEffect(() => {
+    const textarea = editRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(68, textarea.scrollHeight)}px`;
+  }, [value]);
+
+  return (
+    <form
+      className="relative w-full rounded-2xl"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="composer-gradient-border-short absolute -inset-[1px] rounded-2xl" />
+      <div
+        className="relative flex flex-col rounded-2xl bg-[var(--composer-bg)]"
+        style={{ boxShadow: "var(--composer-shadow)" }}
+      >
+        <textarea
+          ref={editRef}
+          value={value}
+          disabled={disabled}
+          rows={2}
+          className="min-h-[68px] w-full resize-none overflow-hidden bg-transparent px-[22px] pt-[14px] pb-1 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
+          style={{ fontFamily: "inherit" }}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              onSubmit();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+        />
+        <div className={cn(
+          "px-[14px]",
+          attachments.length > 0 ? "pb-2" : "hidden",
+        )}>
+          <UserMessageAttachments attachments={attachments} />
+        </div>
+        <div className="flex justify-end gap-2 px-3.5 pb-3 pt-0.5">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 rounded-full px-4"
+            disabled={disabled}
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            className="h-9 rounded-full px-4"
+            disabled={disabled || value.trim().length === 0}
+          >
+            Send
+          </Button>
+        </div>
+      </div>
+    </form>
   );
 }
 
@@ -693,19 +907,11 @@ type ChatRunSnapshot = {
   usage?: RunUsage | null;
 };
 
-function latestUserTurn(messages: UIMessage[]): {
-  index: number;
-  message: UIMessage;
-  text: string;
-} | null {
+function latestUserTurn(messages: UIMessage[]): UserTurn | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== "user") continue;
-    const text = (message.parts ?? [])
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n")
-      .trim();
+    const text = messageText(message).trim();
     if (text) return { index, message, text };
   }
   return null;
@@ -1495,6 +1701,10 @@ function useRunSync({
   const wasStreamingRef = useRef(false);
   const syncGenRef = useRef(0);
   const lastResumeAttemptAtRef = useRef(0);
+  const deferredRunSyncRef = useRef<{
+    pending: boolean;
+    showLoading: boolean;
+  }>({ pending: false, showLoading: false });
 
   // Refs for values accessed inside async callbacks (avoids stale closures
   // and keeps the event-subscription effect's dependency array stable).
@@ -1788,6 +1998,46 @@ function useRunSync({
     }
   }, [status, isSyncLoading, safeSetMessagesIfIdle, fetchRunSnapshot]);
 
+  // A lifecycle event can arrive while this tab is still unwinding the previous
+  // observer stream. Do not start a second resume then; catch up as soon as the
+  // AI SDK returns to ready and only show loading if the run is still active.
+  useEffect(() => {
+    if (status !== "ready" || !deferredRunSyncRef.current.pending) return;
+
+    const pendingShowLoading = deferredRunSyncRef.current.showLoading;
+    deferredRunSyncRef.current = { pending: false, showLoading: false };
+    const url = chatApiUrlRef.current;
+    if (!url) return;
+
+    let cancelled = false;
+    fetchRunSnapshot(url)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((snapshot: ChatRunSnapshot | null) => {
+        if (cancelled || !snapshot) return;
+        onSnapshotRef.current?.(snapshot);
+        safeSetMessagesIfIdle(snapshot.messages ?? []);
+        if (snapshot.status === "streaming") {
+          startLiveSyncRef.current({
+            force: true,
+            showLoading: pendingShowLoading,
+          });
+        } else {
+          setShouldPoll(false);
+          setIsSyncLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setShouldPoll(false);
+          setIsSyncLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, safeSetMessagesIfIdle, fetchRunSnapshot]);
+
   // ---- Polling observer sync ----
   useEffect(() => {
     if (!shouldPoll) return;
@@ -1862,7 +2112,17 @@ function useRunSync({
     }
 
     const currentStatus = statusRef.current;
-    if (currentStatus === "streaming" || currentStatus === "submitted") return;
+    if (currentStatus === "streaming" || currentStatus === "submitted") {
+      if (event.type === "run.starting" || event.type === "run.stream_ready") {
+        deferredRunSyncRef.current = {
+          pending: true,
+          showLoading:
+            deferredRunSyncRef.current.showLoading ||
+            event.type === "run.starting",
+        };
+      }
+      return;
+    }
 
     // run.starting/run.stream_ready: another tab or a resumed POST is active.
     if (event.type === "run.starting") {
@@ -2690,9 +2950,13 @@ export function AppChat({
 
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isStopping, setIsStopping] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const copiedMessageResetRef = useRef<number | null>(null);
   const hasSentInitial = useRef(false);
   const validatedInitialRunRef = useRef<string | null>(null);
   const hydratedRunRef = useRef<string | null>(null);
@@ -2706,6 +2970,13 @@ export function AppChat({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [focusComposerKey]);
+  useEffect(() => {
+    return () => {
+      if (copiedMessageResetRef.current !== null) {
+        window.clearTimeout(copiedMessageResetRef.current);
+      }
+    };
+  }, []);
   const sendMessageSafely = useCallback(
     (
       text: string,
@@ -2801,6 +3072,19 @@ export function AppChat({
   }, [appId, canStopActiveRun, chatApi, clearError, runId, stop, workspaceId]);
   const isBusy =
     status === "streaming" || status === "submitted" || isSyncLoading || isStopping;
+  const [assistantActionsReady, setAssistantActionsReady] = useState(!isBusy);
+  useEffect(() => {
+    if (isBusy) {
+      setAssistantActionsReady(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setAssistantActionsReady(true);
+    }, 160);
+
+    return () => window.clearTimeout(timer);
+  }, [isBusy]);
   const isUploadingAttachments = attachments.some(
     (attachment) => attachment.status === "uploading",
   );
@@ -2998,6 +3282,9 @@ export function AppChat({
     hasSentInitial.current = false;
     validatedInitialRunRef.current = null;
     hydratedRunRef.current = null;
+    setEditingMessageId(null);
+    setEditingText("");
+    setCopiedMessageId(null);
   }, [runId]);
 
   useEffect(() => {
@@ -3168,8 +3455,8 @@ export function AppChat({
         ? "Approve or request changes to the agents to continue..."
         : "Send a message...";
   const firstUserMessageId = useMemo(
-    () => displayMessages.find((message) => message.role === "user")?.id ?? null,
-    [displayMessages],
+    () => messages.find((message) => message.role === "user")?.id ?? null,
+    [messages],
   );
   const retryTurn = useMemo(() => latestUserTurn(messages), [messages]);
   const retryText = retryTurn?.text ?? "";
@@ -3205,43 +3492,122 @@ export function AppChat({
     !hasRenderedErrorPart &&
     Boolean(visibleFailureMessage) &&
     (Boolean(error) || Boolean(runFailure) || routeFailureStillCurrent);
+  const messageMutationDisabled = isBusy || Boolean(pendingApproval) || !chatApi;
+  const attachmentsForUserMessage = useCallback(
+    (message: UIMessage): AttachmentReference[] => {
+      const attachmentsForRetry = messageAttachments(message);
+      if (attachmentsForRetry.length > 0) return attachmentsForRetry;
+      return message.id === firstUserMessageId ? initialRunAttachments : [];
+    },
+    [firstUserMessageId, initialRunAttachments],
+  );
+  const markMessageCopied = useCallback((messageId: string) => {
+    if (copiedMessageResetRef.current !== null) {
+      window.clearTimeout(copiedMessageResetRef.current);
+    }
+    setCopiedMessageId(messageId);
+    copiedMessageResetRef.current = window.setTimeout(() => {
+      setCopiedMessageId((current) => current === messageId ? null : current);
+      copiedMessageResetRef.current = null;
+    }, 1400);
+  }, []);
+  const copyMessageText = useCallback(async (messageId: string, text: string) => {
+    if (!text.trim()) {
+      toast.info("Nothing to copy.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      markMessageCopied(messageId);
+    } catch (copyError) {
+      toast.error("Could not copy message.", {
+        description:
+          copyError instanceof Error ? copyError.message : "Clipboard access failed.",
+      });
+    }
+  }, [markMessageCopied]);
+  const rerunUserMessage = useCallback(
+    (
+      messageId: string,
+      options: {
+        text?: string;
+        source: "failure_retry" | "assistant_retry" | "user_edit";
+      },
+    ) => {
+      if (messageMutationDisabled) return;
+      const messageIndex = messages.findIndex((message) => message.id === messageId);
+      if (messageIndex < 0) return;
+
+      const currentMessage = messages[messageIndex];
+      if (currentMessage.role !== "user") return;
+      const nextText = (options.text ?? messageText(currentMessage)).trim();
+      if (!nextText) return;
+
+      const attachmentsForRetry = attachmentsForUserMessage(currentMessage);
+      const nextUserMessage = messageWithEditedText(currentMessage, nextText);
+      const nextMessages = [
+        ...messages.slice(0, messageIndex),
+        nextUserMessage,
+      ];
+
+      setRunFailure(null);
+      clearError();
+      setEditingMessageId(null);
+      setEditingText("");
+      flushSync(() => setMessages(nextMessages));
+      sendMessageSafely(
+        nextText,
+        attachmentsForRetry,
+        { retryLastMessageId: currentMessage.id },
+        currentMessage.id,
+      );
+      captureAnalyticsEvent(
+        options.source === "user_edit" ? "chat edit submitted" : "chat retry clicked",
+        {
+          workspace_id: workspaceId,
+          app_id: appId,
+          run_id: runId,
+          retry_mode: "rerun_user_turn",
+          action_source: options.source,
+          failure_code: runFailure?.code ?? error?.name ?? null,
+        },
+      );
+    },
+    [
+      appId,
+      attachmentsForUserMessage,
+      clearError,
+      error,
+      messageMutationDisabled,
+      messages,
+      runFailure,
+      runId,
+      sendMessageSafely,
+      setMessages,
+      workspaceId,
+    ],
+  );
   const retryLastTurn = useCallback(() => {
     if (!retryTurn) return;
-    const attachmentsForRetry = messageAttachments(retryTurn.message);
-    const retryAttachments =
-      attachmentsForRetry.length > 0
-        ? attachmentsForRetry
-        : retryTurn.message.id === firstUserMessageId
-          ? initialRunAttachments
-          : [];
-
-    setRunFailure(null);
-    clearError();
-    sendMessageSafely(
-      retryTurn.text,
-      retryAttachments,
-      { retryLastMessageId: retryTurn.message.id },
-      retryTurn.message.id,
-    );
-    captureAnalyticsEvent("chat retry clicked", {
-      workspace_id: workspaceId,
-      app_id: appId,
-      run_id: runId,
-      retry_mode: "resend_last_turn",
-      failure_code: runFailure?.code ?? error?.name ?? "run_failed",
+    rerunUserMessage(retryTurn.message.id, { source: "failure_retry" });
+  }, [rerunUserMessage, retryTurn]);
+  const submitEditedMessage = useCallback(() => {
+    if (!editingMessageId) return;
+    rerunUserMessage(editingMessageId, {
+      text: editingText,
+      source: "user_edit",
     });
-  }, [
-    appId,
-    clearError,
-    error,
-    firstUserMessageId,
-    initialRunAttachments,
-    retryTurn,
-    runFailure,
-    runId,
-    sendMessageSafely,
-    workspaceId,
-  ]);
+  }, [editingMessageId, editingText, rerunUserMessage]);
+  const cancelEditingMessage = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingText("");
+  }, []);
+  const startEditingMessage = useCallback((message: UIMessage) => {
+    if (messageMutationDisabled) return;
+    setEditingMessageId(message.id);
+    setEditingText(messageText(message));
+  }, [messageMutationDisabled]);
 
   // Auto-grow textarea before paint so the empty composer does not flash short.
   useLayoutEffect(() => {
@@ -3264,7 +3630,7 @@ export function AppChat({
           resize="smooth"
         >
           <StickToBottom.Content className={`mx-auto space-y-6 p-4 pb-48 ${panelMode ? "max-w-full px-3" : "max-w-[720px] sm:p-6 sm:pb-48"}`}>
-            {displayMessages.map((msg) => {
+            {displayMessages.map((msg, messageIndex) => {
               if (msg.role === "user") {
                 const attachmentsForMessage = messageAttachments(msg);
                 const displayAttachments =
@@ -3278,25 +3644,66 @@ export function AppChat({
                   .filter((p) =>
                     !isAttachmentOnlyPlaceholder(p.text, displayAttachments),
                   );
+                const userText = messageText(msg);
+                if (editingMessageId === msg.id) {
+                  return (
+                    <div key={msg.id} className="flex w-full justify-end">
+                      <UserMessageEditor
+                        value={editingText}
+                        attachments={displayAttachments}
+                        disabled={messageMutationDisabled}
+                        onChange={setEditingText}
+                        onCancel={cancelEditingMessage}
+                        onSubmit={submitEditedMessage}
+                      />
+                    </div>
+                  );
+                }
                 return (
-                  <div key={msg.id} className="flex justify-end">
-                    <div className="flex max-w-[80%] flex-col gap-2 rounded-2xl bg-[#F4F4F4] px-4 py-2.5 text-sm text-foreground dark:bg-[#2A2B2F]">
-                      {textParts.length > 0 ? (
-                        <div>
-                          {textParts.map((p, i) => (
-                          <span key={i} className="whitespace-pre-wrap">
-                            {p.text}
-                          </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      <UserMessageAttachments attachments={displayAttachments} />
+                  <div key={msg.id} className="group flex justify-end">
+                    <div className="flex max-w-[80%] flex-col items-end">
+                      <div className="flex max-w-full flex-col gap-2 rounded-2xl bg-[#F4F4F4] px-4 py-2.5 text-sm text-foreground dark:bg-[#2A2B2F]">
+                        {textParts.length > 0 ? (
+                          <div>
+                            {textParts.map((p, i) => (
+                              <span key={i} className="whitespace-pre-wrap">
+                                {p.text}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        <UserMessageAttachments attachments={displayAttachments} />
+                      </div>
+                      <div className="mt-1 flex h-8 items-center justify-end gap-1 opacity-0 transition-opacity duration-300 ease-out pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                        <MessageActionButton
+                          label="Copy message"
+                          icon={CopyIcon}
+                          active={copiedMessageId === msg.id}
+                          activeIcon={CheckIcon}
+                          onClick={() => void copyMessageText(msg.id, userText)}
+                        />
+                        <MessageActionButton
+                          label="Edit message"
+                          icon={PencilIcon}
+                          disabled={messageMutationDisabled}
+                          onClick={() => startEditingMessage(msg)}
+                        />
+                      </div>
                     </div>
                   </div>
                 );
               }
 
               const seenReasoning = new Set<string>();
+              const assistantText = messageText(msg);
+              const assistantTurnEnded =
+                assistantTurnHasEnded(displayMessages, messageIndex) ||
+                assistantActionsReady;
+              const canShowAssistantActions =
+                assistantActionsReady &&
+                assistantHasVisibleContent(msg) &&
+                assistantTurnEnded;
+              const retryUserTurn = findUserTurnBeforeMessage(messages, msg.id);
 
               return (
                 <PartErrorBoundary key={msg.id}>
@@ -3674,6 +4081,28 @@ export function AppChat({
 
                       return null;
                     })}
+                    {canShowAssistantActions ? (
+                      <div className="not-prose -ml-0.5 -mt-2 flex h-8 animate-in fade-in-0 duration-300 ease-out items-center gap-1">
+                        <MessageActionButton
+                          label="Copy message"
+                          icon={CopyIcon}
+                          active={copiedMessageId === msg.id}
+                          activeIcon={CheckIcon}
+                          onClick={() => void copyMessageText(msg.id, assistantText)}
+                        />
+                        <MessageActionButton
+                          label="Try again"
+                          icon={RotateCcw}
+                          disabled={messageMutationDisabled || !retryUserTurn}
+                          onClick={() => {
+                            if (!retryUserTurn) return;
+                            rerunUserMessage(retryUserTurn.message.id, {
+                              source: "assistant_retry",
+                            });
+                          }}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </PartErrorBoundary>
               );
