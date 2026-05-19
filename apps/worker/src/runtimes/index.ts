@@ -22,6 +22,7 @@ export async function* runRuntimeAgent(input: {
   settings: AgentRuntimeSettings;
   sessionState?: ProviderSessionState | null;
   workerBaseUrl?: string;
+  signal?: AbortSignal;
 }): AsyncGenerator<RuntimeRunResultMessage> {
   const settings = normalizeRuntimeSettings(input.settings);
   const adapter = adapters[settings.runtimeId];
@@ -33,6 +34,7 @@ export async function* runRuntimeAgent(input: {
     settings,
     sessionState: input.sessionState,
     workerBaseUrl: input.workerBaseUrl,
+    signal: input.signal,
   });
 }
 

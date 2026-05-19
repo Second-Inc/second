@@ -13,6 +13,7 @@ import {
   hasCompleteRunReplay,
 } from "@/lib/streams/run-replay";
 import { createPerfTrace } from "@/lib/perf/trace";
+import { reportServerError } from "@/lib/server-error-reporting";
 
 type StreamRouteContext = {
   params: Promise<{
@@ -219,10 +220,31 @@ export async function GET(request: Request, context: StreamRouteContext) {
     publisher: redis.duplicate(),
   });
 
-  const resumedStream =
-    await trace.time("run.stream_attach.resumable_resume", () =>
-      resumableStreamContext.resumeExistingStream(activeStreamId),
-    );
+  let resumedStream: ReadableStream<string> | null;
+  try {
+    resumedStream =
+      (await trace.time("run.stream_attach.resumable_resume", () =>
+        resumableStreamContext.resumeExistingStream(activeStreamId),
+      )) ?? null;
+  } catch (error) {
+    reportServerError({
+      source: "agent_chat_stream_attach",
+      error,
+      route:
+        "GET /api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat/stream",
+      level: "warning",
+      context: {
+        workspaceId: workspaceContext.workspaceId,
+        appId,
+        runId,
+        streamId: activeStreamId,
+      },
+    });
+    trace.log("run.stream_attach.resumable_error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    resumedStream = null;
+  }
 
   if (!resumedStream) {
     const hasReplay = await hasCompleteRunReplay(runId).catch(() => false);

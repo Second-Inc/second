@@ -500,6 +500,23 @@ app.delete("/sessions/:appId", (c) => {
   return c.json({ ok: true });
 });
 
+app.post("/sessions/:appId/cancel", async (c) => {
+  const appId = c.req.param("appId");
+  const body = (await c.req.json().catch(() => null)) as {
+    reason?: string;
+    runId?: string;
+  } | null;
+  const cancelled = sessionManager.cancel(
+    appId,
+    typeof body?.reason === "string" ? body.reason : "cancelled",
+  );
+  return c.json({
+    ok: true,
+    cancelled,
+    status: sessionManager.get(appId)?.status ?? "idle",
+  });
+});
+
 app.get("/sessions/:appId/session-file", (c) => {
   const session = sessionManager.get(c.req.param("appId"));
   if (!session || !session.sessionState?.sessionId) {

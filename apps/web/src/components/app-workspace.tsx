@@ -62,6 +62,7 @@ import {
 } from "@/components/app-publish-dialog";
 import { isDoneBuildingSuccessOutput } from "@/lib/agent/done-building";
 import type {
+  AgentRunFailure,
   AppPublishStatus,
   AgentsJsonApprovalSource,
   IntegrationPermissionGroup,
@@ -118,6 +119,7 @@ type AppWorkspaceProps = {
   initialMessages: UIMessage[];
   initialRunAttachments?: AttachmentReference[];
   runStatus: "pending" | "streaming" | "completed" | "failed" | null;
+  initialRunFailure?: AgentRunFailure | null;
   initialToolRecoveryStatus?: ToolRecoveryStatus;
   initialToolRecoveryToolName?: string | null;
   initialUsage: RunUsage | null;
@@ -535,6 +537,7 @@ export function AppWorkspace({
   initialMessages,
   initialRunAttachments = [],
   runStatus,
+  initialRunFailure = null,
   initialToolRecoveryStatus = null,
   initialToolRecoveryToolName = null,
   initialUsage,
@@ -1819,7 +1822,8 @@ export function AppWorkspace({
                 runId={runId}
                 initialMessages={initialMessages}
                 initialRunAttachments={initialRunAttachments}
-                runStatus={runStatus}
+                runStatus={builderRunStatus}
+                initialRunFailure={initialRunFailure}
                 toolRecoveryStatus={activeToolRecoveryStatus}
                 toolRecoveryToolName={toolRecoveryToolName}
                 panelMode={panelMode}

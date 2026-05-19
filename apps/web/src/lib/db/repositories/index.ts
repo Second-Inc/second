@@ -17,7 +17,9 @@ export {
   setRunPendingAttachments,
   setRunActiveStream,
   startRunStream,
+  updateRunStreamHeartbeat,
   type LatestRunState,
+  type StartRunStreamResult,
 } from "./agent-runs";
 export {
   createWorkspaceAgent,

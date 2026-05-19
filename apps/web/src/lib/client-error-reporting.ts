@@ -13,6 +13,7 @@ type ClientErrorSource =
   | "unhandled-rejection"
   | "route-error-boundary"
   | "component-error-boundary"
+  | "chat-stream"
   | "manual-diagnostics";
 
 type ClientErrorInput = {

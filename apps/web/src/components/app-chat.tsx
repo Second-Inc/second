@@ -25,6 +25,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp,
+  AlertTriangleIcon,
   CheckIcon,
   ChevronDownIcon,
   ExternalLinkIcon,
@@ -34,6 +35,7 @@ import {
   Pause,
   Plus,
   PlugZapIcon,
+  RotateCcw,
 } from "lucide-react";
 import { AppLoader } from "@/components/app-loader";
 import { ModelSelector } from "@/components/model-selector";
@@ -48,6 +50,7 @@ import {
   parseDoneBuildingOutput,
 } from "@/lib/agent/done-building";
 import type {
+  AgentRunFailure,
   AgentsJsonApprovalSource,
   RunUsage,
 } from "@/lib/db/types";
@@ -137,6 +140,40 @@ function WorkingIndicator() {
       <span className="working-text-shimmer">
         Working
       </span>
+    </div>
+  );
+}
+
+function ChatFailureRow({
+  message,
+  retryable,
+  retryDisabled,
+  onRetry,
+}: {
+  message: string;
+  retryable: boolean;
+  retryDisabled: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="not-prose flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-foreground">
+      <AlertTriangleIcon className="size-4 shrink-0 text-destructive" strokeWidth={1.8} />
+      <span className="min-w-0 flex-1 text-[13px] leading-5 text-muted-foreground">
+        {message}
+      </span>
+      {retryable ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs"
+          disabled={retryDisabled}
+          onClick={onRetry}
+        >
+          <RotateCcw className="size-3.5" strokeWidth={1.8} />
+          Retry
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -259,6 +296,7 @@ type AppChatProps = {
   initialMessages: UIMessage[];
   initialRunAttachments?: AttachmentReference[];
   runStatus: "pending" | "streaming" | "completed" | "failed" | null;
+  initialRunFailure?: AgentRunFailure | null;
   toolRecoveryStatus?: "fixing" | null;
   toolRecoveryToolName?: string | null;
   /** When true, renders in narrow side-panel mode (360px). */
@@ -628,6 +666,27 @@ function sanitizeMessages(messages: UIMessage[]): UIMessage[] {
       ? message.parts.filter((part): part is NonNullable<typeof part> => part != null)
       : [],
   }));
+}
+
+type ChatRunSnapshot = {
+  messages?: UIMessage[];
+  status?: string | null;
+  failure?: AgentRunFailure | null;
+  usage?: RunUsage | null;
+};
+
+function latestUserText(messages: UIMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") continue;
+    const text = (message.parts ?? [])
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+  return "";
 }
 
 function permissionKey(groupName: string, permission: string): string {
@@ -1361,6 +1420,7 @@ function useRunSync({
   statusRef,
   setMessages,
   resumeStream,
+  onSnapshot,
   initialRunStatus,
   initialMessageCount,
 }: {
@@ -1373,6 +1433,7 @@ function useRunSync({
   statusRef: React.RefObject<string>;
   setMessages: (messages: UIMessage[]) => void;
   resumeStream: () => Promise<void>;
+  onSnapshot?: (snapshot: ChatRunSnapshot) => void;
   initialRunStatus: string | null;
   initialMessageCount: number;
 }): boolean {
@@ -1415,6 +1476,10 @@ function useRunSync({
   useEffect(() => {
     setMessagesRef.current = setMessages;
   }, [setMessages]);
+  const onSnapshotRef = useRef(onSnapshot);
+  useEffect(() => {
+    onSnapshotRef.current = onSnapshot;
+  }, [onSnapshot]);
 
   /** Ensures messages from the server won't crash useChat or rendering.
    *  Strips null/undefined parts that can appear after MongoDB round-trips. */
@@ -1471,9 +1536,10 @@ function useRunSync({
       if (url) {
         fetchRunSnapshot(url)
           .then((res) => res.json())
-          .then(({ messages }: { messages: UIMessage[] }) =>
-            safeSetMessagesIfIdle(messages),
-          )
+          .then((snapshot: ChatRunSnapshot) => {
+            onSnapshotRef.current?.(snapshot);
+            safeSetMessagesIfIdle(snapshot.messages ?? []);
+          })
           .catch(() => {});
       }
 
@@ -1496,10 +1562,10 @@ function useRunSync({
           try {
             const res = await fetchRunSnapshot(latestUrl);
             if (!res.ok) return;
-            const { messages, status: runStatus } = (await res.json()) as {
-              messages: UIMessage[];
-              status: string | null;
-            };
+            const snapshot = (await res.json()) as ChatRunSnapshot;
+            onSnapshotRef.current?.(snapshot);
+            const messages = snapshot.messages ?? [];
+            const runStatus = snapshot.status ?? null;
             safeSetMessagesIfIdle(messages);
             if (runStatus === "streaming") {
               // Resume didn't attach; keep this tab fresh via polling fallback.
@@ -1569,12 +1635,10 @@ function useRunSync({
       .then((res) => (res.ok ? res.json() : null))
       .then(
         (
-          data: {
-            messages?: UIMessage[];
-            status?: string | null;
-          } | null,
+          data: ChatRunSnapshot | null,
         ) => {
           if (cancelled || !data) return;
+          onSnapshotRef.current?.(data);
 
           const latestMessages = sanitizeMessages(data.messages ?? []);
           if (latestMessages.length > initialMessageCount) {
@@ -1638,13 +1702,10 @@ function useRunSync({
           fetchRunSnapshot(url)
             .then((res) => res.json())
             .then(
-              ({
-                messages,
-                status: runStatus,
-              }: {
-                messages: UIMessage[];
-                status: string | null;
-              }) => {
+              (snapshot: ChatRunSnapshot) => {
+                onSnapshotRef.current?.(snapshot);
+                const messages = snapshot.messages ?? [];
+                const runStatus = snapshot.status ?? null;
                 safeSetMessagesIfIdle(messages);
                 if (runStatus !== "streaming") {
                   setIsSyncLoading(false);
@@ -1683,11 +1744,11 @@ function useRunSync({
       try {
         const res = await fetchRunSnapshot(url);
         if (res.ok) {
-          const { messages, status: runStatus } = (await res.json()) as {
-            messages: UIMessage[];
-            status: string | null;
-          };
+          const snapshot = (await res.json()) as ChatRunSnapshot;
           if (cancelled) return;
+          onSnapshotRef.current?.(snapshot);
+          const messages = snapshot.messages ?? [];
+          const runStatus = snapshot.status ?? null;
           safeSetMessagesIfIdle(messages);
           if (runStatus === "streaming") {
             const currentStatus = statusRef.current;
@@ -1750,8 +1811,9 @@ function useRunSync({
       if (url) {
         fetchRunSnapshot(url)
           .then((res) => res.json())
-          .then(({ messages }: { messages: UIMessage[] }) => {
-            safeSetMessagesIfIdle(messages);
+          .then((snapshot: ChatRunSnapshot) => {
+            onSnapshotRef.current?.(snapshot);
+            safeSetMessagesIfIdle(snapshot.messages ?? []);
             setIsSyncLoading(false);
           })
           .catch(() => setIsSyncLoading(false));
@@ -1782,6 +1844,7 @@ export function AppChat({
   initialMessages,
   initialRunAttachments = [],
   runStatus,
+  initialRunFailure = null,
   toolRecoveryStatus = null,
   toolRecoveryToolName = null,
   panelMode = false,
@@ -1806,6 +1869,9 @@ export function AppChat({
 
   const [runtimeSettings, setRuntimeSettings] = useState(
     normalizeRuntimeSettings(initialRuntimeSettings ?? DEFAULT_RUNTIME_SETTINGS),
+  );
+  const [runFailure, setRunFailure] = useState<AgentRunFailure | null>(
+    initialRunFailure,
   );
   const runtimeSettingsRef = useRef(runtimeSettings);
   useEffect(() => {
@@ -1874,7 +1940,8 @@ export function AppChat({
   }, []);
   useEffect(() => {
     setLiveSyncSuspended(false);
-  }, [runId]);
+    setRunFailure(initialRunFailure);
+  }, [initialRunFailure, runId]);
 
   const releaseLiveObserversForNavigation = useCallback(() => {
     // A settings navigation can otherwise wait behind the current tab's
@@ -2006,6 +2073,11 @@ export function AppChat({
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+  const handleRunSnapshot = useCallback((snapshot: ChatRunSnapshot) => {
+    if (Object.prototype.hasOwnProperty.call(snapshot, "failure")) {
+      setRunFailure(snapshot.failure ?? null);
+    }
+  }, []);
 
   const isSyncLoading = useRunSync({
     workspaceId,
@@ -2017,6 +2089,7 @@ export function AppChat({
     statusRef,
     setMessages,
     resumeStream,
+    onSnapshot: handleRunSnapshot,
     initialRunStatus: runStatus,
     initialMessageCount: initialMessages.length,
   });
@@ -2227,7 +2300,8 @@ export function AppChat({
     ) {
       fetch(chatApi)
         .then((res) => res.json())
-        .then((data: { usage?: RunUsage | null }) => {
+        .then((data: ChatRunSnapshot) => {
+          handleRunSnapshot(data);
           if (data.usage) {
             onStreamCompleteRef.current?.(data.usage);
           } else {
@@ -2236,7 +2310,7 @@ export function AppChat({
         })
         .catch(() => onStreamCompleteRef.current?.(null));
     }
-  }, [status, chatApi]);
+  }, [status, chatApi, handleRunSnapshot]);
 
   // Detect done_building tool in messages
   useEffect(() => {
@@ -2321,8 +2395,7 @@ export function AppChat({
   useEffect(() => {
     if (!runId || trackedBuildFailureRunIdsRef.current.has(runId)) return;
 
-    const streamError =
-      error && error instanceof TypeError === false ? error : null;
+    const streamError = error ?? null;
     const failedByStatus = runStatus === "failed";
     if (!streamError && !failedByStatus) return;
 
@@ -2347,6 +2420,40 @@ export function AppChat({
     runStatus,
     runtimeSettings.model,
     runtimeSettings.runtimeId,
+    workspaceId,
+  ]);
+
+  const reportedChatErrorsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!error || !runId) return;
+    const key = `${runId}:${error.name}:${error.message}`;
+    if (reportedChatErrorsRef.current.has(key)) return;
+    reportedChatErrorsRef.current.add(key);
+    void reportClientError({
+      source: "chat-stream",
+      error,
+      context: {
+        component: "AppChat",
+        workspaceId,
+        appId,
+        runId,
+        runStatus,
+        runtimeId: runtimeSettings.runtimeId,
+        runtimeModel: runtimeSettings.model,
+        chatStatus: status,
+        online: typeof navigator !== "undefined" ? navigator.onLine : undefined,
+        visibilityState:
+          typeof document !== "undefined" ? document.visibilityState : undefined,
+      },
+    });
+  }, [
+    appId,
+    error,
+    runId,
+    runStatus,
+    runtimeSettings.model,
+    runtimeSettings.runtimeId,
+    status,
     workspaceId,
   ]);
 
@@ -2444,6 +2551,7 @@ export function AppChat({
 
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [isStopping, setIsStopping] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasSentInitial = useRef(false);
@@ -2462,6 +2570,7 @@ export function AppChat({
   const sendMessageSafely = useCallback(
     (text: string, attachmentsToSend: AttachmentReference[] = []) => {
       statusRef.current = "submitted";
+      setRunFailure(null);
       const attachmentBody =
         attachmentsToSend.length > 0
           ? { attachments: attachmentsToSend }
@@ -2477,8 +2586,55 @@ export function AppChat({
     },
     [sendMessage],
   );
+  const stopBuilderRun = useCallback(async () => {
+    if (!chatApi) {
+      stop();
+      return;
+    }
+
+    setIsStopping(true);
+    try {
+      const response = await fetch(`${chatApi}/stop`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const snapshot = (await response.json().catch(() => null)) as
+        | { failure?: AgentRunFailure | null; workerCancelled?: boolean; error?: string }
+        | null;
+      if (snapshot?.failure) setRunFailure(snapshot.failure);
+      if (!response.ok) {
+        toast.error("Could not stop the run.", {
+          description: snapshot?.error ?? "Please try again.",
+        });
+      } else if (snapshot?.workerCancelled === false) {
+        toast.info("Run stopped locally.", {
+          description: "The worker did not confirm cancellation, so this was reported.",
+        });
+      }
+    } catch (stopError) {
+      toast.error("Could not stop the run.", {
+        description:
+          stopError instanceof Error ? stopError.message : "Network error.",
+      });
+      void reportClientError({
+        source: "chat-stream",
+        error: stopError,
+        context: {
+          component: "AppChat.stopBuilderRun",
+          workspaceId,
+          appId,
+          runId,
+        },
+      });
+    } finally {
+      chatPostAbortRef.current?.abort();
+      chatPostAbortRef.current = null;
+      stop();
+      setIsStopping(false);
+    }
+  }, [appId, chatApi, runId, stop, workspaceId]);
   const isBusy =
-    status === "streaming" || status === "submitted" || isSyncLoading;
+    status === "streaming" || status === "submitted" || isSyncLoading || isStopping;
   const isUploadingAttachments = attachments.some(
     (attachment) => attachment.status === "uploading",
   );
@@ -2696,16 +2852,14 @@ export function AppChat({
       .then((res) => (res.ok ? res.json() : null))
       .then(
         (
-          data: {
-            messages?: UIMessage[];
-            status?: string | null;
-          } | null,
+          data: ChatRunSnapshot | null,
         ) => {
           if (cancelled) return;
           if (!data) {
             hydratedRunRef.current = null;
             return;
           }
+          handleRunSnapshot(data);
           if (
             statusRef.current === "streaming" ||
             statusRef.current === "submitted"
@@ -2733,7 +2887,7 @@ export function AppChat({
         hydratedRunRef.current = null;
       }
     };
-  }, [runId, chatApi, initialMessages.length, runStatus, setMessages]);
+  }, [runId, chatApi, handleRunSnapshot, initialMessages.length, runStatus, setMessages]);
 
   useEffect(() => {
     const hasScheduledAutoStart = Boolean(autoStartPrompt?.trim());
@@ -2752,16 +2906,14 @@ export function AppChat({
         .then((res) => (res.ok ? res.json() : null))
         .then(
           (
-            data: {
-              messages?: UIMessage[];
-              status?: string | null;
-            } | null,
-          ) => {
-            if (cancelled) return;
-            if (!data) {
-              validatedInitialRunRef.current = null;
-              return;
-            }
+          data: ChatRunSnapshot | null,
+        ) => {
+          if (cancelled) return;
+          if (!data) {
+            validatedInitialRunRef.current = null;
+            return;
+          }
+          handleRunSnapshot(data);
 
             const latestMessages = sanitizeMessages(data?.messages ?? []);
             const latestStatus = data?.status ?? null;
@@ -2797,7 +2949,7 @@ export function AppChat({
         }
       };
     }
-  }, [runId, chatApi, initialMessages.length, runStatus, autoStartPrompt, initialPrompt, appName, initialRunAttachments, setMessages, sendMessageSafely]);
+  }, [runId, chatApi, handleRunSnapshot, initialMessages.length, runStatus, autoStartPrompt, initialPrompt, appName, initialRunAttachments, setMessages, sendMessageSafely]);
 
   function handleSubmit() {
     const readyAttachments = attachments.filter(
@@ -2855,6 +3007,45 @@ export function AppChat({
     () => deferredMessages.find((message) => message.role === "user")?.id ?? null,
     [deferredMessages],
   );
+  const retryText = useMemo(() => latestUserText(messages), [messages]);
+  const hasRenderedErrorPart = useMemo(
+    () =>
+      deferredMessages.some((message) =>
+        (message.parts ?? []).some((part) => asRecord(part)?.type === "error"),
+      ),
+    [deferredMessages],
+  );
+  const visibleFailureMessage = useMemo(() => {
+    if (runFailure?.message) return runFailure.message;
+    if (error instanceof TypeError) {
+      return "The stream disconnected. Retry the last message to continue.";
+    }
+    if (error?.message) return error.message;
+    if (runStatus === "failed") {
+      return "The run failed. Retry the last message to continue.";
+    }
+    return null;
+  }, [error, runFailure, runStatus]);
+  const failureRetryable =
+    Boolean(retryText) &&
+    (runFailure?.retryable ?? (Boolean(error) || runStatus === "failed"));
+  const showFailureRow =
+    !isBusy &&
+    !hasRenderedErrorPart &&
+    Boolean(visibleFailureMessage) &&
+    (Boolean(error) || Boolean(runFailure) || runStatus === "failed");
+  const restoreRetryMessage = useCallback(() => {
+    if (!retryText) return;
+    setInput(retryText);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+    captureAnalyticsEvent("chat retry clicked", {
+      workspace_id: workspaceId,
+      app_id: appId,
+      run_id: runId,
+      retry_mode: "restore_composer",
+      failure_code: runFailure?.code ?? error?.name ?? "run_failed",
+    });
+  }, [appId, error, retryText, runFailure, runId, workspaceId]);
 
   // Auto-grow textarea before paint so the empty composer does not flash short.
   useLayoutEffect(() => {
@@ -2916,6 +3107,23 @@ export function AppChat({
                   <div className="space-y-3.5">
                     {(msg.parts ?? []).map((part, i) => {
                       if (!part || typeof part !== "object") return null;
+                      const partRecord = asRecord(part);
+
+                      if (partRecord?.type === "error") {
+                        const errorText =
+                          typeof partRecord.errorText === "string"
+                            ? partRecord.errorText
+                            : "The run failed. Retry the last message to continue.";
+                        return (
+                          <ChatFailureRow
+                            key={`error-${msg.id}:${i}`}
+                            message={errorText}
+                            retryable={failureRetryable}
+                            retryDisabled={isBusy || !retryText}
+                            onRetry={restoreRetryMessage}
+                          />
+                        );
+                      }
 
                       if (part.type === "text" && part.text.trim()) {
                         return (
@@ -3303,12 +3511,14 @@ export function AppChat({
               return <WorkingIndicator />;
             })()}
 
-            {error &&
-              error instanceof TypeError === false && (
-                <div className="text-sm text-destructive px-4 py-2 bg-destructive/10 rounded-lg">
-                  {error.message}
-                </div>
-              )}
+            {showFailureRow && visibleFailureMessage ? (
+              <ChatFailureRow
+                message={visibleFailureMessage}
+                retryable={failureRetryable}
+                retryDisabled={isBusy || !retryText}
+                onRetry={restoreRetryMessage}
+              />
+            ) : null}
           </StickToBottom.Content>
         </StickToBottom>
       </div>
@@ -3392,17 +3602,16 @@ export function AppChat({
                   size="icon"
                   className="rounded-full"
                   disabled={
-                    !isBusy &&
-                    (Boolean(pendingApproval) ||
-                      isUploadingAttachments ||
-                      (!input.trim() && readyAttachmentCount === 0) ||
-                      !chatApi)
+                    isStopping ||
+                    (!isBusy &&
+                      (Boolean(pendingApproval) ||
+                        isUploadingAttachments ||
+                        (!input.trim() && readyAttachmentCount === 0) ||
+                        !chatApi))
                   }
                   onClick={() => {
                     if (isBusy) {
-                      chatPostAbortRef.current?.abort();
-                      chatPostAbortRef.current = null;
-                      stop();
+                      void stopBuilderRun();
                     } else {
                       handleSubmit();
                     }

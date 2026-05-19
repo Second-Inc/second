@@ -27,6 +27,7 @@ export type WorkerBridgeOptions = {
   sessionState?: ProviderSessionState;
   /** Source files to restore in the workspace (after container TTL) */
   sourceFiles?: Record<string, string>;
+  signal?: AbortSignal;
   /** Agent config from agents.json — enables custom MCP tools in the worker */
   agentConfig?: {
     id: string;
@@ -673,6 +674,7 @@ export async function streamFromWorker(
       requestedByUserId: options.requestedByUserId,
       requestedByUserName: options.requestedByUserName,
     }),
+    signal: options.signal,
   });
 
   if (!response.ok || !response.body) {
@@ -806,6 +808,10 @@ export async function streamFromWorker(
   let sseBuffer = "";
 
   outer: while (true) {
+    if (options.signal?.aborted) {
+      await reader.cancel().catch(() => {});
+      throw new Error("Worker stream cancelled");
+    }
     const { done, value } = await reader.read();
     if (done) break;
 

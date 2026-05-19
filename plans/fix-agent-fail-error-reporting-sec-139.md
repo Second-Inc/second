@@ -127,8 +127,11 @@ The important invariant is tenant isolation: every browser route must authorize 
 - [x] 2026-05-19 14:43 IDT - Read the relevant architecture, streaming, tenancy, app preview, self-hosting, worker, app-agent, and agent-system docs.
 - [x] 2026-05-19 14:43 IDT - Inspected the chat route, run repository, stream attach route, AppChat Stop behavior, worker stream endpoint, session manager, worker bridge, and Sentry helpers.
 - [x] 2026-05-19 14:43 IDT - Created this implementation plan.
-- [ ] Implementation not started.
-- [ ] Automated validation not run.
+- [x] 2026-05-19 15:38 IDT - Implemented typed builder run claim results, compact failure metadata, stream leases, stale-stream recovery, lease-guarded terminal writes, and throttled stream heartbeat updates.
+- [x] 2026-05-19 15:38 IDT - Replaced the silent chat POST claim-failure fallback with typed no-op/error stream responses, audit events, and redacted Sentry reporting.
+- [x] 2026-05-19 15:38 IDT - Added an authenticated `POST /chat/stop` route plus worker `/sessions/:appId/cancel` support and runtime abort propagation for Claude, Codex, and OpenCode paths.
+- [x] 2026-05-19 15:38 IDT - Added client chat stream error reporting, visible failure/retry UI, and retry message restoration into the composer.
+- [x] 2026-05-19 15:38 IDT - Ran `npm run typecheck`; web and worker typechecks passed.
 - [ ] Browser QA not run.
 
 
@@ -590,8 +593,9 @@ Representative current code behavior:
 Planning outcome:
 
 - A root-cause-oriented implementation path is documented.
-- No implementation has started.
+- Implementation is complete for the scoped backend state-machine, stop/cancel, reporting, and retry UI work.
 - Direct Sentry event inspection succeeded after sourcing `~/.zshrc`.
+- Automated type validation passes. Browser/manual QA was not run because the user did not request QA or permit starting the dev server.
 
 
 ## Change Notes
@@ -601,6 +605,7 @@ Planning outcome:
 - 2026-05-19 - Updated plan with Sentry issue details after sourcing the token from `~/.zshrc`.
 - 2026-05-19 - Made retry an explicit sub-goal, response contract, UI requirement, manual QA scenario, and acceptance criterion.
 - 2026-05-19 - Specified retry button placement: inline in the chat transcript at the failed turn, not hidden in the composer/sidebar.
+- 2026-05-19 - Implemented the plan across the builder chat route, run repository, worker session/runtime cancellation, Sentry reporting helpers, AppChat failure/retry UI, and audit event descriptions.
 
 
 ## Captured User Intent (Verbatim)

@@ -269,6 +269,7 @@ export const codexCliRuntimeAdapter: RuntimeAdapter = {
           prompt: input.prompt,
           allowedTools: input.config.allowedTools,
           sessionState: input.sessionState,
+          signal: input.signal,
         })) {
           yield message;
         }
@@ -314,6 +315,7 @@ export const codexCliRuntimeAdapter: RuntimeAdapter = {
         prompt: input.prompt,
         allowedTools: input.config.allowedTools,
         sessionState: input.sessionState,
+        signal: input.signal,
       })) {
         yield message;
       }

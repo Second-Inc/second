@@ -4,8 +4,10 @@ import { publishWorkspaceEvent } from "@/lib/events/workspace-events";
 import { parseDoneBuildingOutput } from "@/lib/agent/done-building";
 import { buildRunUsageIncrements, type RawRunUsageIncrement } from "./run-usage";
 import type {
+  AgentRunFailure,
   AgentRunDocument,
   AgentRunRecoveryContext,
+  AgentRunStreamLease,
   BuilderAttachmentReference,
   ProviderSessionState,
   RunUsage,
@@ -15,6 +17,101 @@ export type LatestRunState = {
   status: AgentRunDocument["status"];
   toolRecoveryStatus: "fixing" | null;
 };
+
+export type StartRunStreamResult =
+  | {
+      type: "claimed";
+      leaseId: string;
+      recoveredStale: false;
+    }
+  | {
+      type: "already_streaming";
+      activeStreamId: string | null;
+      leaseId: string | null;
+      persistedMessageCount: number;
+      requestMessageCount: number;
+    }
+  | {
+      type: "stale_stream_recovered";
+      activeStreamId: string | null;
+      leaseId: string | null;
+      failure: AgentRunFailure;
+      persistedMessageCount: number;
+      requestMessageCount: number;
+    }
+  | {
+      type: "stale_input";
+      runStatus: AgentRunDocument["status"];
+      persistedMessageCount: number;
+      requestMessageCount: number;
+    }
+  | { type: "not_found" };
+
+const STARTING_STREAM_STALE_MS = 2 * 60 * 1000;
+const ACTIVE_STREAM_STALE_MS = 20 * 60 * 1000;
+const STREAM_HEARTBEAT_THROTTLE_MS = 20 * 1000;
+
+function compactFailure(input: AgentRunFailure): AgentRunFailure {
+  return {
+    code: input.code,
+    phase: input.phase,
+    message: input.message.replace(/\s+/g, " ").trim().slice(0, 240),
+    retryable: input.retryable,
+    occurredAt: input.occurredAt,
+    ...(input.reported ? { reported: input.reported } : {}),
+  };
+}
+
+function newStreamLease(now = new Date()): AgentRunStreamLease {
+  return {
+    id: new ObjectId().toHexString(),
+    startedAt: now,
+    heartbeatAt: now,
+  };
+}
+
+function runLeaseId(
+  run: Pick<AgentRunDocument, "streamLease">,
+): string | null {
+  return run.streamLease?.id ?? null;
+}
+
+function expectedLeaseFilter(expectedLeaseId?: string | null) {
+  if (expectedLeaseId === undefined) return {};
+  if (expectedLeaseId === null) {
+    return {
+      $or: [
+        { streamLease: null },
+        { streamLease: { $exists: false } },
+        { "streamLease.id": null },
+      ],
+    };
+  }
+  return { "streamLease.id": expectedLeaseId };
+}
+
+function isStreamingRunStale(
+  run: Pick<
+    AgentRunDocument,
+    "status" | "activeStreamId" | "streamLease" | "updatedAt"
+  >,
+  now = new Date(),
+): boolean {
+  if (run.status !== "streaming") return false;
+
+  const updatedAtMs = run.updatedAt?.getTime?.() ?? 0;
+  const heartbeatAtMs =
+    run.streamLease?.heartbeatAt?.getTime?.() ??
+    run.streamLease?.startedAt?.getTime?.() ??
+    updatedAtMs;
+  const ageMs = now.getTime() - heartbeatAtMs;
+
+  if (!run.activeStreamId) {
+    return now.getTime() - updatedAtMs >= STARTING_STREAM_STALE_MS;
+  }
+
+  return ageMs >= ACTIVE_STREAM_STALE_MS;
+}
 
 function runReasonFromRecoveryContext(
   recoveryContext: AgentRunRecoveryContext | null | undefined,
@@ -56,6 +153,8 @@ export async function createRun(input: {
     messages: [],
     sessionState: null,
     activeStreamId: null,
+    streamLease: null,
+    failure: null,
     status: "pending",
     usage: null,
     autoStartPrompt: input.autoStartPrompt ?? null,
@@ -99,12 +198,24 @@ export async function loadRunStreamStateForApp(
   workspaceId: string,
   appId: string,
 ): Promise<
-  Pick<AgentRunDocument, "_id" | "status" | "activeStreamId" | "updatedAt"> | null
+  Pick<
+    AgentRunDocument,
+    "_id" | "status" | "activeStreamId" | "streamLease" | "failure" | "updatedAt"
+  > | null
 > {
   const collection = await getAgentRunsCollection();
   return collection.findOne(
     { _id: runId, workspaceId, appId },
-    { projection: { _id: 1, status: 1, activeStreamId: 1, updatedAt: 1 } },
+    {
+      projection: {
+        _id: 1,
+        status: 1,
+        activeStreamId: 1,
+        streamLease: 1,
+        failure: 1,
+        updatedAt: 1,
+      },
+    },
   );
 }
 
@@ -118,22 +229,37 @@ export async function startRunStream(
     attachments?: BuilderAttachmentReference[];
     recoveryContext?: AgentRunRecoveryContext | null;
   },
-): Promise<boolean> {
+): Promise<StartRunStreamResult> {
   const collection = await getAgentRunsCollection();
+  const now = new Date();
+  const lease = newStreamLease(now);
   const hasRecoveryContextInput = Object.prototype.hasOwnProperty.call(
     input,
     "recoveryContext",
   );
   const run = await collection.findOne(
     { _id: input.runId, workspaceId: input.workspaceId, appId: input.appId },
-    { projection: { recoveryContext: 1 } },
+    {
+      projection: {
+        status: 1,
+        activeStreamId: 1,
+        streamLease: 1,
+        messages: 1,
+        recoveryContext: 1,
+        updatedAt: 1,
+      },
+    },
   );
+  if (!run) return { type: "not_found" };
+
   const effectiveRecoveryContext = hasRecoveryContextInput
     ? input.recoveryContext
     : run?.recoveryContext;
   const $set: Record<string, unknown> = {
     messages: input.messages,
     activeStreamId: input.activeStreamId,
+    streamLease: lease,
+    failure: null,
     ...(input.attachments ? { attachments: input.attachments } : {}),
     ...(hasRecoveryContextInput
       ? { recoveryContext: input.recoveryContext ?? null }
@@ -143,8 +269,96 @@ export async function startRunStream(
     // during the request should see that a stream is in progress, but stale
     // back/forward POSTs must not overwrite a completed run with old messages.
     status: "streaming",
-    updatedAt: new Date(),
+    updatedAt: now,
   };
+
+  const publishStarting = () => {
+    publishWorkspaceEvent({
+      type: "run.starting",
+      workspaceId: input.workspaceId,
+      scope: "agent-runs",
+      appId: input.appId,
+      runId: input.runId,
+      runStatus: "streaming",
+      runReason: runReasonFromRecoveryContext(effectiveRecoveryContext),
+    });
+  };
+
+  if (run.status === "streaming") {
+    const persistedMessageCount = run.messages.length;
+    if (isStreamingRunStale(run, now)) {
+      const failure = compactFailure({
+        code: "stale_stream_recovered",
+        phase: "claim",
+        message:
+          "The previous agent stream disconnected before it could finish. Retry the message to continue.",
+        retryable: true,
+        occurredAt: now,
+      });
+      const result = await collection.updateOne(
+        {
+          _id: input.runId,
+          workspaceId: input.workspaceId,
+          appId: input.appId,
+          status: "streaming",
+          activeStreamId: run.activeStreamId ?? null,
+          ...expectedLeaseFilter(runLeaseId(run)),
+        },
+        {
+          $set: {
+            messages: input.messages,
+            activeStreamId: null,
+            streamLease: null,
+            failure,
+            status: "failed" as const,
+            updatedAt: now,
+          },
+        },
+      );
+      if (result.modifiedCount > 0) {
+        publishWorkspaceEvent({
+          type: "run.failed",
+          workspaceId: input.workspaceId,
+          scope: "agent-runs",
+          appId: input.appId,
+          runId: input.runId,
+          runStatus: "failed",
+          runReason: runReasonFromRecoveryContext(run.recoveryContext),
+        });
+        return {
+          type: "stale_stream_recovered",
+          activeStreamId: run.activeStreamId,
+          leaseId: runLeaseId(run),
+          failure,
+          persistedMessageCount,
+          requestMessageCount: input.messages.length,
+        };
+      }
+    }
+
+    return {
+      type: "already_streaming",
+      activeStreamId: run.activeStreamId ?? null,
+      leaseId: runLeaseId(run),
+      persistedMessageCount,
+      requestMessageCount: input.messages.length,
+    };
+  }
+
+  const canClaim =
+    run.status === "pending" ||
+    ((run.status === "completed" || run.status === "failed") &&
+      run.messages.length < input.messages.length);
+
+  if (!canClaim) {
+    return {
+      type: "stale_input",
+      runStatus: run.status,
+      persistedMessageCount: run.messages.length,
+      requestMessageCount: input.messages.length,
+    };
+  }
+
   const result = await collection.updateOne(
     {
       _id: input.runId,
@@ -163,17 +377,41 @@ export async function startRunStream(
     { $set },
   );
   if (result.modifiedCount > 0) {
-    publishWorkspaceEvent({
-      type: "run.starting",
-      workspaceId: input.workspaceId,
-      scope: "agent-runs",
-      appId: input.appId,
-      runId: input.runId,
-      runStatus: "streaming",
-      runReason: runReasonFromRecoveryContext(effectiveRecoveryContext),
-    });
+    publishStarting();
+    return {
+      type: "claimed",
+      leaseId: lease.id,
+      recoveredStale: false,
+    };
   }
-  return result.modifiedCount > 0;
+
+  const latest = await collection.findOne(
+    { _id: input.runId, workspaceId: input.workspaceId, appId: input.appId },
+    {
+      projection: {
+        status: 1,
+        activeStreamId: 1,
+        streamLease: 1,
+        messages: 1,
+      },
+    },
+  );
+  if (!latest) return { type: "not_found" };
+  if (latest.status === "streaming") {
+    return {
+      type: "already_streaming",
+      activeStreamId: latest.activeStreamId ?? null,
+      leaseId: runLeaseId(latest),
+      persistedMessageCount: latest.messages.length,
+      requestMessageCount: input.messages.length,
+    };
+  }
+  return {
+    type: "stale_input",
+    runStatus: latest.status,
+    persistedMessageCount: latest.messages.length,
+    requestMessageCount: input.messages.length,
+  };
 }
 
 export async function scheduleRunAutoStart(input: {
@@ -189,10 +427,12 @@ export async function scheduleRunAutoStart(input: {
     "recoveryContext",
   );
   const $set: Record<string, unknown> = {
-    autoStartPrompt: input.autoStartPrompt,
-    status: "pending",
-    activeStreamId: null,
-    updatedAt: new Date(),
+      autoStartPrompt: input.autoStartPrompt,
+      status: "pending",
+      activeStreamId: null,
+      streamLease: null,
+      failure: null,
+      updatedAt: new Date(),
     ...(hasRecoveryContextInput
       ? { recoveryContext: input.recoveryContext ?? null }
       : {}),
@@ -247,20 +487,33 @@ export async function setRunPendingAttachments(input: {
 }
 
 export async function setRunActiveStream(
-  runId: string,
-  activeStreamId: string,
+  input: {
+    runId: string;
+    workspaceId: string;
+    appId: string;
+    activeStreamId: string;
+    expectedLeaseId?: string | null;
+  },
 ): Promise<boolean> {
   const collection = await getAgentRunsCollection();
   const run = await collection.findOne(
-    { _id: runId },
+    { _id: input.runId, workspaceId: input.workspaceId, appId: input.appId },
     { projection: { workspaceId: 1, appId: 1, recoveryContext: 1 } },
   );
+  const now = new Date();
   const result = await collection.updateOne(
-    { _id: runId, status: "streaming" },
+    {
+      _id: input.runId,
+      workspaceId: input.workspaceId,
+      appId: input.appId,
+      status: "streaming",
+      ...expectedLeaseFilter(input.expectedLeaseId),
+    },
     {
       $set: {
-        activeStreamId,
-        updatedAt: new Date(),
+        activeStreamId: input.activeStreamId,
+        "streamLease.heartbeatAt": now,
+        updatedAt: now,
       },
     },
   );
@@ -270,7 +523,7 @@ export async function setRunActiveStream(
       workspaceId: run.workspaceId,
       scope: "agent-runs",
       appId: run.appId,
-      runId,
+      runId: input.runId,
       runStatus: "streaming",
       runReason: runReasonFromRecoveryContext(run.recoveryContext),
     });
@@ -278,70 +531,146 @@ export async function setRunActiveStream(
   return result.modifiedCount > 0;
 }
 
-export async function completeRun(
-  runId: string,
-  messages: unknown[],
-): Promise<void> {
+export async function updateRunStreamHeartbeat(input: {
+  runId: string;
+  workspaceId: string;
+  appId: string;
+  expectedLeaseId?: string | null;
+}): Promise<boolean> {
   const collection = await getAgentRunsCollection();
-  const run = await collection.findOne(
-    { _id: runId },
-    { projection: { workspaceId: 1, appId: 1, recoveryContext: 1 } },
-  );
-  await collection.updateOne(
-    { _id: runId },
+  const now = new Date();
+  const throttleBefore = new Date(now.getTime() - STREAM_HEARTBEAT_THROTTLE_MS);
+  const leaseFilter = expectedLeaseFilter(input.expectedLeaseId);
+  const heartbeatFilter = {
+    $or: [
+      { "streamLease.heartbeatAt": { $exists: false } },
+      { "streamLease.heartbeatAt": null },
+      { "streamLease.heartbeatAt": { $lte: throttleBefore } },
+    ],
+  };
+  const result = await collection.updateOne(
+    {
+      _id: input.runId,
+      workspaceId: input.workspaceId,
+      appId: input.appId,
+      status: "streaming",
+      ...(Object.prototype.hasOwnProperty.call(leaseFilter, "$or")
+        ? { $and: [leaseFilter, heartbeatFilter] }
+        : { ...leaseFilter, ...heartbeatFilter }),
+    },
     {
       $set: {
-        messages,
+        "streamLease.heartbeatAt": now,
+        updatedAt: now,
+      },
+    },
+  );
+  return result.modifiedCount > 0;
+}
+
+export async function completeRun(
+  input: {
+    runId: string;
+    workspaceId: string;
+    appId: string;
+    messages: unknown[];
+    expectedLeaseId?: string | null;
+  },
+): Promise<boolean> {
+  const collection = await getAgentRunsCollection();
+  const run = await collection.findOne(
+    { _id: input.runId, workspaceId: input.workspaceId, appId: input.appId },
+    { projection: { workspaceId: 1, appId: 1, recoveryContext: 1 } },
+  );
+  const result = await collection.updateOne(
+    {
+      _id: input.runId,
+      workspaceId: input.workspaceId,
+      appId: input.appId,
+      status: "streaming",
+      ...expectedLeaseFilter(input.expectedLeaseId),
+    },
+    {
+      $set: {
+        messages: input.messages,
         activeStreamId: null,
+        streamLease: null,
+        failure: null,
         status: "completed" as const,
         updatedAt: new Date(),
       },
     },
   );
-  if (run) {
+  if (result.modifiedCount > 0 && run) {
     publishWorkspaceEvent({
       type: "run.completed",
       workspaceId: run.workspaceId,
       scope: "agent-runs",
       appId: run.appId,
-      runId,
+      runId: input.runId,
       runStatus: "completed",
       runReason: runReasonFromRecoveryContext(run.recoveryContext),
     });
   }
+  return result.modifiedCount > 0;
 }
 
 export async function failRun(
-  runId: string,
-  messages: unknown[],
-): Promise<void> {
+  input: {
+    runId: string;
+    workspaceId: string;
+    appId: string;
+    messages: unknown[];
+    expectedLeaseId?: string | null;
+    failure?: AgentRunFailure;
+  },
+): Promise<boolean> {
   const collection = await getAgentRunsCollection();
   const run = await collection.findOne(
-    { _id: runId },
+    { _id: input.runId, workspaceId: input.workspaceId, appId: input.appId },
     { projection: { workspaceId: 1, appId: 1, recoveryContext: 1 } },
   );
-  await collection.updateOne(
-    { _id: runId },
+  const now = new Date();
+  const failure = compactFailure(
+    input.failure ?? {
+      code: "unknown",
+      phase: "worker_stream",
+      message: "The agent run failed.",
+      retryable: true,
+      occurredAt: now,
+    },
+  );
+  const result = await collection.updateOne(
+    {
+      _id: input.runId,
+      workspaceId: input.workspaceId,
+      appId: input.appId,
+      status: { $ne: "completed" },
+      ...expectedLeaseFilter(input.expectedLeaseId),
+    },
     {
       $set: {
-        messages,
+        messages: input.messages,
         activeStreamId: null,
+        streamLease: null,
+        failure,
         status: "failed" as const,
-        updatedAt: new Date(),
+        updatedAt: now,
       },
     },
   );
-  if (run) {
+  if (result.modifiedCount > 0 && run) {
     publishWorkspaceEvent({
       type: "run.failed",
       workspaceId: run.workspaceId,
       scope: "agent-runs",
       appId: run.appId,
-      runId,
+      runId: input.runId,
       runStatus: "failed",
       runReason: runReasonFromRecoveryContext(run.recoveryContext),
     });
   }
+  return result.modifiedCount > 0;
 }
 
 export async function saveRunSessionState(

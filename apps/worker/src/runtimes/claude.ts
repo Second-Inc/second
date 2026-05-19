@@ -16,6 +16,7 @@ export const claudeRuntimeAdapter: RuntimeAdapter = {
       input.settings.model,
       input.settings.params.effort,
       input.settings.params.thinking,
+      input.signal,
     )) {
       const runtimeMessage = message as RuntimeRunResultMessage;
       if (message.type === "system" && message.subtype === "init" && message.session_id) {

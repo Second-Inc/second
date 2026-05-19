@@ -2322,6 +2322,7 @@ export async function* runAgent(
   model?: string,
   effort?: string,
   thinking?: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<SDKMessage> {
   const stderrChunks: string[] = [];
   const sanitizedEnv: Record<string, string | undefined> = {
@@ -2417,8 +2418,17 @@ export async function* runAgent(
   });
 
   const blockingApprovalToolUseIds = new Set<string>();
+  let aborted = false;
+  const onAbort = () => {
+    aborted = true;
+    q.close();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
   try {
     for await (const message of q) {
+      if (aborted || signal?.aborted) {
+        throw new Error("Agent run cancelled");
+      }
       const sdkMessage = message as SDKMessage;
       collectBlockingApprovalToolUses(sdkMessage, blockingApprovalToolUseIds);
       yield sdkMessage;
@@ -2428,9 +2438,14 @@ export async function* runAgent(
       }
     }
   } catch (error) {
+    if (aborted || signal?.aborted) {
+      throw new Error("Agent run cancelled");
+    }
     const stderr = stderrChunks.join("");
     const msg = error instanceof Error ? error.message : String(error);
     throw new Error(`${msg}${stderr ? `\n\nClaude stderr:\n${stderr}` : ""}`);
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 

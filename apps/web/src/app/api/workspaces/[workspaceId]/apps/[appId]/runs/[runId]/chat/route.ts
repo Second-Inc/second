@@ -27,7 +27,9 @@ import {
   saveRunSessionState,
   setRunActiveStream,
   startRunStream,
+  updateRunStreamHeartbeat,
   resolveRuntimeSkillsForViewer,
+  type StartRunStreamResult,
 } from "@/lib/db";
 import { isWorkerRestoreNeeded, streamFromWorker } from "@/lib/agent/worker-bridge";
 import { tryReadAgentsJsonSnapshot } from "@/lib/agents/agents-governance";
@@ -62,7 +64,9 @@ import {
   recordAuditEvent,
 } from "@/lib/audit/record";
 import { auditSha256 } from "@/lib/audit/redaction";
+import { reportServerError } from "@/lib/server-error-reporting";
 import type {
+  AgentRunFailure,
   BuilderAttachmentReference,
   ProviderSessionState,
 } from "@/lib/db/types";
@@ -79,6 +83,176 @@ const REVIEW_INVALIDATED_HEADER = "x-second-review-invalidated";
 const DRAFT_CREATED_HEADER = "x-second-draft-created";
 const REVIEW_INVALIDATED_MESSAGE =
   "This app changed after it was sent for review. The review was closed automatically; send it for review again when it is ready.";
+const CHAT_CLAIM_RESULT_HEADER = "x-second-chat-claim-result";
+const CHAT_RETRYABLE_HEADER = "x-second-chat-retryable";
+const CHAT_ERROR_CODE_HEADER = "x-second-chat-error-code";
+
+type RouteIds = {
+  workspaceId: string;
+  appId: string;
+  runId: string;
+};
+
+function chatRouteShape(): string {
+  return "/api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat";
+}
+
+function sanitizedErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.replace(/\s+/g, " ").trim().slice(0, 240);
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error.replace(/\s+/g, " ").trim().slice(0, 240);
+  }
+  return fallback;
+}
+
+function createFailure(input: {
+  code: AgentRunFailure["code"];
+  phase: AgentRunFailure["phase"];
+  message: string;
+  retryable: boolean;
+  sentryEventId?: string | null;
+}): AgentRunFailure {
+  return {
+    code: input.code,
+    phase: input.phase,
+    message: input.message.replace(/\s+/g, " ").trim().slice(0, 240),
+    retryable: input.retryable,
+    occurredAt: new Date(),
+    ...(input.sentryEventId
+      ? { reported: { sentryEventId: input.sentryEventId } }
+      : {}),
+  };
+}
+
+function createChatErrorStreamResponse(input: {
+  messages: UIMessage[];
+  message: string;
+  claimResult?: StartRunStreamResult["type"];
+  retryable?: boolean;
+  errorCode?: string;
+  headers?: HeadersInit;
+}) {
+  const stream = createUIMessageStream({
+    originalMessages: input.messages,
+    execute: async ({ writer }) => {
+      writer.write({
+        type: "error",
+        errorText: input.message,
+      });
+    },
+  });
+  return createUIMessageStreamResponse({
+    headers: {
+      ...(input.headers ?? {}),
+      ...(input.claimResult
+        ? { [CHAT_CLAIM_RESULT_HEADER]: input.claimResult }
+        : {}),
+      ...(input.retryable !== undefined
+        ? { [CHAT_RETRYABLE_HEADER]: String(input.retryable) }
+        : {}),
+      ...(input.errorCode ? { [CHAT_ERROR_CODE_HEADER]: input.errorCode } : {}),
+    },
+    stream,
+  });
+}
+
+function createNoopChatStreamResponse(input: {
+  messages: UIMessage[];
+  claimResult: StartRunStreamResult["type"];
+  headers?: HeadersInit;
+}) {
+  const stream = createUIMessageStream({
+    originalMessages: input.messages,
+    execute: async () => {},
+  });
+  return createUIMessageStreamResponse({
+    headers: {
+      ...(input.headers ?? {}),
+      [CHAT_CLAIM_RESULT_HEADER]: input.claimResult,
+    },
+    stream,
+  });
+}
+
+function claimFailureMessage(result: Exclude<StartRunStreamResult, { type: "claimed" }>): string {
+  if (result.type === "stale_stream_recovered") return result.failure.message;
+  if (result.type === "already_streaming") {
+    return "The agent is still working on the current turn. Wait for it to finish or press Stop before sending another message.";
+  }
+  if (result.type === "stale_input") {
+    return "This chat has already moved past that message. Refresh the conversation and send your next message again.";
+  }
+  return "This run is no longer available.";
+}
+
+async function recordBuilderRunClaimEvent(input: {
+  request: Request;
+  routeIds: RouteIds;
+  workspaceContext: Awaited<ReturnType<typeof requireWorkspaceContext>>;
+  appName: string;
+  result: Exclude<StartRunStreamResult, { type: "claimed" }>;
+  runtimeId: string;
+  runtimeModel: string;
+}) {
+  const staleRecovered = input.result.type === "stale_stream_recovered";
+  const streamResult =
+    input.result.type === "already_streaming" ||
+    input.result.type === "stale_stream_recovered"
+      ? input.result
+      : null;
+  await recordAuditEvent({
+    workspaceId: input.routeIds.workspaceId,
+    eventName: staleRecovered
+      ? "builder_run.stale_stream_recovered"
+      : "builder_run.claim_rejected",
+    category: "apps",
+    severity: staleRecovered ? "warning" : "notice",
+    outcome: staleRecovered ? "failure" : "denied",
+    actor: auditActorFromWorkspaceContext(input.workspaceContext),
+    source: auditSourceFromRequest(input.request, {
+      kind: "builder_agent",
+      trust: "internal_trusted",
+      appId: input.routeIds.appId,
+      appName: input.appName,
+      runId: input.routeIds.runId,
+    }),
+    target: {
+      type: "run",
+      id: input.routeIds.runId,
+      parentType: "app",
+      parentId: input.routeIds.appId,
+    },
+    action: staleRecovered ? "recovered_stale_stream" : "rejected_claim",
+    summary: staleRecovered
+      ? `Recovered a stale builder stream for ${input.appName}.`
+      : `Rejected a builder run claim for ${input.appName}.`,
+    metadata: {
+      claimResult: input.result.type,
+      retryable:
+        input.result.type === "stale_stream_recovered" ||
+        input.result.type === "already_streaming",
+      hadActiveStream: streamResult
+        ? Boolean(streamResult.activeStreamId)
+        : false,
+      streamLeaseHash: streamResult
+        ? auditSha256(streamResult.leaseId ?? "none")
+        : undefined,
+      persistedMessageCount:
+        input.result.type === "not_found"
+          ? undefined
+          : input.result.persistedMessageCount,
+      requestMessageCount:
+        input.result.type === "not_found"
+          ? undefined
+          : input.result.requestMessageCount,
+      runtimeId: input.runtimeId,
+      runtimeModel: input.runtimeModel,
+    },
+    relatedIds: { appId: input.routeIds.appId, runId: input.routeIds.runId },
+  });
+}
 
 function sourceSnapshotMetadata(sourceFiles: Record<string, string>) {
   return {
@@ -367,6 +541,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
     }
   }
   const workerUrl = getWorkerUrl();
+  const redis = getRedisClient();
   if (requestAttachments.length > 0) {
     const check = await findMissingWorkerAttachments({
       workerUrl,
@@ -412,12 +587,6 @@ export async function POST(request: Request, context: ChatRouteContext) {
       }
     }
   }
-  const draftEditResult = hasNewBuilderInput
-    ? await supersedePendingReview({
-        workspaceId: workspaceContext.workspaceId,
-        appId,
-      })
-    : { reviewInvalidated: false, draftCreatedFromPublished: false };
   const isScheduledRecoveryStart =
     !isWorkspaceAgentRun &&
     run.status === "pending" &&
@@ -428,7 +597,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
   // Claim this run for a single active stream. Route remounts during the
   // pre-stream initialization window can POST the same initial message again;
   // only the first POST should start a worker query.
-  const claimedRun = await startRunStream({
+  const claimResult = await startRunStream({
     runId,
     workspaceId: workspaceContext.workspaceId,
     appId,
@@ -437,23 +606,96 @@ export async function POST(request: Request, context: ChatRouteContext) {
     attachments: requestAttachments,
     ...(shouldClearRecoveryContext ? { recoveryContext: null } : {}),
   });
-  if (!claimedRun) {
-    const stream = createUIMessageStream({
-      originalMessages: messagesForRun,
-      execute: async () => {},
+  if (claimResult.type !== "claimed") {
+    const routeIds = {
+      workspaceId: workspaceContext.workspaceId,
+      appId,
+      runId,
+    };
+
+    if (claimResult.type === "stale_stream_recovered") {
+      reportServerError({
+        source: "agent_chat_stale_recovery",
+        message: "Recovered stale builder stream during chat claim.",
+        route: chatRouteShape(),
+        level: "warning",
+        context: {
+          ...routeIds,
+          leaseId: claimResult.leaseId,
+          hadActiveStream: Boolean(claimResult.activeStreamId),
+          persistedMessageCount: claimResult.persistedMessageCount,
+          requestMessageCount: claimResult.requestMessageCount,
+          runtimeId: runtimeSettings.runtimeId,
+          runtimeModel: runtimeSettings.model,
+        },
+      });
+      await markRunReplayTerminal({ runId, status: "failed" }).catch(() => {});
+      redis
+        .publish(runEventsChannel(runId), JSON.stringify({ type: "failed" }))
+        .catch(() => {});
+    } else if (
+      claimResult.type === "already_streaming" &&
+      messagesForRun.length > claimResult.persistedMessageCount
+    ) {
+      reportServerError({
+        source: "agent_chat_claim",
+        message: "Rejected new builder input because the run is already streaming.",
+        route: chatRouteShape(),
+        level: "warning",
+        context: {
+          ...routeIds,
+          leaseId: claimResult.leaseId,
+          hadActiveStream: Boolean(claimResult.activeStreamId),
+          persistedMessageCount: claimResult.persistedMessageCount,
+          requestMessageCount: claimResult.requestMessageCount,
+          runtimeId: runtimeSettings.runtimeId,
+          runtimeModel: runtimeSettings.model,
+        },
+      });
+    }
+
+    void recordBuilderRunClaimEvent({
+      request,
+      routeIds,
+      workspaceContext,
+      appName: app.name,
+      result: claimResult,
+      runtimeId: runtimeSettings.runtimeId,
+      runtimeModel: runtimeSettings.model,
     });
-    return createUIMessageStreamResponse({
-      headers: {
-        ...(draftEditResult.reviewInvalidated
-          ? { [REVIEW_INVALIDATED_HEADER]: "true" }
-          : {}),
-        ...(draftEditResult.draftCreatedFromPublished
-          ? { [DRAFT_CREATED_HEADER]: "true" }
-          : {}),
-      },
-      stream,
+
+    if (
+      claimResult.type === "already_streaming" &&
+      messagesForRun.length <= claimResult.persistedMessageCount
+    ) {
+      return createNoopChatStreamResponse({
+        messages: messagesForRun,
+        claimResult: claimResult.type,
+      });
+    }
+
+    return createChatErrorStreamResponse({
+      messages: messagesForRun,
+      message: claimFailureMessage(claimResult),
+      claimResult: claimResult.type,
+      retryable:
+        claimResult.type === "stale_stream_recovered" ||
+        claimResult.type === "already_streaming",
+      errorCode:
+        claimResult.type === "stale_stream_recovered"
+          ? "stale_stream_recovered"
+          : claimResult.type === "already_streaming"
+            ? "run_already_streaming"
+            : "claim_rejected",
     });
   }
+  const streamLeaseId = claimResult.leaseId;
+  const draftEditResult = hasNewBuilderInput
+    ? await supersedePendingReview({
+        workspaceId: workspaceContext.workspaceId,
+        appId,
+      })
+    : { reviewInvalidated: false, draftCreatedFromPublished: false };
   if (!isWorkspaceAgentRun) {
     void recordAuditEvent({
       workspaceId: workspaceContext.workspaceId,
@@ -675,7 +917,38 @@ export async function POST(request: Request, context: ChatRouteContext) {
             : undefined,
         }).catch(async (error) => {
           runFailed.current = true;
-          await failRun(runId, messagesForRun);
+          const errorMessage = sanitizedErrorMessage(
+            error,
+            "Worker stream failed",
+          );
+          const sentryEventId = reportServerError({
+            source: "agent_chat_worker_stream",
+            error,
+            route: chatRouteShape(),
+            context: {
+              workspaceId: workspaceContext.workspaceId,
+              appId,
+              runId,
+              leaseId: streamLeaseId,
+              runtimeId: runtimeSettings.runtimeId,
+              runtimeModel: runtimeSettings.model,
+              messageCount: messagesForRun.length,
+            },
+          });
+          await failRun({
+            runId,
+            workspaceId: workspaceContext.workspaceId,
+            appId,
+            messages: messagesForRun,
+            expectedLeaseId: streamLeaseId,
+            failure: createFailure({
+              code: "worker_stream_failed",
+              phase: "worker_stream",
+              message: errorMessage,
+              retryable: true,
+              sentryEventId,
+            }),
+          });
           if (!isWorkspaceAgentRun) {
             void recordAuditEvent({
               workspaceId: workspaceContext.workspaceId,
@@ -700,11 +973,9 @@ export async function POST(request: Request, context: ChatRouteContext) {
               action: "failed",
               summary: `Builder run failed for ${app.name}.`,
               metadata: {
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Worker stream failed",
+                error: errorMessage,
                 messageCount: messages.length,
+                streamLeaseHash: auditSha256(streamLeaseId),
               },
               relatedIds: { appId, runId },
             });
@@ -717,8 +988,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
             .catch(() => {});
           writer.write({
             type: "error",
-            errorText:
-              error instanceof Error ? error.message : "Worker stream failed",
+            errorText: errorMessage,
           });
           return null;
         });
@@ -847,6 +1117,19 @@ export async function POST(request: Request, context: ChatRouteContext) {
         }
       } catch (err) {
         console.error("[chat] Post-stream persistence error:", err);
+        reportServerError({
+          source: "agent_chat_persistence",
+          error: err,
+          route: chatRouteShape(),
+          context: {
+            workspaceId: workspaceContext.workspaceId,
+            appId,
+            runId,
+            leaseId: streamLeaseId,
+            runtimeId: runtimeSettings.runtimeId,
+            runtimeModel: runtimeSettings.model,
+          },
+        });
       }
     },
 
@@ -867,7 +1150,14 @@ export async function POST(request: Request, context: ChatRouteContext) {
           console.error("[chat] Session state persistence error:", err);
         }
       }
-      await completeRun(runId, finalMessagesForPersistence);
+      const completed = await completeRun({
+        runId,
+        workspaceId: workspaceContext.workspaceId,
+        appId,
+        messages: finalMessagesForPersistence,
+        expectedLeaseId: streamLeaseId,
+      });
+      if (!completed) return;
       if (!isWorkspaceAgentRun) {
         void recordAuditEvent({
           workspaceId: workspaceContext.workspaceId,
@@ -904,7 +1194,6 @@ export async function POST(request: Request, context: ChatRouteContext) {
     },
   });
 
-  const redis = getRedisClient();
   const resumableStreamContext = createResumableStreamContext({
     waitUntil: after,
     subscriber: redis.duplicate(),
@@ -924,9 +1213,27 @@ export async function POST(request: Request, context: ChatRouteContext) {
     consumeSseStream: async ({ stream: sseStream }) => {
       await resumableStreamContext.createNewResumableStream(
         streamId,
-        () => captureRunReplayStream({ runId, stream: sseStream }),
+        () =>
+          captureRunReplayStream({
+            runId,
+            stream: sseStream,
+            onChunk: () => {
+              void updateRunStreamHeartbeat({
+                runId,
+                workspaceId: workspaceContext.workspaceId,
+                appId,
+                expectedLeaseId: streamLeaseId,
+              });
+            },
+          }),
       );
-      const streamAttached = await setRunActiveStream(runId, streamId);
+      const streamAttached = await setRunActiveStream({
+        runId,
+        workspaceId: workspaceContext.workspaceId,
+        appId,
+        activeStreamId: streamId,
+        expectedLeaseId: streamLeaseId,
+      });
       if (streamAttached) {
         // Notify other tabs that a new stream started.
         redis.publish(
@@ -972,6 +1279,7 @@ export async function GET(request: Request, context: ChatRouteContext) {
     {
       messages: run.messages,
       status: run.status,
+      failure: run.failure ?? null,
       attachments: run.attachments ?? [],
       usage: run.usage,
     },

@@ -18,6 +18,7 @@ type CodexAppServerOptions = {
   prompt: string;
   allowedTools?: string[];
   sessionState?: ProviderSessionState | null;
+  signal?: AbortSignal;
 };
 
 type PendingRequest = {
@@ -1090,6 +1091,7 @@ export class CodexAppServerClient {
     let processDone = false;
     let processError: Error | null = null;
     let turnCompleted = false;
+    let cancelled = false;
     const traceEnabled = process.env.SECOND_CODEX_TRACE === "1";
     const traceStartedAt = Date.now();
 
@@ -1115,6 +1117,14 @@ export class CodexAppServerClient {
 
     const wake = () => {
       queueResolver?.();
+    };
+
+    const cancelRun = () => {
+      cancelled = true;
+      processError = new Error("Agent run cancelled");
+      processDone = true;
+      terminateChild();
+      wake();
     };
 
     const push = (message: RuntimeRunResultMessage) => {
@@ -1629,8 +1639,14 @@ export class CodexAppServerClient {
       },
     };
     this.activeRun = activeRun;
+    if (options.signal?.aborted) {
+      cancelRun();
+    } else {
+      options.signal?.addEventListener("abort", cancelRun, { once: true });
+    }
 
     const startPromise = (async () => {
+      if (cancelled) return;
       const sandbox = sandboxMode(options.settings.params.sandbox ?? "workspace-write");
       trace("run.start", {
         model: options.settings.model,
@@ -1671,6 +1687,7 @@ export class CodexAppServerClient {
         persistExtendedHistory: false,
       });
 
+      if (cancelled) return;
       const thread = asRecord(asRecord(threadResult).thread);
       const startedThreadId = stringValue(thread.id);
       if (!startedThreadId) throw new Error("Codex app-server did not return a thread id");
@@ -1680,6 +1697,7 @@ export class CodexAppServerClient {
         push(systemInitMessage(startedThreadId, options.sessionState));
       }
 
+      if (cancelled) return;
       const turnResult = await this.sendRequest("turn/start", {
         threadId: startedThreadId,
         input: [
@@ -1695,6 +1713,7 @@ export class CodexAppServerClient {
         effort: options.settings.params.reasoningEffort ?? "high",
         summary: "auto",
       });
+      if (cancelled) return;
       const turn = asRecord(asRecord(turnResult).turn);
       const startedTurnId = stringValue(turn.id);
       if (!startedTurnId) throw new Error("Codex app-server did not return a turn id");
@@ -1731,6 +1750,7 @@ export class CodexAppServerClient {
 
       if (processError) throw processError;
     } finally {
+      options.signal?.removeEventListener("abort", cancelRun);
       if (this.activeRun === activeRun) this.activeRun = null;
     }
   }
