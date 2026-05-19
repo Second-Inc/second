@@ -63,6 +63,9 @@ It's also very important to keep everything very secure and go with the security
 - For any plan or implementation touching these areas, include a performance safety checklist: hot-path data shape, read-vs-write behavior, realtime invalidation source, duplicate-request prevention, multi-tab/multi-user streaming behavior, tenant isolation, and how to validate in staging.
 - Do not assume Kubernetes/GKE automatically scales the app. Node autoscaling is not pod autoscaling. If capacity matters, inspect replicas/resources/HPA behavior and document what will or will not scale.
 
+# About Sentry access
+- If a task needs the Sentry API and `SENTRY_AUTH_TOKEN` is missing from the current shell, source `~/.zshrc` and check again. Do not print the token or ask the human to paste it into chat.
+
 # Forbidden actions:
 - You are not allowed to run git commands unless the human explicitly asks for git/PR work or no-human-in-the-loop mode.
 - You are not allowed to actually run containers / terraform etc. (but can run command to validate)
