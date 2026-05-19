@@ -97,39 +97,39 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
 Second builds itself: integrations are generated on demand with exact connection instructions.
 </td>
 <td align="center" width="33%">
-<h3>🔌 Bring Your Own Agent</h3>
-Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message.
+<h3>🤖 App Agents</h3>
+Each app gets its own agents, with tools and data access presented for approval.
 </td>
 <td align="center" width="33%">
-<h3>🧠 Workspace-Wide Agents</h3>
-Create reusable agents with prompts, skills, models, and team visibility. Use them across conversations.
+<h3>🔌 BYO Agent</h3>
+Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message.
 </td>
 </tr>
 <tr>
 <td align="center">
-<h3>👥 Multiplayer Agent Sessions</h3>
+<h3>👥 Multiplayer Sessions</h3>
 Talk with Claude Code or Codex, invite teammates into the session, and collaborate with shared context.
 </td>
 <td align="center">
-<h3>🔒 Zero Trust Permissions</h3>
-Agents get only approved tools, data, and integrations. Everything is scoped and audited.
+<h3>🔒 Permissions</h3>
+Agents run with approved tools, data, and integrations. Everything is scoped and audited.
 </td>
 <td align="center">
-<h3>⚡ Real-Time Collaboration</h3>
-Change streams and optimistic updates keep teams and agents synced as work happens.
+<h3>⚡ Realtime</h3>
+Live data, change streams, and optimistic updates keep teams and agents synced.
 </td>
 </tr>
 <tr>
 <td align="center">
-<h3>🏗️ Prompt-to-App Generation</h3>
-Generate internal apps with UI, data, agents, and workflows from a single prompt.
+<h3>🧠 Workspace Agents</h3>
+Create reusable agents with prompts, skills, models, and team visibility.
 </td>
 <td align="center">
-<h3>📚 Shared Skills Library</h3>
-Define reusable instructions once, then attach them to agents across the workspace.
+<h3>📚 Workspace Skills</h3>
+Define instructions once, then attach them to agents across the workspace.
 </td>
 <td align="center">
-<h3>✅ Governed App Lifecycle</h3>
+<h3>🛡️ Governance</h3>
 Draft, review, approve, and publish apps with agents and integrations under control.
 </td>
 </tr>
@@ -149,7 +149,7 @@ On top of that, Second handles the hard parts:
 | **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
 | **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
 
-## Second Is Right For You If
+<!-- ## Second Is Right For You If
 
 - ✅ Your team has Claude, Codex, or Lovable prototypes that need to become real production software.
 - ✅ You need internal tools where humans and agents work on the same workflows.
@@ -158,16 +158,17 @@ On top of that, Second handles the hard parts:
 - ✅ You need RBAC, agent access control, approval flows, audit logs, integrations, and safe deployments from the start.
 - ✅ You want agents inside the app, not off to the side in a separate chat window.
 - ✅ You have security constraints that require local, self-hosted, or on-prem deployment.
+-->
 
 ## Problems Second Solves
 
 | Without Second | With Second |
 |---|---|
-| Prototypes work in Claude, Codex, or Lovable, then stall before production. | Apps are generated inside a governed workspace with the runtime pieces already there. |
-| Agents work in separate chats and lose the context your team is acting on. | Agents and humans share the same app, real-time DB, and interface. |
-| Every integration becomes a one-off security project. | Second generates scoped tools and keeps secrets server-side. |
-| Agent permissions are hard to explain, approve, and audit. | `agents.json`, RBAC, approvals, and audit logs make access explicit. |
-| Every team rebuilds deployment, governance, and collaboration from scratch. | One workspace gives teams and platform engineers the same foundation. |
+| ❌ Prototypes work in Claude, Codex, or Lovable, then stall before production. | ✅ Apps are generated inside a governed workspace with the runtime pieces already there. |
+| ❌ Agents work in separate chats and lose the context your team is acting on. | ✅ Agents and humans share the same app, real-time DB, and interface. |
+| ❌ Every integration becomes a one-off security project. | ✅ Second generates scoped tools and keeps secrets server-side. |
+| ❌ Agent permissions are hard to explain, approve, and audit. | ✅ `agents.json`, RBAC, approvals, and audit logs make access explicit. |
+| ❌ Every team rebuilds deployment, governance, and collaboration from scratch. | ✅ One workspace gives teams and platform engineers the same foundation. |
 
 <br>
 
@@ -175,16 +176,14 @@ On top of that, Second handles the hard parts:
 
 Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
 
-| Use Case | What Agents Do |
-|:---|:---|
-| **Competitor intelligence** | Monitor competitors, aggregate news, alert on pricing changes, collect case studies |
-| **Lead enrichment pipelines** | Research and qualify leads while your team reviews and acts |
-| **Content operations** | Draft, research, and organize while editors review in real-time |
-| **Customer success dashboards** | Pull data from CRMs and support tools; teams act on insights |
-| **Internal knowledge bases** | Continuously index and organize docs; teams search and annotate |
-| **Compliance monitoring** | Scan for policy violations; approvers review and resolve |
+- **Competitor intelligence:** Agents monitor competitors, aggregate news, alert on pricing changes, and collect case studies.
+- **Lead enrichment pipelines:** Agents research and qualify leads while your team reviews and acts.
+- **Content operations:** Agents draft, research, and organize while editors review in real time.
+- **Customer success dashboards:** Agents pull data from CRMs and support tools so teams can act on insights.
+- **Internal knowledge bases:** Agents continuously index and organize docs while teams search and annotate.
+- **Compliance monitoring:** Agents scan for policy violations while approvers review and resolve.
 
-### Example: Competitor Research
+<!-- ### Example: Competitor Research
 
 From a single prompt, build an app where agents:
 - Produce a live **news feed** of latest competitor updates
@@ -192,9 +191,9 @@ From a single prompt, build an app where agents:
 - Maintain a **research overview** page with structured analysis
 - Collect and store **PDFs and case studies** found across the web
 
-Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
+-->
 
-The flexibility is unlimited. If your workflow involves humans and agents collaborating on structured data, Second handles the infrastructure so you can focus on the work.
+Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
 
 <br>
 
