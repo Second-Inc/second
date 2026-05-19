@@ -28,7 +28,7 @@
 </p>
 
 ## Quick Start
-Run Second locally with one command:
+Run Second locally:
 ```bash
 npx --yes @second-inc/cli
 ```
