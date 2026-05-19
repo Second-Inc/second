@@ -28,7 +28,7 @@
 </p>
 
 ## Quick Start
-
+Run Second locally with one command:
 ```bash
 npx --yes @second-inc/cli
 ```
@@ -330,13 +330,46 @@ Agents run in the Worker. App-data writes, tool calls, secret resolution, and au
 
 ## CLI
 
+Run Second locally with one command:
+
 ```bash
-npx --yes @second-inc/cli              # Start Second
-npx --yes @second-inc/cli stop         # Stop all services
-npx --yes @second-inc/cli reset        # Stop + delete all data
-npx --yes @second-inc/cli --port 4000  # Custom port
+npx --yes @second-inc/cli
+```
+
+| Platform | Status |
+|:---|:---|
+| Apple Silicon Mac (M1-M5) | **Available now** |
+| Intel Mac, Linux, Windows | Coming soon |
+
+<details>
+<summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
+<br>
+
+```bash
+npx --yes @second-inc/cli                      # Start Second
+npx --yes @second-inc/cli stop                 # Stop all services
+npx --yes @second-inc/cli reset                # Stop + delete all data
+npx --yes @second-inc/cli --port 4000          # Custom port
 npx --yes @second-inc/cli --disable-telemetry  # No analytics
 ```
+
+</details>
+
+<details>
+<summary>&nbsp;&nbsp;<strong>Development from Source</strong></summary>
+<br>
+
+**Prerequisites:** Node.js 20+, npm 10+, Docker Desktop
+
+This starts MongoDB + Redis in Docker, and the web + worker processes on your host. Open the URL printed by the script or check `.second-dev.txt`.
+
+```bash
+git clone https://github.com/Second-Inc/second.git
+cd second
+npm run dev
+```
+
+</details>
 
 <br>
 
@@ -345,12 +378,6 @@ npx --yes @second-inc/cli --disable-telemetry  # No analytics
 We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [docs](https://docs.second.so) for architecture details and development setup.
 Report security issues privately; see [SECURITY.md](SECURITY.md).
-
-```bash
-git clone https://github.com/Second-Inc/second.git
-cd second
-npm run dev
-```
 
 <br>
 
