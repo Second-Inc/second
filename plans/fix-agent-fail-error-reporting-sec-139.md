@@ -148,6 +148,10 @@ The important invariant is tenant isolation: every browser route must authorize 
 - [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
 - [x] 2026-05-19 - Removed reconnect-state leakage from the composer placeholder and rendered submitted turns from live messages instead of deferred messages, preventing transient "Connecting to stream..." in the composer and pre-user-message Working jitter.
 - [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Added a focus/visibility catch-up path for background tabs that miss or delay workspace realtime run events; when the tab becomes active it fetches the authorized run snapshot and attaches if the run is streaming.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Made remote `run.starting` events show the visible "Connecting to stream..." state immediately while the snapshot/resume attach path runs, so observer tabs show initialization consistently before `run.stream_ready`.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
 - [ ] Browser QA not run.
 
 
@@ -631,6 +635,8 @@ Planning outcome:
 - 2026-05-19 - Fixed the retry contract implementation: the client now resubmits with the original user `messageId`, letting the AI SDK truncate the interrupted assistant response while preserving the message id expected by the server.
 - 2026-05-19 - Relaxed the retry claim predicate: explicit retry now requires `status: failed`, `failure.retryable: true`, request history length at least the persisted history length, and the request's latest user message id matching `retryLastMessageId`; it no longer requires the persisted latest user id to match.
 - 2026-05-19 - Kept local composer sends visually local: the composer no longer shows "Connecting to stream..." for run sync loading, and submitted-message renders use live `messages` so the optimistic user bubble appears before the chat-level Working indicator.
+- 2026-05-19 - Added best-effort tab activation recovery for multi-tab chat sync. This keeps GET routes read-only and avoids polling, but lets a returning tab recover like a freshly opened tab if it missed BroadcastChannel-delivered run events in the background.
+- 2026-05-19 - Remote observer tabs now enter sync-loading immediately on `run.starting`; `run.stream_ready` still follows the existing snapshot-first resume behavior.
 
 
 ## Captured User Intent (Verbatim)

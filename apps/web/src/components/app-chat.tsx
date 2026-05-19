@@ -1547,7 +1547,9 @@ function useRunSync({
     shouldPollRef.current = shouldPoll;
   }, [shouldPoll]);
 
-  const startLiveSyncRef = useRef<(options?: { force?: boolean }) => void>(
+  const startLiveSyncRef = useRef<
+    (options?: { force?: boolean; showLoading?: boolean }) => void
+  >(
     () => {},
   );
   useEffect(() => {
@@ -1562,6 +1564,9 @@ function useRunSync({
       resumeActiveRef.current = true;
       lastResumeAttemptAtRef.current = Date.now();
       setShouldPoll(false);
+      if (options?.showLoading) {
+        setIsSyncLoading(true);
+      }
 
       const beginResume = () => {
         if (syncGenRef.current !== gen) return;
@@ -1860,7 +1865,9 @@ function useRunSync({
     if (currentStatus === "streaming" || currentStatus === "submitted") return;
 
     // run.starting/run.stream_ready: another tab or a resumed POST is active.
-    if (event.type === "run.starting" || event.type === "run.stream_ready") {
+    if (event.type === "run.starting") {
+      startLiveSyncRef.current({ force: true, showLoading: true });
+    } else if (event.type === "run.stream_ready") {
       startLiveSyncRef.current({ force: true });
     } else if (event.type === "run.completed" || event.type === "run.failed") {
       setShouldPoll(false);
@@ -1886,6 +1893,69 @@ function useRunSync({
     statusRef,
     workspaceId,
   ]));
+
+  // A background tab can miss or delay BroadcastChannel-delivered workspace
+  // events. When it becomes active again, catch up from the authorized run
+  // snapshot and attach if the run is streaming.
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+
+    const catchUpIfVisible = async () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      if (inFlight) return;
+      const currentStatus = statusRef.current;
+      if (currentStatus === "streaming" || currentStatus === "submitted") return;
+      const url = chatApiUrlRef.current;
+      if (!url) return;
+
+      inFlight = true;
+      try {
+        const res = await fetchRunSnapshot(url);
+        if (!res.ok || cancelled) return;
+        const snapshot = (await res.json()) as ChatRunSnapshot;
+        if (cancelled) return;
+        onSnapshotRef.current?.(snapshot);
+        safeSetMessagesIfIdle(snapshot.messages ?? []);
+        if (snapshot.status === "streaming") {
+          startLiveSyncRef.current({ force: true });
+        } else {
+          setShouldPoll(false);
+          setIsSyncLoading(false);
+        }
+      } catch {
+        // Focus catch-up is best-effort; realtime and later navigation can recover.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void catchUpIfVisible();
+      }
+    };
+    const onFocus = () => {
+      void catchUpIfVisible();
+    };
+    const onPageShow = () => {
+      void catchUpIfVisible();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [fetchRunSnapshot, safeSetMessagesIfIdle, statusRef]);
 
   return isSyncLoading;
 }
