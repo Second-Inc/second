@@ -3696,12 +3696,13 @@ export function AppChat({
 
               const seenReasoning = new Set<string>();
               const assistantText = messageText(msg);
+              const assistantHasContent = assistantHasVisibleContent(msg);
               const assistantTurnEnded =
                 assistantTurnHasEnded(displayMessages, messageIndex) ||
                 assistantActionsReady;
               const canShowAssistantActions =
                 assistantActionsReady &&
-                assistantHasVisibleContent(msg) &&
+                assistantHasContent &&
                 assistantTurnEnded;
               const retryUserTurn = findUserTurnBeforeMessage(messages, msg.id);
 
@@ -4081,11 +4082,20 @@ export function AppChat({
 
                       return null;
                     })}
-                    {canShowAssistantActions ? (
-                      <div className="not-prose -ml-0.5 -mt-2 flex h-8 animate-in fade-in-0 duration-300 ease-out items-center gap-1">
+                    {assistantHasContent ? (
+                      <div
+                        className={cn(
+                          "not-prose -ml-0.5 -mt-2 flex h-8 items-center gap-1 transition-opacity duration-300 ease-out",
+                          canShowAssistantActions
+                            ? "pointer-events-auto opacity-100"
+                            : "pointer-events-none opacity-0",
+                        )}
+                        aria-hidden={!canShowAssistantActions}
+                      >
                         <MessageActionButton
                           label="Copy message"
                           icon={CopyIcon}
+                          disabled={!canShowAssistantActions}
                           active={copiedMessageId === msg.id}
                           activeIcon={CheckIcon}
                           onClick={() => void copyMessageText(msg.id, assistantText)}
@@ -4093,7 +4103,11 @@ export function AppChat({
                         <MessageActionButton
                           label="Try again"
                           icon={RotateCcw}
-                          disabled={messageMutationDisabled || !retryUserTurn}
+                          disabled={
+                            !canShowAssistantActions ||
+                            messageMutationDisabled ||
+                            !retryUserTurn
+                          }
                           onClick={() => {
                             if (!retryUserTurn) return;
                             rerunUserMessage(retryUserTurn.message.id, {
