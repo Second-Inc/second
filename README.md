@@ -48,7 +48,7 @@ Most platforms were not built for deep, multiplayer, asynchronous work with AI a
 
 **Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built — and most importantly work alongside your human team.
 
-Second is open-source, self-hosted, and bring your own agent.
+Second is open-source, self-hosted, bring your own agent.
 
 > [!TIP]
 > **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
