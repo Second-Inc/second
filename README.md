@@ -340,19 +340,6 @@ npx --yes @second-inc/cli --disable-telemetry  # No analytics
 
 <br>
 
-## Platform Support
-
-| Platform | Status |
-|:---|:---|
-| Apple Silicon (M1–M5) | **Available** |
-| Intel Mac | Coming soon |
-| Linux (x86_64) | Coming soon |
-| Windows (WSL2) | Coming soon |
-
-Source development (Docker mode) works on any platform with Docker Desktop.
-
-<br>
-
 ## Contributing
 
 We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
