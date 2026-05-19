@@ -66,6 +66,10 @@ Product analytics are enabled by default after onboarding in anonymized mode,
 and events are forwarded by the web app's same-origin analytics endpoint. If
 you do not want a deployment to send PostHog analytics, set
 `SECOND_POSTHOG_DISABLED=1` or `SECOND_TELEMETRY_DISABLED=1`.
+The same public PostHog token and host are also used for the separate
+off-by-default screen recording opt-in in Usage data settings. Screen recording
+uses PostHog's browser session replay SDK and only starts when a user explicitly
+enables it in non-anonymized mode.
 
 `SECOND_SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` are public Sentry DSNs, not
 private API keys. Error reporting is enabled by default with masked replay on

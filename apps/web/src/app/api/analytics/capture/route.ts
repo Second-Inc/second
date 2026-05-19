@@ -58,20 +58,36 @@ const ANONYMIZED_OMIT_KEYS = new Set([
   "agent_name",
   "agent_ids",
   "agent_names",
+  "agent_descriptions",
+  "agent_system_prompts",
+  "agent_tool_names",
+  "agent_tool_display_names",
+  "agent_integration_names",
+  "agent_integration_domains",
+  "agent_data_collection_names",
   "agents",
   "message",
   "prompt",
+  "plan_overview",
+  "plan_features",
+  "plan_data_flow",
+  "plan_agents",
+  "plan_backend",
+  "plan_feature_names",
   "error",
   "error_message",
   "suggestion_title",
   "suggestion_titles",
+  "suggestion_subtitles",
   "suggestions",
+  "integration_domains",
   "page_url",
   "pathname",
   "referrer",
 ]);
 
 const MAX_STRING_LENGTH = 2_000;
+const MAX_APPROVAL_STRING_LENGTH = 20_000;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 80;
 const MAX_DEPTH = 8;
@@ -106,7 +122,12 @@ function sanitizeValue(
   depth = 0,
 ): AnalyticsValue | undefined {
   if (value === null) return null;
-  if (typeof value === "string") return value.slice(0, MAX_STRING_LENGTH);
+  if (typeof value === "string") {
+    const maxLength = event === "approval shown"
+      ? MAX_APPROVAL_STRING_LENGTH
+      : MAX_STRING_LENGTH;
+    return value.slice(0, maxLength);
+  }
   if (typeof value === "boolean") return value;
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : undefined;

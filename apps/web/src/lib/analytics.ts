@@ -3,6 +3,7 @@
 export type AnalyticsConsent = {
   shareUsageData: boolean;
   anonymizeUsageData: boolean;
+  recordScreen: boolean;
   dismissed: boolean;
 };
 
@@ -25,6 +26,7 @@ const MAX_TEXT_PROPERTY_LENGTH = 2000;
 const DEFAULT_CONSENT: AnalyticsConsent = {
   shareUsageData: true,
   anonymizeUsageData: true,
+  recordScreen: false,
   dismissed: false,
 };
 
@@ -41,14 +43,29 @@ const ANONYMIZED_OMIT_KEYS = new Set([
   "agent_name",
   "agent_ids",
   "agent_names",
+  "agent_descriptions",
+  "agent_system_prompts",
+  "agent_tool_names",
+  "agent_tool_display_names",
+  "agent_integration_names",
+  "agent_integration_domains",
+  "agent_data_collection_names",
   "agents",
   "message",
   "prompt",
+  "plan_overview",
+  "plan_features",
+  "plan_data_flow",
+  "plan_agents",
+  "plan_backend",
+  "plan_feature_names",
   "error",
   "error_message",
   "suggestion_title",
   "suggestion_titles",
+  "suggestion_subtitles",
   "suggestions",
+  "integration_domains",
   "page_url",
   "pathname",
   "referrer",
@@ -154,11 +171,13 @@ function normalizeConsent(value: unknown): AnalyticsConsent {
       ? (value as Record<string, unknown>)
       : {};
   const wasExplicitlyDisabled = record.shareUsageData === false;
+  const anonymizeUsageData = wasExplicitlyDisabled
+    ? true
+    : record.anonymizeUsageData !== false;
   return {
     shareUsageData: true,
-    anonymizeUsageData: wasExplicitlyDisabled
-      ? true
-      : record.anonymizeUsageData !== false,
+    anonymizeUsageData,
+    recordScreen: record.recordScreen === true && !anonymizeUsageData,
     dismissed: record.dismissed === true,
   };
 }
