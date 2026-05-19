@@ -116,6 +116,8 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
   </tr>
 </table>
 
+---
+
 ## Core Philosophy: Agent-Native Software
 
 Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
@@ -127,8 +129,6 @@ On top of that, Second handles the hard parts:
 | **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
 | **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
 | **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
-
-<br>
 
 ## Features
 
@@ -177,8 +177,6 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 </tr>
 </table>
 
-<br>
-
 <!-- ## Second Is Right For You If
 
 - ✅ Your team has Claude, Codex, or Lovable prototypes that need to become real production software.
@@ -200,7 +198,7 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 | ❌ Agent permissions are hard to explain, approve, and audit. | ✅ `agents.json`, RBAC, approvals, and audit logs make access explicit. |
 | ❌ Every team rebuilds deployment, governance, and collaboration from scratch. | ✅ One workspace gives teams and platform engineers the same foundation. |
 
-<br>
+---
 
 ## What You Can Build
 
@@ -225,7 +223,7 @@ From a single prompt, build an app where agents:
 
 Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
 
-<br>
+---
 
 ## Security & Governance
 
@@ -242,8 +240,6 @@ Second is designed for enterprise teams that need complete control over what hum
 | **Audit logs** | Every action recorded: app changes, agent tool calls, data writes, access denials, integration usage. Secrets are never stored, only hashes and metadata. |
 | **Workspace isolation** | Complete tenant isolation. Every query scoped to `workspaceId`. Cross-workspace access returns `404`, not `403`, to prevent resource enumeration. |
 | **Subprocess hardening** | Infrastructure secrets scrubbed from agent subprocess environments. Linux deployments use `bubblewrap` sandboxing. CLI runtimes get allowlisted env + private per-app HOME. |
-
-<br>
 
 ### `agents.json`: Agent Policy as Code
 
@@ -286,8 +282,6 @@ Every app's agent capabilities are declared, version-controlled, and approved:
 </td></tr>
 </table>
 
-<br>
-
 ## Self-Hosting
 
 Second runs on your infrastructure: your k8s cluster, your VPC, your rules.
@@ -295,9 +289,7 @@ Second runs on your infrastructure: your k8s cluster, your VPC, your rules.
 For full environment setup, see the [self-hosting docs](https://docs.second.so/self-hosting).
 
 > [!TIP]
-> Need help with security, deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
-
-<br>
+> Need help with security, SSO, deployment, cost management, runtime setup, or SLA support? Contact [sales@second.so](mailto:sales@second.so).
 
 ### Production Requirements
 
