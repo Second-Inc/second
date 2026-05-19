@@ -132,6 +132,10 @@ The important invariant is tenant isolation: every browser route must authorize 
 - [x] 2026-05-19 15:38 IDT - Added an authenticated `POST /chat/stop` route plus worker `/sessions/:appId/cancel` support and runtime abort propagation for Claude, Codex, and OpenCode paths.
 - [x] 2026-05-19 15:38 IDT - Added client chat stream error reporting, visible failure/retry UI, and retry message restoration into the composer.
 - [x] 2026-05-19 15:38 IDT - Ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 16:38 IDT - Added defensive handling for the stop-during-initialization regression by preventing a stopped lease from starting the worker, guarding worker stream enqueue after cancellation, suppressing stopped-run error flicker, and avoiding stale stream-ready reconnect flashes.
+- [x] 2026-05-19 16:38 IDT - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Simplified the user-facing Stop behavior: Stop is disabled while a turn is still initializing and only becomes clickable after the assistant turn has started streaming; terminal runs no longer enter the initial live-sync loading path.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
 - [ ] Browser QA not run.
 
 
@@ -147,6 +151,7 @@ The important invariant is tenant isolation: every browser route must authorize 
 - The default Sentry DSN exists in `apps/web/src/lib/sentry-public-config.ts`; the Sentry API token is available after sourcing `~/.zshrc`.
 - Sentry issue `7491322966` is relevant to SEC-139. It is titled `Error: Timeout waiting for ack`, has culprit `GET /api/workspaces/[workspaceId]/apps/[appId]/runs/[runId]/chat/stream`, is unresolved, and had 50 events between `2026-05-19T06:48:31.321000Z` and `2026-05-19T06:52:23Z`.
 - Recent Sentry events came from release `0.1.25`, runtime `node v22.14.0`, browser tag `Chrome 147`, OS tag `macOS 26.3`, and a local URL shape for workspace `syntaxgtm` with object IDs scrubbed by the Sentry helper. The error originates in `resumable-stream/src/runtime.ts` with value `Timeout waiting for ack`.
+- Sentry issue `7492038617` is the follow-up regression from stopping during early "Working" initialization. It is titled `TypeError: fetch failed`, points at `streamFromWorker` on the chat POST, and had 9 events between `2026-05-19T13:16:19.319000Z` and `2026-05-19T13:23:46Z`. The implementation was still able to call the worker after `/chat/stop` had marked the run stopped, and the worker stream could enqueue an error into a canceled stream during that race.
 
 
 ## Decision Log
@@ -606,6 +611,8 @@ Planning outcome:
 - 2026-05-19 - Made retry an explicit sub-goal, response contract, UI requirement, manual QA scenario, and acceptance criterion.
 - 2026-05-19 - Specified retry button placement: inline in the chat transcript at the failed turn, not hidden in the composer/sidebar.
 - 2026-05-19 - Implemented the plan across the builder chat route, run repository, worker session/runtime cancellation, Sentry reporting helpers, AppChat failure/retry UI, and audit event descriptions.
+- 2026-05-19 - Added defensive early-stop race handling: the chat POST now re-checks lease ownership immediately before worker connection, worker SSE enqueue/close is safe after cancellation, AppChat uses the AI SDK abort signal for intentional Stop without a second custom abort controller, stopped runs suspend live reconnect observers until the next send, and reconnect sync fetches run state before showing "Connecting to stream...".
+- 2026-05-19 - Simplified the product behavior after regression review: Stop is not available during the unsafe initialization window. The button remains disabled while the latest turn has only the user message; it becomes available once an assistant stream part exists. This avoids racing a half-created worker turn.
 
 
 ## Captured User Intent (Verbatim)

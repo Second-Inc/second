@@ -51,7 +51,7 @@ async function cancelWorkerTurn(input: {
   workerUrl: string;
   appId: string;
   runId: string;
-}): Promise<{ ok: boolean; status?: number; error?: string }> {
+}): Promise<{ ok: boolean; cancelled: boolean; status?: number; error?: string }> {
   try {
     const response = await workerFetch(`/sessions/${input.appId}/cancel`, {
       workerUrl: input.workerUrl,
@@ -65,14 +65,23 @@ async function cancelWorkerTurn(input: {
     if (!response.ok) {
       return {
         ok: false,
+        cancelled: false,
         status: response.status,
         error: `Worker cancel returned ${response.status}`,
       };
     }
-    return { ok: true, status: response.status };
+    const body = (await response.json().catch(() => null)) as
+      | { cancelled?: unknown }
+      | null;
+    return {
+      ok: true,
+      cancelled: body?.cancelled === true,
+      status: response.status,
+    };
   } catch (error) {
     return {
       ok: false,
+      cancelled: false,
       error: error instanceof Error ? error.message : "Worker cancel failed",
     };
   }
@@ -178,7 +187,7 @@ export async function POST(request: Request, context: StopRouteContext) {
     action: "stopped",
     summary: `Stopped builder run for ${access.app.name}.`,
     metadata: {
-      workerCancelled: workerCancel.ok,
+      workerCancelled: workerCancel.cancelled,
       workerStatus: workerCancel.status,
       streamLeaseHash: auditSha256(run.streamLease?.id ?? "none"),
     },
@@ -189,7 +198,7 @@ export async function POST(request: Request, context: StopRouteContext) {
     ok: true,
     status: "failed",
     stopped,
-    workerCancelled: workerCancel.ok,
+    workerCancelled: workerCancel.cancelled,
     failure,
   });
 }

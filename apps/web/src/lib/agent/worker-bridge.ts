@@ -651,34 +651,39 @@ export async function streamFromWorker(
   };
   trace("stream.start");
 
-  const response = await workerFetch(`/sessions/${options.appId}/messages`, {
-    workerUrl: options.workerUrl,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompt: options.prompt,
-      systemPrompt: options.systemPrompt,
-      runtimeId: options.runtimeSettings.runtimeId,
-      runtimeModel: options.runtimeSettings.model,
-      runtimeParams: options.runtimeSettings.params,
-      runtimeMode: options.runtimeMode,
-      selectedSkills: options.selectedSkills,
-      workingDirectory: options.workingDirectory,
-      allowedTools: options.allowedTools,
-      maxTurns: options.maxTurns,
-      sessionState: options.sessionState,
-      sourceFiles: options.sourceFiles,
-      agentConfig: options.agentConfig,
-      workspaceId: options.workspaceId,
-      appName: options.appName,
-      requestedByUserId: options.requestedByUserId,
-      requestedByUserName: options.requestedByUserName,
-    }),
-    signal: options.signal,
-  });
+  let response: Response;
+  try {
+    response = await workerFetch(`/sessions/${options.appId}/messages`, {
+      workerUrl: options.workerUrl,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: options.prompt,
+        systemPrompt: options.systemPrompt,
+        runtimeId: options.runtimeSettings.runtimeId,
+        runtimeModel: options.runtimeSettings.model,
+        runtimeParams: options.runtimeSettings.params,
+        runtimeMode: options.runtimeMode,
+        selectedSkills: options.selectedSkills,
+        workingDirectory: options.workingDirectory,
+        allowedTools: options.allowedTools,
+        maxTurns: options.maxTurns,
+        sessionState: options.sessionState,
+        sourceFiles: options.sourceFiles,
+        agentConfig: options.agentConfig,
+        workspaceId: options.workspaceId,
+        appName: options.appName,
+        requestedByUserId: options.requestedByUserId,
+        requestedByUserName: options.requestedByUserName,
+      }),
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw new Error("Could not connect to the agent worker.", { cause: error });
+  }
 
   if (!response.ok || !response.body) {
-    throw new Error(`Worker returned ${response.status}`);
+    throw new Error(`Agent worker returned ${response.status}`);
   }
 
   // --- Usage tracking ---
@@ -812,7 +817,15 @@ export async function streamFromWorker(
       await reader.cancel().catch(() => {});
       throw new Error("Worker stream cancelled");
     }
-    const { done, value } = await reader.read();
+    let readResult: ReadableStreamReadResult<Uint8Array>;
+    try {
+      readResult = await reader.read();
+    } catch (error) {
+      throw new Error("Lost connection to the agent worker stream.", {
+        cause: error,
+      });
+    }
+    const { done, value } = readResult;
     if (done) break;
 
     sseBuffer += decoder.decode(value, { stream: true });

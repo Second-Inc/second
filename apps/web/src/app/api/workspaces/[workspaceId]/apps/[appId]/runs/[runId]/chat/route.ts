@@ -21,6 +21,7 @@ import {
   getAppSourceFiles,
   loadRuntimeSkillsByRefs,
   loadRunForApp,
+  loadRunStreamStateForApp,
   markAppDraftEdited,
   markPendingAppReviewRequestSuperseded,
   saveAppSourceFiles,
@@ -98,13 +99,48 @@ function chatRouteShape(): string {
 }
 
 function sanitizedErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.replace(/\s+/g, " ").trim().slice(0, 240);
+  const clean = (value: string) => value.replace(/\s+/g, " ").trim();
+  const errorMessage =
+    error instanceof Error && error.message.trim()
+      ? clean(error.message)
+      : typeof error === "string" && error.trim()
+        ? clean(error)
+        : fallback;
+  const cause = error instanceof Error
+    ? (error as Error & { cause?: unknown }).cause
+    : null;
+  const causeMessage =
+    cause instanceof Error && cause.message.trim()
+      ? clean(cause.message)
+      : typeof cause === "string" && cause.trim()
+        ? clean(cause)
+        : null;
+
+  let rootCause = cause;
+  const seen = new Set<unknown>();
+  while (
+    rootCause instanceof Error &&
+    !seen.has(rootCause) &&
+    (rootCause as Error & { cause?: unknown }).cause instanceof Error
+  ) {
+    seen.add(rootCause);
+    rootCause = (rootCause as Error & { cause?: unknown }).cause;
   }
-  if (typeof error === "string" && error.trim()) {
-    return error.replace(/\s+/g, " ").trim().slice(0, 240);
+  const rootMessage =
+    rootCause instanceof Error && rootCause.message.trim()
+      ? clean(rootCause.message)
+      : typeof rootCause === "string" && rootCause.trim()
+        ? clean(rootCause)
+        : null;
+  const details = [causeMessage, rootMessage]
+    .filter((value): value is string => Boolean(value))
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .filter((value) => !errorMessage.includes(value));
+
+  if (details.length > 0) {
+    return `${errorMessage}: ${details.join(": ")}`.slice(0, 240);
   }
-  return fallback;
+  return errorMessage.slice(0, 240);
 }
 
 function createFailure(input: {
@@ -124,6 +160,29 @@ function createFailure(input: {
       ? { reported: { sentryEventId: input.sentryEventId } }
       : {}),
   };
+}
+
+async function loadCurrentRunStreamState(input: {
+  runId: string;
+  workspaceId: string;
+  appId: string;
+}) {
+  return loadRunStreamStateForApp(
+    input.runId,
+    input.workspaceId,
+    input.appId,
+  ).catch(() => null);
+}
+
+function streamLeaseStillOwned(
+  state: Awaited<ReturnType<typeof loadRunStreamStateForApp>> | null,
+  leaseId: string,
+): boolean {
+  return state?.status === "streaming" && state.streamLease?.id === leaseId;
+}
+
+function isUserStoppedFailure(failure: AgentRunFailure | null | undefined): boolean {
+  return failure?.code === "user_stopped" || failure?.code === "worker_cancel_failed";
 }
 
 function createChatErrorStreamResponse(input: {
@@ -898,6 +957,24 @@ export async function POST(request: Request, context: ChatRouteContext) {
 
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
+      const currentState = await loadCurrentRunStreamState({
+        runId,
+        workspaceId: workspaceContext.workspaceId,
+        appId,
+      });
+      if (!streamLeaseStillOwned(currentState, streamLeaseId)) {
+        runFailed.current = true;
+        if (!isUserStoppedFailure(currentState?.failure)) {
+          writer.write({
+            type: "error",
+            errorText:
+              currentState?.failure?.message ??
+              "The run stopped before the worker stream started. Retry the message to continue.",
+          });
+        }
+        return;
+      }
+
       const bridgeResult = await streamFromWorker(writer, {
           workerUrl,
           appId,
@@ -921,6 +998,21 @@ export async function POST(request: Request, context: ChatRouteContext) {
             error,
             "Worker stream failed",
           );
+          const currentFailureState = await loadCurrentRunStreamState({
+            runId,
+            workspaceId: workspaceContext.workspaceId,
+            appId,
+          });
+          if (!streamLeaseStillOwned(currentFailureState, streamLeaseId)) {
+            if (!isUserStoppedFailure(currentFailureState?.failure)) {
+              writer.write({
+                type: "error",
+                errorText: currentFailureState?.failure?.message ?? errorMessage,
+              });
+            }
+            return null;
+          }
+
           const sentryEventId = reportServerError({
             source: "agent_chat_worker_stream",
             error,
@@ -935,7 +1027,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
               messageCount: messagesForRun.length,
             },
           });
-          await failRun({
+          const failedRun = await failRun({
             runId,
             workspaceId: workspaceContext.workspaceId,
             appId,
@@ -949,6 +1041,20 @@ export async function POST(request: Request, context: ChatRouteContext) {
               sentryEventId,
             }),
           });
+          if (!failedRun) {
+            const latestFailureState = await loadCurrentRunStreamState({
+              runId,
+              workspaceId: workspaceContext.workspaceId,
+              appId,
+            });
+            if (!isUserStoppedFailure(latestFailureState?.failure)) {
+              writer.write({
+                type: "error",
+                errorText: latestFailureState?.failure?.message ?? errorMessage,
+              });
+            }
+            return null;
+          }
           if (!isWorkspaceAgentRun) {
             void recordAuditEvent({
               workspaceId: workspaceContext.workspaceId,

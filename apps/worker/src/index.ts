@@ -294,26 +294,55 @@ app.post("/sessions/:appId/messages", async (c) => {
     );
   });
 
-  const stream = new ReadableStream({
+  let streamClosed = false;
+
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const enqueue = (chunk: Uint8Array): boolean => {
+        if (streamClosed) return false;
+        try {
+          controller.enqueue(chunk);
+          return true;
+        } catch {
+          streamClosed = true;
+          return false;
+        }
+      };
+      const close = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try {
+          controller.close();
+        } catch {
+          // The client may have already disconnected or cancelled the stream.
+        }
+      };
+
       try {
         for await (const msg of session.sendMessage(
           body.prompt,
           runtimeSettings,
           getWorkerBaseUrl(),
         )) {
-          controller.enqueue(encodeMessage(msg));
+          if (!enqueue(encodeMessage(msg))) {
+            session.cancelCurrentRun("stream_closed");
+            return;
+          }
         }
-        controller.enqueue(encodeDone());
+        enqueue(encodeDone());
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
           `[worker] message stream failed appId=${appId} runtime=${runtimeSettings.runtimeId} model=${runtimeSettings.model}: ${message}`,
         );
-        controller.enqueue(encodeError(message));
+        enqueue(encodeError(message));
       } finally {
-        controller.close();
+        close();
       }
+    },
+    cancel() {
+      streamClosed = true;
+      session.cancelCurrentRun("stream_cancelled");
     },
   });
 

@@ -102,6 +102,42 @@ function normalizeError(error: unknown, fallback: string): Error {
   return new Error(fallback);
 }
 
+function errorCauseChain(error: unknown): Array<Record<string, unknown>> {
+  const chain: Array<Record<string, unknown>> = [];
+  const seen = new Set<unknown>();
+  let current = error;
+
+  while (current instanceof Error && !seen.has(current) && chain.length < 5) {
+    seen.add(current);
+    chain.push({
+      name: current.name,
+      message: cleanString(current.message),
+      code: sanitizeValue("code", (current as Error & { code?: unknown }).code),
+    });
+    current = (current as Error & { cause?: unknown }).cause;
+  }
+
+  if (typeof current === "string" && current.trim() && chain.length < 5) {
+    chain.push({ name: "StringCause", message: cleanString(current) });
+  }
+
+  return chain;
+}
+
+function errorDetails(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return {};
+  const chain = errorCauseChain(error);
+  const rootCause = chain.at(-1);
+  return {
+    errorName: error.name,
+    errorMessage: cleanString(error.message),
+    causeChain: chain,
+    rootCauseName: rootCause?.name,
+    rootCauseMessage: rootCause?.message,
+    rootCauseCode: rootCause?.code,
+  };
+}
+
 export function reportServerError(input: ReportServerErrorInput): string | null {
   if (!readSentryDsn()) return null;
 
@@ -125,6 +161,7 @@ export function reportServerError(input: ReportServerErrorInput): string | null 
       source: input.source,
       message,
       route_shape: routeShape,
+      ...errorDetails(input.error),
       ...sanitizeContext(input.context),
     });
     return input.error

@@ -689,6 +689,23 @@ function latestUserText(messages: UIMessage[]): string {
   return "";
 }
 
+function latestAssistantTurnHasStarted(messages: UIMessage[]): boolean {
+  let latestUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      latestUserIndex = index;
+      break;
+    }
+  }
+
+  for (let index = latestUserIndex + 1; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant") continue;
+    if ((message.parts ?? []).some((part) => part != null)) return true;
+  }
+  return false;
+}
+
 function permissionKey(groupName: string, permission: string): string {
   return `${groupName.trim().toLowerCase()}::${permission.trim().toLowerCase()}`;
 }
@@ -1438,10 +1455,7 @@ function useRunSync({
   initialMessageCount: number;
 }): boolean {
   const [isSyncLoading, setIsSyncLoading] = useState(
-    () => initialRunStatus === "streaming",
-  );
-  const [isInitialCheckPending, setIsInitialCheckPending] = useState(
-    () => Boolean(chatApiUrl) && initialRunStatus !== "pending",
+    () => initialRunStatus === "streaming" && initialMessageCount > 0,
   );
   // When true, a setInterval polls GET /chat as a fallback for tabs
   // whose resumeStream() got 204 but the run is still active.
@@ -1519,73 +1533,95 @@ function useRunSync({
       const gen = syncGenRef.current;
       resumeActiveRef.current = true;
       lastResumeAttemptAtRef.current = Date.now();
-      setIsSyncLoading(true);
       setShouldPoll(false);
-      window.setTimeout(() => {
-        if (syncGenRef.current !== gen) return;
-        const liveStatus = statusRef.current;
-        if (liveStatus === "streaming" || liveStatus === "submitted") return;
-        // A reconnect request can sit behind old browser sockets. Keep
-        // syncing in the background, but do not pin the chat on "Working".
-        setIsSyncLoading(false);
-        setShouldPoll(true);
-      }, 10000);
 
-      // Fetch current messages first so the newest user message appears immediately.
-      const url = chatApiUrlRef.current;
-      if (url) {
-        fetchRunSnapshot(url)
-          .then((res) => res.json())
-          .then((snapshot: ChatRunSnapshot) => {
-            onSnapshotRef.current?.(snapshot);
-            safeSetMessagesIfIdle(snapshot.messages ?? []);
+      const beginResume = () => {
+        if (syncGenRef.current !== gen) return;
+        setIsSyncLoading(true);
+        window.setTimeout(() => {
+          if (syncGenRef.current !== gen) return;
+          const liveStatus = statusRef.current;
+          if (liveStatus === "streaming" || liveStatus === "submitted") return;
+          // A reconnect request can sit behind old browser sockets. Keep
+          // syncing in the background, but do not pin the chat on "Working".
+          setIsSyncLoading(false);
+          setShouldPoll(true);
+        }, 10000);
+
+        resumeStreamRef
+          .current()
+          .then(async () => {
+            // If useChat attached to stream, it will transition to submitted/streaming.
+            const liveStatus = statusRef.current;
+            if (liveStatus === "streaming" || liveStatus === "submitted") {
+              return;
+            }
+
+            const latestUrl = chatApiUrlRef.current;
+            if (!latestUrl) {
+              setIsSyncLoading(false);
+              setShouldPoll(false);
+              return;
+            }
+
+            try {
+              const res = await fetchRunSnapshot(latestUrl);
+              if (!res.ok) return;
+              const snapshot = (await res.json()) as ChatRunSnapshot;
+              onSnapshotRef.current?.(snapshot);
+              const messages = snapshot.messages ?? [];
+              const runStatus = snapshot.status ?? null;
+              safeSetMessagesIfIdle(messages);
+              if (runStatus === "streaming") {
+                // Resume didn't attach; keep this tab fresh via polling fallback.
+                setShouldPoll(true);
+              } else {
+                setShouldPoll(false);
+                setIsSyncLoading(false);
+              }
+            } catch {
+              setShouldPoll(true);
+            }
           })
-          .catch(() => {});
+          .catch(() => {
+            // Resume failed; polling fallback keeps this tab reasonably fresh.
+            setShouldPoll(true);
+          })
+          .finally(() => {
+            if (syncGenRef.current === gen) {
+              resumeActiveRef.current = false;
+            }
+          });
+      };
+
+      const url = chatApiUrlRef.current;
+      if (!url) {
+        beginResume();
+        return;
       }
 
-      resumeStreamRef
-        .current()
-        .then(async () => {
-          // If useChat attached to stream, it will transition to submitted/streaming.
-          const liveStatus = statusRef.current;
-          if (liveStatus === "streaming" || liveStatus === "submitted") {
+      // Fetch current messages first so stale stream-ready events don't flash
+      // a reconnect indicator after the run has already completed or failed.
+      fetchRunSnapshot(url)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((snapshot: ChatRunSnapshot | null) => {
+          if (syncGenRef.current !== gen) return;
+          if (!snapshot) {
+            beginResume();
             return;
           }
-
-          const latestUrl = chatApiUrlRef.current;
-          if (!latestUrl) {
-            setIsSyncLoading(false);
+          onSnapshotRef.current?.(snapshot);
+          safeSetMessagesIfIdle(snapshot.messages ?? []);
+          if (snapshot.status === "streaming") {
+            beginResume();
+          } else {
+            resumeActiveRef.current = false;
             setShouldPoll(false);
-            return;
-          }
-
-          try {
-            const res = await fetchRunSnapshot(latestUrl);
-            if (!res.ok) return;
-            const snapshot = (await res.json()) as ChatRunSnapshot;
-            onSnapshotRef.current?.(snapshot);
-            const messages = snapshot.messages ?? [];
-            const runStatus = snapshot.status ?? null;
-            safeSetMessagesIfIdle(messages);
-            if (runStatus === "streaming") {
-              // Resume didn't attach; keep this tab fresh via polling fallback.
-              setShouldPoll(true);
-            } else {
-              setShouldPoll(false);
-              setIsSyncLoading(false);
-            }
-          } catch {
-            setShouldPoll(true);
+            setIsSyncLoading(false);
           }
         })
         .catch(() => {
-          // Resume failed; polling fallback keeps this tab reasonably fresh.
-          setShouldPoll(true);
-        })
-        .finally(() => {
-          if (syncGenRef.current === gen) {
-            resumeActiveRef.current = false;
-          }
+          beginResume();
         });
     };
   });
@@ -1605,9 +1641,8 @@ function useRunSync({
       }, 0);
     };
 
-    if (!url) {
+    if (!url || initialRunStatus !== "streaming") {
       scheduleState(() => {
-        setIsInitialCheckPending(false);
         setIsSyncLoading(false);
       });
       return () => {
@@ -1619,16 +1654,11 @@ function useRunSync({
     }
 
     initialCheckTimer = window.setTimeout(() => {
-      if (!cancelled) {
-        setIsInitialCheckPending(false);
-      }
+      if (!cancelled) setIsSyncLoading(false);
     }, 5000);
 
     scheduleState(() => {
-      setIsInitialCheckPending(initialRunStatus !== "pending");
-      if (initialRunStatus === "streaming") {
-        setIsSyncLoading(true);
-      }
+      setIsSyncLoading(initialMessageCount > 0);
     });
 
     fetchRunSnapshot(url)
@@ -1663,7 +1693,6 @@ function useRunSync({
           if (initialCheckTimer !== null) {
             window.clearTimeout(initialCheckTimer);
           }
-          setIsInitialCheckPending(false);
         }
       });
 
@@ -1830,7 +1859,7 @@ function useRunSync({
     workspaceId,
   ]));
 
-  return isSyncLoading || isInitialCheckPending;
+  return isSyncLoading;
 }
 
 export function AppChat({
@@ -1930,7 +1959,6 @@ export function AppChat({
   // client-side route change must not explicitly abort them before MongoDB has
   // the final assistant/tool messages.
   const fetchAbortRef = useRef(new AbortController());
-  const chatPostAbortRef = useRef<AbortController | null>(null);
   const [liveSyncSuspended, setLiveSyncSuspended] = useState(false);
   useEffect(() => {
     // On each mount (including Strict-Mode remount) create a fresh
@@ -1981,23 +2009,14 @@ export function AppChat({
   const transportFetch = useCallback<typeof globalThis.fetch>(
     async (input, init) => {
       const isChatPost = init?.method === "POST";
-      const ownSignal = isChatPost
-        ? undefined
-        : fetchAbortRef.current.signal;
+      const ownSignal = isChatPost ? undefined : fetchAbortRef.current.signal;
       const signal = ownSignal && init?.signal
         ? ((AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any?.([init.signal, ownSignal]) ?? ownSignal)
         : (ownSignal ?? init?.signal);
-      const chatPostSignal = isChatPost
-        ? (() => {
-            const controller = new AbortController();
-            chatPostAbortRef.current = controller;
-            return controller.signal;
-          })()
-        : signal;
 
       const response = await globalThis.fetch(input, {
         ...init,
-        signal: chatPostSignal,
+        signal,
       });
       if (
         isChatPost &&
@@ -2049,7 +2068,7 @@ export function AppChat({
         : undefined,
     [chatApi, transportFetch],
   );
-  const { messages, sendMessage, status, error, setMessages, resumeStream, stop } =
+  const { messages, sendMessage, status, error, setMessages, resumeStream, stop, clearError } =
     useChat({
       id: runId ?? undefined,
       messages: initialMessages,
@@ -2570,7 +2589,9 @@ export function AppChat({
   const sendMessageSafely = useCallback(
     (text: string, attachmentsToSend: AttachmentReference[] = []) => {
       statusRef.current = "submitted";
+      setLiveSyncSuspended(false);
       setRunFailure(null);
+      clearError();
       const attachmentBody =
         attachmentsToSend.length > 0
           ? { attachments: attachmentsToSend }
@@ -2584,15 +2605,22 @@ export function AppChat({
         attachmentBody ? { body: attachmentBody } : undefined,
       );
     },
-    [sendMessage],
+    [clearError, sendMessage],
+  );
+  const canStopActiveRun = useMemo(
+    () => status === "streaming" && latestAssistantTurnHasStarted(messages),
+    [messages, status],
   );
   const stopBuilderRun = useCallback(async () => {
+    if (!canStopActiveRun) return;
     if (!chatApi) {
       stop();
       return;
     }
 
     setIsStopping(true);
+    setLiveSyncSuspended(true);
+    let stopSucceeded = false;
     try {
       const response = await fetch(`${chatApi}/stop`, {
         method: "POST",
@@ -2606,7 +2634,10 @@ export function AppChat({
         toast.error("Could not stop the run.", {
           description: snapshot?.error ?? "Please try again.",
         });
-      } else if (snapshot?.workerCancelled === false) {
+      } else {
+        stopSucceeded = true;
+      }
+      if (response.ok && snapshot?.failure?.code === "worker_cancel_failed") {
         toast.info("Run stopped locally.", {
           description: "The worker did not confirm cancellation, so this was reported.",
         });
@@ -2627,12 +2658,14 @@ export function AppChat({
         },
       });
     } finally {
-      chatPostAbortRef.current?.abort();
-      chatPostAbortRef.current = null;
       stop();
+      clearError();
       setIsStopping(false);
+      if (!stopSucceeded) {
+        setLiveSyncSuspended(false);
+      }
     }
-  }, [appId, chatApi, runId, stop, workspaceId]);
+  }, [appId, canStopActiveRun, chatApi, clearError, runId, stop, workspaceId]);
   const isBusy =
     status === "streaming" || status === "submitted" || isSyncLoading || isStopping;
   const isUploadingAttachments = attachments.some(
@@ -3603,11 +3636,12 @@ export function AppChat({
                   className="rounded-full"
                   disabled={
                     isStopping ||
-                    (!isBusy &&
-                      (Boolean(pendingApproval) ||
+                    (isBusy
+                      ? !canStopActiveRun
+                      : Boolean(pendingApproval) ||
                         isUploadingAttachments ||
                         (!input.trim() && readyAttachmentCount === 0) ||
-                        !chatApi))
+                        !chatApi)
                   }
                   onClick={() => {
                     if (isBusy) {
