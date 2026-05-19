@@ -83,6 +83,18 @@ Bring your own agent harness, switch runtimes and models per message, per app, w
   </tr>
 </table>
 
+## Core Philosophy: Agent-Native Software
+
+Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
+
+On top of that, Second handles the hard parts:
+
+| Capability | How It Works |
+|---|---|
+| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
+| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
+| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
+
 ## Personal Software Factory
 
 Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
@@ -117,18 +129,6 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
 </table>
 
 ---
-
-## Core Philosophy: Agent-Native Software
-
-Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
-
-On top of that, Second handles the hard parts:
-
-| Capability | How It Works |
-|---|---|
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
 
 ## Features
 
