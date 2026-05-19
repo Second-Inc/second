@@ -11,12 +11,12 @@ import {
   BarChart3Icon,
   CheckIcon,
   ShieldCheckIcon,
-  VideoIcon,
 } from "lucide-react";
 import {
   Balloons,
   type BalloonsHandle,
 } from "@/components/ui/balloons";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -75,7 +75,7 @@ function ConsentToggleRow({
       )}
       data-disabled={disabled || undefined}
     >
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center self-start rounded-md bg-muted text-muted-foreground">
         <Icon className="size-3.5" strokeWidth={1.8} />
       </div>
       <div className="min-w-0 flex-1">
@@ -278,38 +278,60 @@ export function AnalyticsConsentDialog({
             }}
           />
 
-          <div className="rounded-lg border border-border/80 bg-muted/30 px-3.5 py-3">
+          <div className="rounded-lg border border-border/80 bg-muted/30 px-3.5 py-3.5">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground ring-1 ring-border/80">
-                <VideoIcon className="size-3.5" strokeWidth={1.8} />
+                <span className="text-sm leading-none" aria-hidden="true">
+                  🙏
+                </span>
               </div>
-              <div className="min-w-0">
-                <div className="inline-flex rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                  Local Second is free to use.
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 text-sm font-medium tracking-tight text-foreground">
+                    Second is open-source and free to use.
+                  </div>
+                  <Badge
+                    variant="secondary"
+                    className="mt-px shrink-0 border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  >
+                    {consent.recordScreen ? "🙏 Thanks" : "🙏 Please"}
+                  </Badge>
                 </div>
-                <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-                  This would really help improve it. Screen recording captures the
-                  full Second interface in PostHog replay and turns off anonymization
-                  while enabled.
+                <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                  Support Second by allowing screen recording.
                 </p>
+
+                <div className="mt-4 flex items-center gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium tracking-tight text-foreground">
+                      Record this screen
+                    </div>
+                    <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                      Share full un-anonymized screen recordings for debugging local product flows.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={consent.recordScreen}
+                    aria-label="Record this screen"
+                    className={cn(
+                      "[--toggle-on:oklch(0.62_0.18_148)] [--toggle-ring:oklch(0.62_0.18_148_/_0.24)] dark:[--toggle-on:oklch(0.72_0.19_148)] dark:[--toggle-ring:oklch(0.72_0.19_148_/_0.24)]",
+                      "[&>span]:bg-white",
+                      consent.recordScreen &&
+                        "bg-[var(--toggle-on)] hover:bg-[var(--toggle-on)] focus-visible:ring-[var(--toggle-ring)]",
+                    )}
+                    onCheckedChange={(checked) => {
+                      if (checked) launchRecordingCelebration();
+                      updateConsent(
+                        checked
+                          ? { recordScreen: true, anonymizeUsageData: false }
+                          : { recordScreen: false },
+                      );
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
-
-          <ConsentToggleRow
-            icon={VideoIcon}
-            title="Record this screen"
-            description="Share full un-anonymized PostHog replay for debugging local product flows."
-            checked={consent.recordScreen}
-            onCheckedChange={(checked) => {
-              if (checked) launchRecordingCelebration();
-              updateConsent(
-                checked
-                  ? { recordScreen: true, anonymizeUsageData: false }
-                  : { recordScreen: false },
-              );
-            }}
-          />
 
           {settingsUpdatedVisible ? (
             <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
