@@ -136,6 +136,8 @@ The important invariant is tenant isolation: every browser route must authorize 
 - [x] 2026-05-19 16:38 IDT - Re-ran `npm run typecheck`; web and worker typechecks passed.
 - [x] 2026-05-19 - Simplified the user-facing Stop behavior: Stop is disabled while a turn is still initializing and only becomes clickable after the assistant turn has started streaming; terminal runs no longer enter the initial live-sync loading path.
 - [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
+- [x] 2026-05-19 - Fixed stale stopped-failure hydration after retry: delayed failed snapshots older than the current local message list no longer briefly re-show "Run stopped by the user" after a successful retry finishes.
+- [x] 2026-05-19 - Re-ran `npm run typecheck`; web and worker typechecks passed.
 - [ ] Browser QA not run.
 
 
@@ -613,6 +615,7 @@ Planning outcome:
 - 2026-05-19 - Implemented the plan across the builder chat route, run repository, worker session/runtime cancellation, Sentry reporting helpers, AppChat failure/retry UI, and audit event descriptions.
 - 2026-05-19 - Added defensive early-stop race handling: the chat POST now re-checks lease ownership immediately before worker connection, worker SSE enqueue/close is safe after cancellation, AppChat uses the AI SDK abort signal for intentional Stop without a second custom abort controller, stopped runs suspend live reconnect observers until the next send, and reconnect sync fetches run state before showing "Connecting to stream...".
 - 2026-05-19 - Simplified the product behavior after regression review: Stop is not available during the unsafe initialization window. The button remains disabled while the latest turn has only the user message; it becomes available once an assistant stream part exists. This avoids racing a half-created worker turn.
+- 2026-05-19 - Ignored stale failed snapshots when the local chat has already advanced past their message count, preventing the previous stopped failure from flashing after a later successful retry.
 
 
 ## Captured User Intent (Verbatim)

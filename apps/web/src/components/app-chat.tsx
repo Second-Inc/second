@@ -2092,10 +2092,30 @@ export function AppChat({
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const handleRunSnapshot = useCallback((snapshot: ChatRunSnapshot) => {
-    if (Object.prototype.hasOwnProperty.call(snapshot, "failure")) {
-      setRunFailure(snapshot.failure ?? null);
+    if (!Object.prototype.hasOwnProperty.call(snapshot, "failure")) return;
+
+    if (snapshot.status !== "failed") {
+      setRunFailure(null);
+      return;
     }
+
+    const currentStatus = statusRef.current;
+    if (currentStatus === "streaming" || currentStatus === "submitted") return;
+
+    const snapshotMessageCount = snapshot.messages?.length;
+    if (
+      typeof snapshotMessageCount === "number" &&
+      snapshotMessageCount < messagesRef.current.length
+    ) {
+      return;
+    }
+
+    setRunFailure(snapshot.failure ?? null);
   }, []);
 
   const isSyncLoading = useRunSync({
@@ -3048,25 +3068,27 @@ export function AppChat({
       ),
     [deferredMessages],
   );
+  const routeFailureStillCurrent =
+    runStatus === "failed" && messages.length <= initialMessages.length;
   const visibleFailureMessage = useMemo(() => {
     if (runFailure?.message) return runFailure.message;
     if (error instanceof TypeError) {
       return "The stream disconnected. Retry the last message to continue.";
     }
     if (error?.message) return error.message;
-    if (runStatus === "failed") {
+    if (routeFailureStillCurrent) {
       return "The run failed. Retry the last message to continue.";
     }
     return null;
-  }, [error, runFailure, runStatus]);
+  }, [error, routeFailureStillCurrent, runFailure]);
   const failureRetryable =
     Boolean(retryText) &&
-    (runFailure?.retryable ?? (Boolean(error) || runStatus === "failed"));
+    (runFailure?.retryable ?? (Boolean(error) || routeFailureStillCurrent));
   const showFailureRow =
     !isBusy &&
     !hasRenderedErrorPart &&
     Boolean(visibleFailureMessage) &&
-    (Boolean(error) || Boolean(runFailure) || runStatus === "failed");
+    (Boolean(error) || Boolean(runFailure) || routeFailureStillCurrent);
   const restoreRetryMessage = useCallback(() => {
     if (!retryText) return;
     setInput(retryText);
