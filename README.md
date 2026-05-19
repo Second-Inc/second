@@ -262,16 +262,10 @@ Every app's agent capabilities are declared, version-controlled, and approved:
 
 Second runs on your infrastructure: your k8s cluster, your VPC, your rules.
 
-<br>
+For full environment setup, see the [self-hosting docs](https://docs.second.so/self-hosting).
 
-### Deployment Options
-
-| Method | Use Case |
-|:---|:---|
-| `npx --yes @second-inc/cli` | Local / single-machine (Apple Silicon) |
-| `npm run start` | Docker Compose from source |
-| `npm run release` | Docker Compose with prebuilt images |
-| Kubernetes | Production on-prem / cloud |
+> [!TIP]
+> Need help with security, deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
 
 <br>
 
@@ -283,44 +277,7 @@ Second runs on your infrastructure: your k8s cluster, your VPC, your rules.
 | **Redis 7+** | Stream resumption, pub/sub, OAuth state |
 | **Auth provider** | External auth (WorkOS or custom) for `SECOND_AUTH_MODE=external` |
 | **HTTPS** | Reverse proxy with TLS termination |
-| **Agent runtime key** | `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, or `OPENAI_API_KEY` |
-
-<br>
-
-### Key Environment Variables
-
-```bash
-# Web
-SECOND_AUTH_MODE=external
-MONGODB_URI=mongodb+srv://...
-SECOND_PUBLIC_URL=https://second.your-domain.com
-WORKER_URL=http://worker:3001
-REDIS_URL=redis://redis:6379
-INTERNAL_API_TOKEN=<strong-shared-secret>
-
-# Worker
-PORT=3001
-INTERNAL_API_TOKEN=<same-shared-secret>
-TOOL_EXECUTE_URL=http://web:3000/api/internal/tool-execute
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-<br>
-
-<details>
-<summary>&nbsp;&nbsp;<strong>Production Hardening Checklist</strong></summary>
-<br>
-
-- [ ] MongoDB and Redis restricted to application network
-- [ ] `INTERNAL_API_TOKEN` is a strong random secret (shared between web + worker)
-- [ ] HTTPS with valid certificates
-- [ ] External auth provider configured
-- [ ] WorkOS Vault for OAuth/integration secrets (or `SECOND_TOKEN_ENCRYPTION_KEY` for local encryption)
-- [ ] Agent runtime credentials provisioned per-workspace
-- [ ] `bubblewrap` installed on Linux worker nodes for subprocess sandboxing
-- [ ] Audit log retention policy configured
-
-</details>
+| **Agent runtime credentials** | Claude: `ANTHROPIC_API_KEY` or Bedrock (`CLAUDE_CODE_USE_BEDROCK=1` with `AWS_BEARER_TOKEN_BEDROCK`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE`); Codex: `CODEX_API_KEY` or `OPENAI_API_KEY` |
 
 <br>
 
