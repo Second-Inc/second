@@ -9,7 +9,7 @@
 <h1 align="center">Second</h1>
 
 <p align="center">
-  A factory for custom internal interfaces<br>where humans and agents work together.
+  The factory for custom internal software,<br>purpose-built for human2agent work.
 </p>
 
 <p align="center">
@@ -27,32 +27,33 @@
   <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 </p>
 
----
+## Quick Start
+Run Second locally:
+```bash
+npx --yes @second-inc/cli
+```
+
+| Platform | Status |
+|:---|:---|
+| Apple Silicon Mac (M1-M5) | **Available now** |
+| Intel Mac, Linux, Windows | Coming soon |
 
 <br>
 
 ## What is Second?
 
-Second lets every team ship custom internal interfaces for managing agents and collaborating with them on async work.
+Second is a factory for shipping internal software built for human-agent collaboration.
 
-It's a single, beautifully governed workspace.
+Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
 
-Instead of adapting your workflows to pre-built agent management interfaces, Second is a workspace that comes with the right primitives to build exactly the interfaces your team needs. Prompt an app, and Second generates a full internal interface, already deployed in your workspace, with a real-time database, permissions, and audit logs out of the box. Air-gapped on your k8s.
+**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built, and most importantly work alongside your human team.
 
-Above all, every app built on Second treats agents as first-class citizens. They read and write to the same real-time DB your team is working on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans on the same custom interfaces.
+Second is open-source, self-hosted, bring your own agent.
 
 > [!TIP]
-> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise) — covers customer-owned auth and OAuth apps, `agents.json` approval, secret injection, tenant isolation, and auditability.
+> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise).
 >
-> Need help with secure deployment, cost management, runtime setup, or production support? Contact [sales@second.so](mailto:sales@second.so).
-
-<strong>Think of it as:</strong> An internal, secure, and collaborative Lovable that runs on-prem — purpose-built for long-running, asynchronous work with agents.
-
-<br>
-
----
-
-<br>
+> Need help with security, SSO, deployment, cost management, runtime setup, and SLA support? Contact [sales@second.so](mailto:sales@second.so).
 
 ## Bring Your Agent
 
@@ -76,120 +77,141 @@ Bring your own agent harness, switch runtimes and models per message, per app, w
     <td align="center"><sub><strong>OpenCode</strong></sub></td>
   </tr>
   <tr>
-    <td align="center"><sub>✅</sub></td>
-    <td align="center"><sub>✅</sub></td>
+    <td align="center">✅</td>
+    <td align="center">✅</td>
     <td align="center"><sub>Coming soon</sub></td>
   </tr>
 </table>
 
+## Core Philosophy: Agent-Native Software
 
----
+Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
 
-## Why Second?
+On top of that, Second handles the hard parts:
 
-Every team is hitting the same wall: you build a v1 of an internal tool with Codex, Claude, or Lovable. Then comes the **"Ok, now what?"** phase:
+| Capability | How It Works |
+|---|---|
+| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
+| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
+| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
 
-- How do you deploy and share it safely?
-- How do you make your software accessible for agents?
-- What about real-time collaboration? RBAC? Agent RBAC?
-- Secure integrations? Audit logs? Cost management?
+## Personal Software Factory
 
-Companies like **Ramp** and **Deel** have built their own custom platforms to solve this.
+Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
 
-**Second is the infrastructure to let everyone else do the same.**
+Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable, but most of these projects never reach production because of various reasons (security, integrations, governance, safe deployments, maintenance, agent access control, and so on...).
+
+**To solve this, they built internal platforms for themselves. Second lets every organization have that.**
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>For Teams</h3>
+      <h3 align="center">👥 For Teams</h3>
       <ul>
         <li>Build custom apps from a single prompt</li>
         <li>Run multiple agents in parallel across workflows</li>
         <li>Real-time collaborative UI with agents and humans on the same page</li>
-        <li>No code required, designed for non-technical teams</li>
+        <li>No code required — designed for non-technical teams</li>
       </ul>
+      <br>
     </td>
     <td width="50%" valign="top">
-      <h3>For Platform Engineers</h3>
+      <h3 align="center">🛠️ For Platform Engineers</h3>
       <ul>
         <li>One-time workspace setup, unlimited apps</li>
         <li>Full governance: draft/review/publish lifecycle</li>
         <li>Fine-grained access control per app, per agent, per integration</li>
         <li>Deploy on your own k8s, air-gapped or on-prem</li>
       </ul>
+      <br>
     </td>
   </tr>
 </table>
 
 ---
 
-## Quick Start
+## Features
 
-One command, designed to run fully locally and stay free forever.
+<table>
+<tr>
+<td align="center" width="33%">
+<h3>🔧 Self-Building Integrations</h3>
+Second builds itself: integrations are generated on demand with exact connection instructions.
+</td>
+<td align="center" width="33%">
+<h3>🤖 App Agents</h3>
+Each app gets its own agents, with tools and data access presented for approval.
+</td>
+<td align="center" width="33%">
+<h3>🔌 BYO Agent</h3>
+Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>👥 Multiplayer Sessions</h3>
+Talk with Claude Code or Codex, invite teammates into the session, and collaborate with shared context.
+</td>
+<td align="center">
+<h3>🔒 Permissions</h3>
+Agents run with approved tools, data, and integrations. Everything is scoped and audited.
+</td>
+<td align="center">
+<h3>⚡ Realtime</h3>
+Live data, change streams, and optimistic updates keep teams and agents synced.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>🧠 Workspace Agents</h3>
+Create reusable agents with prompts, skills, models, and team visibility.
+</td>
+<td align="center">
+<h3>📚 Workspace Skills</h3>
+Define instructions once, then attach them to agents across the workspace.
+</td>
+<td align="center">
+<h3>🛡️ Governance</h3>
+Draft, review, approve, and publish apps with agents and integrations under control.
+</td>
+</tr>
+</table>
 
-```bash
-npx --yes @second-inc/cli
-```
+<!-- ## Second Is Right For You If
 
-**Supported platforms**
+- ✅ Your team has Claude, Codex, or Lovable prototypes that need to become real production software.
+- ✅ You need internal tools where humans and agents work on the same workflows.
+- ✅ You need agents to work with real systems while keeping access scoped, approved, and auditable.
+- ✅ You want to keep using your own agent harness (e.g. Claude Code or Codex) to ship powerful internal apps.
+- ✅ You need RBAC, agent access control, approval flows, audit logs, integrations, and safe deployments from the start.
+- ✅ You want agents inside the app, not off to the side in a separate chat window.
+- ✅ You have security constraints that require local, self-hosted, or on-prem deployment.
+-->
 
-| Platform | Status |
-|:---|:---|
-| Apple Silicon Mac (M1-M4) | **Available now** |
-| Intel Mac | Coming soon |
-| Linux | Coming soon |
-| Windows / WSL2 | Coming soon |
+## Problems Second Solves
 
-<br>
-
-<details>
-<summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
-<br>
-
-```bash
-npx --yes @second-inc/cli              # Start Second
-npx --yes @second-inc/cli stop         # Stop all services
-npx --yes @second-inc/cli reset        # Stop + delete all data
-npx --yes @second-inc/cli --port 4000  # Custom port
-npx --yes @second-inc/cli --disable-telemetry  # No analytics
-```
-
-</details>
-
-<details>
-<summary>&nbsp;&nbsp;<strong>Development from Source</strong></summary>
-<br>
-
-**Prerequisites:** Node.js 20+, npm 10+, Docker Desktop
-
-```bash
-git clone https://github.com/Second-Inc/second.git
-cd second
-npm run dev
-```
-
-This starts MongoDB + Redis in Docker, and the web + worker processes on your host. Open the URL printed by the script or check `.second-dev.txt`.
-
-</details>
-
-<br>
+| Without Second | With Second |
+|---|---|
+| ❌ Prototypes work in Claude, Codex, or Lovable, then stall before production. | ✅ Apps are generated inside a governed workspace with the runtime pieces already there. |
+| ❌ Agents work in separate chats and lose the context your team is acting on. | ✅ Agents and humans share the same app, real-time DB, and interface. |
+| ❌ Every integration becomes a one-off security project. | ✅ Second generates scoped tools and keeps secrets server-side. |
+| ❌ Agent permissions are hard to explain, approve, and audit. | ✅ `agents.json`, RBAC, approvals, and audit logs make access explicit. |
+| ❌ Every team rebuilds deployment, governance, and collaboration from scratch. | ✅ One workspace gives teams and platform engineers the same foundation. |
 
 ---
 
-## Agent-Native Software
+## What You Can Build
 
-This is the core paradigm of Second. Every app treats agents as **first-class citizens**:
+Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
 
-| Capability | How It Works |
-|---|---|
-| **Shared real-time database** | Agents read and write to the same live database as your team, with optimistic updates, change streams, and instant sync |
-| **Scoped & secure tools** | Each agent gets precisely the tools it needs via `agents.json`, nothing more |
-| **Collaborative UI** | Agents work alongside your team on the same custom-built interface |
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, and alerting, not just chat |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
+- **Competitor intelligence:** Agents monitor competitors, aggregate news, alert on pricing changes, and collect case studies.
+- **Lead enrichment pipelines:** Agents research and qualify leads while your team reviews and acts.
+- **Content operations:** Agents draft, research, and organize while editors review in real time.
+- **Customer success dashboards:** Agents pull data from CRMs and support tools so teams can act on insights.
+- **Internal knowledge bases:** Agents continuously index and organize docs while teams search and annotate.
+- **Compliance monitoring:** Agents scan for policy violations while approvers review and resolve.
 
-### Example: Competitor Research
+<!-- ### Example: Competitor Research
 
 From a single prompt, build an app where agents:
 - Produce a live **news feed** of latest competitor updates
@@ -197,17 +219,17 @@ From a single prompt, build an app where agents:
 - Maintain a **research overview** page with structured analysis
 - Collect and store **PDFs and case studies** found across the web
 
-Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, with no export, no copy-paste, and no context switching.
+-->
+
+Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
 
 ---
 
-
 ## Security & Governance
 
-Second is designed for enterprise teams that need complete control over what agents can access and do.
+Second is designed for enterprise teams that need complete control over what humans and agents can access and do.
 
-**The platform follows a zero-trust architecture for agents.** No agent is granted implicit access to anything. Every capability, every data collection, every integration must be explicitly declared, scoped, and approved before an agent can act.
-
+**Zero-trust architecture for agents.** No agent is granted implicit access to anything. Every capability, every data collection, every integration must be explicitly declared, scoped, and approved before an agent can act.
 
 | Feature | Description |
 |:---|:---|
@@ -218,8 +240,6 @@ Second is designed for enterprise teams that need complete control over what age
 | **Audit logs** | Every action recorded: app changes, agent tool calls, data writes, access denials, integration usage. Secrets are never stored, only hashes and metadata. |
 | **Workspace isolation** | Complete tenant isolation. Every query scoped to `workspaceId`. Cross-workspace access returns `404`, not `403`, to prevent resource enumeration. |
 | **Subprocess hardening** | Infrastructure secrets scrubbed from agent subprocess environments. Linux deployments use `bubblewrap` sandboxing. CLI runtimes get allowlisted env + private per-app HOME. |
-
-<br>
 
 ### `agents.json`: Agent Policy as Code
 
@@ -262,28 +282,14 @@ Every app's agent capabilities are declared, version-controlled, and approved:
 </td></tr>
 </table>
 
-<br>
-
----
-
-<br>
-
 ## Self-Hosting
 
 Second runs on your infrastructure: your k8s cluster, your VPC, your rules.
 
-<br>
+For full environment setup, see the [self-hosting docs](https://docs.second.so/self-hosting).
 
-### Deployment Options
-
-| Method | Use Case |
-|:---|:---|
-| `npx --yes @second-inc/cli` | Local / single-machine (Apple Silicon) |
-| `npm run start` | Docker Compose from source |
-| `npm run release` | Docker Compose with prebuilt images |
-| Kubernetes | Production on-prem / cloud |
-
-<br>
+> [!TIP]
+> Need help with security, SSO, deployment, cost management, runtime setup, or SLA support? Contact [sales@second.so](mailto:sales@second.so).
 
 ### Production Requirements
 
@@ -293,132 +299,99 @@ Second runs on your infrastructure: your k8s cluster, your VPC, your rules.
 | **Redis 7+** | Stream resumption, pub/sub, OAuth state |
 | **Auth provider** | External auth (WorkOS or custom) for `SECOND_AUTH_MODE=external` |
 | **HTTPS** | Reverse proxy with TLS termination |
-| **Agent runtime key** | `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, or `OPENAI_API_KEY` |
-
-<br>
-
-### Key Environment Variables
-
-```bash
-# Web
-SECOND_AUTH_MODE=external
-MONGODB_URI=mongodb+srv://...
-SECOND_PUBLIC_URL=https://second.your-domain.com
-WORKER_URL=http://worker:3001
-REDIS_URL=redis://redis:6379
-INTERNAL_API_TOKEN=<strong-shared-secret>
-
-# Worker
-PORT=3001
-INTERNAL_API_TOKEN=<same-shared-secret>
-TOOL_EXECUTE_URL=http://web:3000/api/internal/tool-execute
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-<br>
-
-<details>
-<summary>&nbsp;&nbsp;<strong>Production Hardening Checklist</strong></summary>
-<br>
-
-- [ ] MongoDB and Redis restricted to application network
-- [ ] `INTERNAL_API_TOKEN` is a strong random secret (shared between web + worker)
-- [ ] HTTPS with valid certificates
-- [ ] External auth provider configured
-- [ ] WorkOS Vault for OAuth/integration secrets (or `SECOND_TOKEN_ENCRYPTION_KEY` for local encryption)
-- [ ] Agent runtime credentials provisioned per-workspace
-- [ ] `bubblewrap` installed on Linux worker nodes for subprocess sandboxing
-- [ ] Audit log retention policy configured
-
-</details>
-
-<br>
-
----
+| **Agent runtime credentials** | Claude: `ANTHROPIC_API_KEY` or Bedrock (`CLAUDE_CODE_USE_BEDROCK=1` with `AWS_BEARER_TOKEN_BEDROCK`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE`); Codex: `CODEX_API_KEY` or `OPENAI_API_KEY` |
 
 <br>
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                           Browser                                 │
-│              useChat hook + real-time data subscriptions          │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                      SSE streams + REST
-                               │
-┌──────────────────────────────▼───────────────────────────────────┐
-│                       Web (Next.js)                               │
-│     Auth · Validation · Workspace Context · API Routes · Guard   │
-└────────────┬─────────────────────────────────────┬───────────────┘
-             │                                     │
-      POST /sessions                   Change Streams + REST
-             │                                     │
-┌────────────▼────────────┐           ┌────────────▼───────────────┐
-│     Worker (Hono)       │           │    MongoDB (Replica Set)    │
-│                         │           │                             │
-│    Claude Agent SDK     │           │   apps · runs · app_data    │
-│    Codex CLI            │───────────│   audit_events · members    │
-│    OpenCode             │           │   integrations · creds      │
-└────────────┬────────────┘           └─────────────────────────────┘
-             │
-      Server-side secret injection
-             │
-┌────────────▼────────────┐
-│     Redis               │
-│                         │
-│    Stream resumption    │
-│    Pub/sub events       │
-│    OAuth state          │
-└─────────────────────────┘
++------------------------------------------------------------------------------+
+| Browser                                                                      |
+| App UI, chat, generated app iframe                                           |
++-----------------------------------+------------------------------------------+
+                                    |
+                                    | REST + SSE
+                                    v
++------------------------------------------------------------------------------+
+| Web (Next.js)                                                                |
+| Public entrypoint, auth, workspace guards, API routes, reviews               |
+| Tool execution, secret resolution, app data, auditability                    |
++------------------+--------------------------+--------------------------+------+
+                   |                          |                          |
+                   | private HTTP + SSE       | persistent state         | replay + events
+                   | internal auth            | Change Streams           | OAuth state + locks
+                   v                          v                          v
++---------------------------+     +---------------------------+     +------------------+
+| Worker (Hono)             |     | MongoDB Replica Set       |     | Redis            |
+| Claude Code, Codex        |     | workspaces, apps, runs    |     | stream replay    |
+| OpenCode, app agents      |     | app_data, audit logs      |     | workspace pubsub |
++-------------+-------------+     | integration metadata      |     +------------------+
+              |                   +---------------------------+
+              |
+              | internal callbacks
+              | /api/internal/*
+              v
++------------------------------------------------------------------------------+
+| Web-owned governed layer                                                     |
+| Tool calls, app-data writes, approvals, tenant boundaries                    |
+| Secrets stay server-side before reaching external systems                    |
++-----------------------------------+------------------------------------------+
+                                    |
+                                    | server-side tools
+                                    v
++------------------------------------------------------------------------------+
+| External systems                                                             |
+| OAuth providers, APIs, internal services                                     |
++------------------------------------------------------------------------------+
 ```
 
-<br>
-
----
+Agents run in the Worker. App-data writes, tool calls, secret resolution, and audit trails go through the Web layer, so the Worker can run agents without becoming the source of truth for permissions or data.
 
 <br>
 
-## What You Can Build
+## CLI
 
-Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
+Run Second locally with one command:
 
-<br>
-
-| Use Case | What Agents Do |
-|:---|:---|
-| **Competitor intelligence** | Monitor competitors, aggregate news, alert on pricing changes, collect case studies |
-| **Lead enrichment pipelines** | Research and qualify leads while your team reviews and acts |
-| **Content operations** | Draft, research, and organize while editors review in real-time |
-| **Customer success dashboards** | Pull data from CRMs and support tools; teams act on insights |
-| **Internal knowledge bases** | Continuously index and organize docs; teams search and annotate |
-| **Compliance monitoring** | Scan for policy violations; approvers review and resolve |
-
-<br>
-
-The flexibility is unlimited. If your workflow involves humans and agents collaborating on structured data, Second handles the infrastructure so you can focus on the work.
-
-<br>
-
----
-
-<br>
-
-## Platform Support
+```bash
+npx --yes @second-inc/cli
+```
 
 | Platform | Status |
 |:---|:---|
-| Apple Silicon (M1–M4) | **Available** |
-| Intel Mac | Coming soon |
-| Linux (x86_64) | Coming soon |
-| Windows (WSL2) | Coming soon |
+| Apple Silicon Mac (M1-M5) | **Available now** |
+| Intel Mac, Linux, Windows | Coming soon |
 
-Source development (Docker mode) works on any platform with Docker Desktop.
-
+<details>
+<summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
 <br>
 
----
+```bash
+npx --yes @second-inc/cli                      # Start Second
+npx --yes @second-inc/cli stop                 # Stop all services
+npx --yes @second-inc/cli reset                # Stop + delete all data
+npx --yes @second-inc/cli --port 4000          # Custom port
+npx --yes @second-inc/cli --disable-telemetry  # No analytics
+```
+
+</details>
+
+<details>
+<summary>&nbsp;&nbsp;<strong>Development from Source</strong></summary>
+<br>
+
+**Prerequisites:** Node.js 20+, npm 10+, Docker Desktop
+
+This starts MongoDB + Redis in Docker, and the web + worker processes on your host. Open the URL printed by the script or check `.second-dev.txt`.
+
+```bash
+git clone https://github.com/Second-Inc/second.git
+cd second
+npm run dev
+```
+
+</details>
 
 <br>
 
@@ -428,15 +401,7 @@ We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [docs](https://docs.second.so) for architecture details and development setup.
 Report security issues privately; see [SECURITY.md](SECURITY.md).
 
-```bash
-git clone https://github.com/Second-Inc/second.git
-cd second
-npm run dev
-```
-
 <br>
-
----
 
 <p align="center">
   <sub>Second is licensed under the <a href="LICENSE">Apache License 2.0</a>.</sub>
