@@ -1,20 +1,22 @@
 # Second CLI
 
-Run Second locally with one command.
+The factory for custom internal software, purpose-built for human2agent work.
+
+Run Second locally with one command:
 
 ```bash
 npx --yes @second-inc/cli
 ```
 
-Second is an open-source, self-hosted platform for creating internal apps where AI agents and humans collaborate on the same workflows, data, and interfaces.
-
 ## What is Second?
 
-Most apps were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated, forcing your team into workflows that do not really fit how you work. And when humans and agents need to coordinate around real team workflows, the whole thing gets hard, fragile, and easy to break.
+Second is a factory for shipping internal software built for human-agent collaboration.
 
-**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) that treats agents as first-class citizens: agents read and write to the same real-time database as humans, get scoped tools generated dynamically for the app, and work alongside your team inside the interfaces built around your exact use case.
+Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
 
-Every app comes with a real-time DB, audit logs, RBAC, agent RBAC, and governance controls inside the workspace.
+**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built - and most importantly work alongside your human team.
+
+Second is open-source, self-hosted, and bring your own agent.
 
 ## Quick Start
 
@@ -55,11 +57,11 @@ Current agent runtime support:
 
 ## Why Second?
 
-Teams are already building powerful internal tools with Claude, Codex, and Lovable. But most of those tools never reach production.
+Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
 
-The hard part is no longer generating a prototype. The hard part is turning it into secure, shared, governed software that agents and humans can actually use together.
+Companies like Ramp and Deel have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable, but most of these projects never reach production because of various reasons: security, integrations, governance, safe deployments, maintenance, agent access control, and so on.
 
-Second gives every organization that foundation: open-source, bring your own agent harness, and self-hosted.
+To solve this, they built internal platforms for themselves. Second lets every organization have that.
 
 ## Agent-Native Software
 
@@ -76,7 +78,7 @@ Every app treats agents as first-class citizens:
 
 ## Security and Governance
 
-Second is designed for enterprise teams that need control over what agents can access and do.
+Second is designed for enterprise teams that need control over what humans and agents can access and do.
 
 The platform follows a zero-trust architecture for agents. No agent gets implicit access to anything. Every capability, data collection, and integration must be explicitly declared, scoped, and approved before an agent can act.
 
@@ -92,15 +94,9 @@ The platform follows a zero-trust architecture for agents. No agent gets implici
 
 ## Self-Hosting
 
-Second can run locally through this CLI, from source with Docker Compose, or in production on your own infrastructure.
+Second can run locally through this CLI or in production on your own infrastructure.
 
-| Method | Use Case |
-|:---|:---|
-| `npx --yes @second-inc/cli` | Local / single-machine on Apple Silicon |
-| Docker Compose from source | Development and self-hosted evaluation |
-| Kubernetes | Production on-prem or cloud deployment |
-
-Production deployments typically require MongoDB, Redis, an auth provider, HTTPS, and agent runtime credentials.
+For full environment setup, see the self-hosting docs: https://docs.second.so/self-hosting
 
 ## Useful Links
 

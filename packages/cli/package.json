@@ -1,7 +1,7 @@
 {
   "name": "@second-inc/cli",
   "version": "0.1.24",
-  "description": "Local launcher for Second, the open-source internal software factory.",
+  "description": "The factory for custom internal software, purpose-built for human2agent work.",
   "type": "module",
   "repository": {
     "type": "git",

@@ -46,7 +46,7 @@ Second is a factory for shipping internal software built for human-agent collabo
 
 Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
 
-**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built — and most importantly work alongside your human team.
+**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built, and most importantly work alongside your human team.
 
 Second is open-source, self-hosted, bring your own agent.
 
@@ -77,8 +77,8 @@ Bring your own agent harness, switch runtimes and models per message, per app, w
     <td align="center"><sub><strong>OpenCode</strong></sub></td>
   </tr>
   <tr>
-    <td align="center"><sub>✅</sub></td>
-    <td align="center"><sub>✅</sub></td>
+    <td align="center">✅</td>
+    <td align="center">✅</td>
     <td align="center"><sub>Coming soon</sub></td>
   </tr>
 </table>
