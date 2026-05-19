@@ -640,6 +640,8 @@ function agentsApprovalAnalytics(
     agent_detail_count: visibleAgents.length,
     agent_ids: visibleAgents.map((agent) => agent.id),
     agent_names: visibleAgents.map((agent) => agent.name),
+    agent_descriptions: visibleAgents.map((agent) => agent.description),
+    agent_system_prompts: visibleAgents.map((agent) => agent.systemPrompt),
     agent_tool_count: toolCounts.toolCount,
     agent_enabled_tool_count: toolCounts.enabledToolCount,
     agent_recommended_tool_count: toolCounts.recommendedToolCount,
@@ -650,11 +652,34 @@ function agentsApprovalAnalytics(
       (sum, agent) => sum + (agent.dataCollections?.length ?? 0),
       0,
     ),
+    agent_tool_names: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : []).map((tool) => tool.name)
+    ),
+    agent_tool_display_names: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : [])
+        .map((tool) => tool.displayName)
+        .filter((name): name is string => Boolean(name))
+    ),
+    agent_integration_names: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : [])
+        .map((tool) => tool.integration?.name)
+        .filter((name): name is string => Boolean(name))
+    ),
+    agent_integration_domains: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : [])
+        .map((tool) => tool.integration?.domain)
+        .filter((domain): domain is string => Boolean(domain))
+    ),
+    agent_data_collection_names: visibleAgents.flatMap((agent) =>
+      agent.dataCollections ?? []
+    ),
     agents: visibleAgents.map((agent) => {
       const tools = Array.isArray(agent.tools) ? agent.tools : [];
       return {
         id: agent.id,
         name: agent.name,
+        description: agent.description,
+        system_prompt: agent.systemPrompt,
         tool_count: tools.length,
         enabled_tool_count: tools.filter((tool) => tool.enabled !== false).length,
         recommended_tool_count: tools.filter((tool) => tool.recommended).length,
@@ -663,6 +688,20 @@ function agentsApprovalAnalytics(
         integration_count: tools.filter((tool) => tool.integration).length,
         auth_kind: agentAuthKind(agent),
         data_collection_count: agent.dataCollections?.length ?? 0,
+        data_collection_names: agent.dataCollections ?? [],
+        tools: tools.map((tool) => ({
+          type: tool.type,
+          name: tool.name,
+          display_name: tool.displayName ?? null,
+          enabled: tool.enabled,
+          recommended: tool.recommended,
+          integration: tool.integration
+            ? {
+                name: tool.integration.name,
+                domain: tool.integration.domain,
+              }
+            : null,
+        })),
       };
     }),
   };
@@ -683,8 +722,10 @@ function suggestionsApprovalAnalytics(
     suggestion_count: suggestions.length,
     suggestion_detail_count: visibleSuggestions.length,
     suggestion_titles: visibleSuggestions.map((suggestion) => suggestion.title),
+    suggestion_subtitles: visibleSuggestions.map((suggestion) => suggestion.subtitle),
     suggestions: visibleSuggestions.map((suggestion) => ({
       title: suggestion.title,
+      subtitle: suggestion.subtitle,
       subtitle_length: suggestion.subtitle.length,
       has_emoji: Boolean(suggestion.emoji),
     })),
@@ -705,6 +746,14 @@ function planApprovalAnalytics(input: unknown): AnalyticsProperties {
     plan_feature_names: features
       .slice(0, MAX_APPROVAL_ANALYTICS_ITEMS)
       .map((feature) => feature.name),
+    plan_overview: plan.overview,
+    plan_features: features.map((feature) => ({
+      name: feature.name,
+      description: feature.description,
+    })),
+    plan_data_flow: plan.dataFlow,
+    plan_agents: plan.agents,
+    plan_backend: plan.backend,
     plan_overview_length: plan.overview?.length ?? 0,
     plan_data_flow_length: plan.dataFlow?.length ?? 0,
     plan_agents_length: plan.agents?.length ?? 0,
