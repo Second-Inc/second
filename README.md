@@ -40,16 +40,34 @@ npx --yes @second-inc/cli
 
 ## What is Second?
 
-Imagine an on-prem Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:**
-- Agents read and write to the same real-time DB as your human team does
+<!-- Let every team ship personal software across your org: a factory for custom internal software where humans and agents work together, on the same shared interfaces. -->
+
+<!-- Second is a factory for custom internal software, purpose-built for human2agent work. -->
+
+Second is where your human team collaborates with your agent team on real work - via custom apps you build for your use-cases!
+
+Imagine a Lovable-like experience for building complete internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:**
+- Agents read and write to the same real-time DB as your team does
 - They get dynamically generated, scoped tools to do the work inside the apps you've built
-- They collaborate with your human team on the same shared apps and interfaces, and just work alongside your team
+- They collaborate with your team on the same shared apps and interfaces
 
----
+Second allows you to create the multiplayer human-agent interfaces of your dreams!
 
-**Why?:** Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
+On top of that, Second handles the hard parts:
 
-Second is open-source, self-hosted, bring your own agent.
+| Capability | &nbsp; |
+|:---|:---|
+| **🤹 Multi-agent orchestration** | Multiple specialized agents per app |
+| **⏲️ Long-running async work** | Scheduled jobs, periodic research, background tasks |
+| **🗃️ Live data persistence** | Real-time DB with Change Streams; survives restarts and churn |
+
+Teams love Second because it makes multiplayer AI (human team + agent team) simple and visual.
+
+## Why Second?
+
+Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
+
+Second lets you build custom internal software that fits your team's actual workflows, not the other way around.
 
 > [!TIP]
 > **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise).
@@ -116,18 +134,6 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
     </td>
   </tr>
 </table>
-
-## Core Philosophy: Agent-Native Software
-
-Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
-
-On top of that, Second handles the hard parts:
-
-| Capability | How It Works |
-|---|---|
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
 
 ---
 
