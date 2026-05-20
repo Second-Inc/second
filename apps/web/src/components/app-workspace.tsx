@@ -1463,6 +1463,13 @@ export function AppWorkspace({
   }, []);
   useEffect(() => {
     if (isBuilderPanelResizing) return;
+    let animationFrame: number | null = null;
+    const scheduleBuilderPanelWidth = (width: number) => {
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        setBuilderPanelWidth(clampBuilderPanelWidth(width));
+      });
+    };
 
     const shouldExpandForAgentsApproval =
       showAgent &&
@@ -1471,12 +1478,26 @@ export function AppWorkspace({
       pendingBuilderApprovalKind === "agents";
 
     if (!shouldExpandForAgentsApproval) {
-      restoreAutoExpandedBuilderPanel();
-      return;
+      const restoreWidth = autoExpandedBuilderPanelRestoreWidthRef.current;
+      if (restoreWidth !== null) {
+        autoExpandedBuilderPanelRestoreWidthRef.current = null;
+        scheduleBuilderPanelWidth(restoreWidth);
+      }
+      return () => {
+        if (animationFrame !== null) {
+          window.cancelAnimationFrame(animationFrame);
+        }
+      };
     }
 
     const currentWidth = builderPanelWidthRef.current;
-    if (currentWidth >= AGENTS_APPROVAL_PANEL_WIDTH) return;
+    if (currentWidth >= AGENTS_APPROVAL_PANEL_WIDTH) {
+      return () => {
+        if (animationFrame !== null) {
+          window.cancelAnimationFrame(animationFrame);
+        }
+      };
+    }
 
     if (autoExpandedBuilderPanelRestoreWidthRef.current === null) {
       autoExpandedBuilderPanelRestoreWidthRef.current = currentWidth;
@@ -1484,14 +1505,19 @@ export function AppWorkspace({
 
     const targetWidth = clampBuilderPanelWidth(AGENTS_APPROVAL_PANEL_WIDTH);
     if (targetWidth > currentWidth) {
-      setBuilderPanelWidth(targetWidth);
+      scheduleBuilderPanelWidth(targetWidth);
     }
+
+    return () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+    };
   }, [
     isBuilderPanelResizing,
     isBuilderRunActive,
     panelMode,
     pendingBuilderApprovalKind,
-    restoreAutoExpandedBuilderPanel,
     showAgent,
   ]);
   const updateBuilderPanelResizeGuide = useCallback((width: number) => {

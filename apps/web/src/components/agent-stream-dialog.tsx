@@ -1001,7 +1001,7 @@ function AgentStreamContent({
                   <AlertTriangleIcon className="mt-0.5 size-3 text-amber-700 dark:text-amber-300" />
                   <div className="min-w-0">
                     <div className="font-medium">
-                      Agent completed with a tool error: it's now being fixed.
+                      Agent completed with a tool error: it is now being fixed.
                     </div>
                     <div className="mt-0.5 text-amber-700/80 dark:text-amber-300/80">
                       The builder agent has already started working on fixing this for you.

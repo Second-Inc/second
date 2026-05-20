@@ -11,7 +11,6 @@ import {
   KeyRoundIcon,
   PencilIcon,
   ShieldCheckIcon,
-  SparklesIcon,
   WrenchIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -478,15 +477,6 @@ function pickAgentGradientForIndex(seed: string, index: number): string {
   ] ?? pickAgentGradient(seed);
 }
 
-function AgentAvatar({ seed }: { seed: string }) {
-  return (
-    <div
-      className="size-9 shrink-0 rounded-full ring-1 ring-border/40"
-      style={{ backgroundImage: pickAgentGradient(seed) }}
-    />
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Tab bar
 // ---------------------------------------------------------------------------
@@ -823,68 +813,6 @@ function ResourceTabs({
       </div>
 
       <div className="min-w-0 overflow-hidden p-3.5">{activePanel}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// System prompt — line-clamped preview with fade-out + click-to-expand
-// ---------------------------------------------------------------------------
-
-function SystemPromptBlock({ prompt }: { prompt?: string }) {
-  const [open, setOpen] = useState(false);
-  const safePrompt = prompt ?? "";
-  const shouldClamp = !open && safePrompt.length > 180;
-  const toggleOpen = () => setOpen((value) => !value);
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-expanded={open}
-      onClick={toggleOpen}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        toggleOpen();
-      }}
-      className="block w-full overflow-hidden rounded-lg border border-border bg-card text-left"
-    >
-      {/* Top bar — single "tab" that merges with the content below */}
-      <div className="flex items-stretch border-b border-border bg-muted/40">
-        <div className="relative inline-flex shrink-0 items-center gap-1.5 -mb-px bg-card px-3.5 py-3 text-xs font-medium">
-          <ShieldCheckIcon className="size-3" />
-          System Prompt
-        </div>
-        <div className="ml-auto flex items-center pr-3 text-muted-foreground">
-          <ChevronDownIcon
-            className={cn(
-              "size-3 transition-transform",
-              open && "rotate-180",
-            )}
-          />
-        </div>
-      </div>
-
-      {/* Content */}
-      <div
-        className={cn(
-          "whitespace-pre-wrap px-3 py-3 text-xs leading-relaxed text-foreground/75",
-          shouldClamp && "max-h-20 overflow-hidden",
-        )}
-        style={
-          shouldClamp
-            ? {
-                maskImage:
-                  "linear-gradient(to bottom, black 55%, transparent 100%)",
-                WebkitMaskImage:
-                  "linear-gradient(to bottom, black 55%, transparent 100%)",
-              }
-            : undefined
-        }
-      >
-        {safePrompt || "System prompt is still streaming."}
-      </div>
     </div>
   );
 }
