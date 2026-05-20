@@ -1,29 +1,30 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/favicon-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="apps/web/public/favicon-light.svg">
-    <img alt="Second" src="apps/web/public/favicon-light.svg" width="72" height="67">
-  </picture>
+  <img src="docs/assets/readme_cover.png" alt="Second — humans and agents, side by side" width="100%">
 </p>
 
-<h1 align="center">Second</h1>
+<div align="center">
 
-<p align="center">
-  The factory for custom internal software,<br>purpose-built for human2agent work.
-</p>
+<br>
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>&nbsp;&nbsp;
-  <a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>&nbsp;&nbsp;
-  <a href="#platform-support"><img src="https://img.shields.io/badge/Platform-Apple_Silicon-lightgrey.svg" alt="Platform"></a>
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/favicon-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="apps/web/public/favicon-light.svg">
+  <img alt="Second" src="apps/web/public/favicon-light.svg" width="56" height="52">
+</picture>
 
-<p align="center">
-  <a href="#quick-start"><strong>Quick Start</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="https://docs.second.so"><strong>Docs</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="#security--governance"><strong>Security & Governance</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="#self-hosting"><strong>Self-Hosting</strong></a>
-</p>
+<h1>Second</h1>
+
+**Agents don't belong in chat windows.**
+
+Second is a factory for custom internal software, purpose-built for human2agent work.<br>
+Let your team ship custom internal apps from a prompt, where agents work natively alongside your humans.
+
+<a href="https://github.com/Second-Inc/second/actions"><img src="https://img.shields.io/github/actions/workflow/status/Second-Inc/second/ci.yml?label=CI" alt="CI"></a>&nbsp;&nbsp;
+<a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>
+
+<a href="#quick-start"><strong>Quick Start</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
+
+</div>
 
 ## Quick Start
 Run Second locally:
