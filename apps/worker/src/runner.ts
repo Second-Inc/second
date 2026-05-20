@@ -132,8 +132,9 @@ export type SecondToolTextResult = {
 };
 
 export type PresentPlanArgs = {
+  title: string;
   overview: string;
-  features: Array<{ name: string; description: string }>;
+  features: Array<{ name: string; description: string; emoji?: string }>;
   dataFlow: string;
   agents: string | null;
   backend: string | null;
@@ -173,6 +174,7 @@ export function executePresentPlanTool(
         text: JSON.stringify({
           ok: true,
           status: "presented",
+          title: args.title,
           overview: args.overview,
           features: args.features,
           dataFlow: args.dataFlow,
@@ -280,12 +282,17 @@ function createPresentPlanTool() {
     "present_plan",
     "Present a structured build plan to the user for approval before writing any code. After this tool returns, stop and wait for the user to approve or request changes from the plan card. Use this tool the FIRST time you build something new.",
     {
+      title: z.string().describe("Short, clear name for the app (e.g. 'Lead Enrichment Dashboard')"),
       overview: z.string().describe("2-3 sentence high-level summary of what will be built"),
       features: z
         .array(
           z.object({
             name: z.string().describe("Feature name"),
             description: z.string().describe("Short description of what the feature does"),
+            emoji: z
+              .string()
+              .optional()
+              .describe("Emoji that represents this feature (e.g. '🔍', '🤖', '📊')"),
           }),
         )
         .describe("Main features / capabilities of the app"),

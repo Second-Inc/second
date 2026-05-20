@@ -2,29 +2,26 @@
 
 import { useState } from "react";
 import {
-  ArrowRightLeftIcon,
-  BotIcon,
-  CheckCircle2Icon,
   ChevronDownIcon,
-  HammerIcon,
-  LayoutListIcon,
   PencilIcon,
-  ServerIcon,
-  SparklesIcon,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export type PlanData = {
+  title: string | null;
   overview: string | null;
-  features: { name: string; description: string }[] | null;
+  features: { name: string; description: string; emoji: string | null }[] | null;
   dataFlow: string | null;
   agents: string | null;
   backend: string | null;
@@ -38,24 +35,79 @@ type PlanCardProps = {
   onRequestChanges: (feedback: string) => void;
 };
 
-function SectionLabel({
-  icon,
-  label,
-}: {
-  icon: React.ReactNode;
-  label: string;
-}) {
+// ---------------------------------------------------------------------------
+// Agent parsing & sphere
+// ---------------------------------------------------------------------------
+
+type ParsedAgent = { name: string; summary: string };
+
+function parseAgents(text: string): ParsedAgent[] {
+  const regex = /\*\*([^*]+)\*\*/g;
+  const matches = [...text.matchAll(regex)];
+  if (matches.length === 0) return [];
+
+  const parts: ParsedAgent[] = [];
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const name = m[1].trim();
+    const start = (m.index ?? 0) + m[0].length;
+    const end =
+      i + 1 < matches.length
+        ? (matches[i + 1].index ?? text.length)
+        : text.length;
+    const summary = text
+      .slice(start, end)
+      .replace(/^[\s\u2014\-\u2013:.,()]+/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    parts.push({ name, summary });
+  }
+  return parts;
+}
+
+const AGENT_GRADIENTS = [
+  "linear-gradient(120deg, #d4fc79 0%, #96e6a1 100%)",
+  "linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%)",
+  "linear-gradient(to right, #4facfe 0%, #00f2fe 100%)",
+  "linear-gradient(to top, #30cfd0 0%, #330867 100%)",
+  "linear-gradient(to top, #fddb92 0%, #d1fdff 100%)",
+  "linear-gradient(to right, #eea2a2 0%, #bbc1bf 19%, #57c6e1 42%, #b49fda 79%, #7ac5d8 100%)",
+  "linear-gradient(to top, #fff1eb 0%, #ace0f9 100%)",
+  "linear-gradient(to right, #f78ca0 0%, #f9748f 19%, #fd868c 60%, #fe9a8b 100%)",
+  "linear-gradient(to top, #accbee 0%, #e7f0fd 100%)",
+  "linear-gradient(to right, #74ebd5 0%, #9face6 100%)",
+];
+
+function pickAgentGradient(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  return AGENT_GRADIENTS[Math.abs(hash) % AGENT_GRADIENTS.length];
+}
+
+function AgentAvatar({ seed }: { seed: string }) {
   return (
-    <div className="flex items-center gap-1.5 text-[12px] mt-1 font-medium tracking-wide text-muted-foreground">
-      {icon}
-      {label}
-    </div>
+    <div
+      className="size-9 shrink-0 rounded-full ring-1 ring-border/40"
+      style={{ backgroundImage: pickAgentGradient(seed) }}
+    />
   );
 }
 
-function TextSkeleton({ lines = 2 }: { lines?: number }) {
+// ---------------------------------------------------------------------------
+// Skeletons
+// ---------------------------------------------------------------------------
+
+function TextSkeleton({
+  lines = 2,
+  className,
+}: {
+  lines?: number;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={cn("flex flex-col gap-2", className)}>
       {Array.from({ length: lines }).map((_, i) => (
         <Skeleton
           key={i}
@@ -69,177 +121,71 @@ function TextSkeleton({ lines = 2 }: { lines?: number }) {
 
 function FeatureSkeleton() {
   return (
-    <div className="grid grid-cols-[2rem_1fr] gap-3 px-1 py-2">
-      <Skeleton className="size-7 rounded-full" />
-      <div className="flex flex-col gap-1.5 pt-0.5">
-        <Skeleton className="h-3.5 w-32 rounded" />
-        <Skeleton className="h-3 w-full rounded" />
-      </div>
+    <div className="flex items-center gap-3 px-4 py-3">
+      <Skeleton className="size-8 rounded-lg shrink-0" />
+      <Skeleton className="h-3.5 w-28 rounded" />
     </div>
   );
 }
 
-function ExpandableText({
-  text,
-  threshold = 260,
-  className,
-}: {
-  text: string;
-  threshold?: number;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const canCollapse = text.length > threshold;
+// ---------------------------------------------------------------------------
+// Feature accordion item
+// ---------------------------------------------------------------------------
 
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="relative">
-        <p
-          className={cn(
-            "text-[13px] leading-relaxed text-foreground/80",
-            canCollapse && !open && "max-h-28 overflow-hidden",
-            className,
-          )}
-        >
-          {text}
-        </p>
-        {canCollapse && !open ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-b from-transparent to-[var(--composer-bg)]" />
-        ) : null}
-      </div>
-      {canCollapse ? (
-        <button
-          type="button"
-          className="w-fit text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? "Show less" : "Show more"}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function FeatureItem({
+function FeatureAccordionItem({
   feature,
   index,
+  isOpen,
+  onToggle,
 }: {
-  feature: { name: string; description: string };
+  feature: { name: string; description: string; emoji: string | null };
   index: number;
+  isOpen: boolean;
+  onToggle: () => void;
 }) {
   return (
     <div
-      className="animate-fade-in-up grid grid-cols-[2rem_1fr] gap-3 rounded-lg px-1 py-2 opacity-0 transition-colors hover:bg-muted/20"
-      style={{ animationDelay: `${index * 45}ms` }}
+      className={cn(
+        "animate-fade-in-up opacity-0 rounded-xl transition-colors",
+        isOpen && "bg-muted/40",
+      )}
+      style={{ animationDelay: `${index * 50}ms` }}
     >
-      <div className="flex size-7 items-center justify-center rounded-full border border-border bg-background text-[11px] font-medium">
-        {index + 1}
-      </div>
-      <div className="min-w-0">
-        <div className="text-[13px] font-medium leading-snug">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 rounded-xl"
+      >
+        <span className="text-[16px] leading-none shrink-0">
+          {feature.emoji || "✨"}
+        </span>
+        <span className="flex-1 text-[14px] font-medium leading-snug">
           {feature.name}
-        </div>
-        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        </span>
+        <ChevronDownIcon
+          className={cn(
+            "size-3.5 shrink-0 text-foreground/50 transition-transform duration-200",
+            isOpen && "rotate-180",
+          )}
+        />
+      </button>
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-200",
+          isOpen ? "max-h-40 opacity-100" : "max-h-0 opacity-0",
+        )}
+      >
+        <p className="px-4 pb-3 pl-[3.75rem] text-[13px] leading-relaxed text-muted-foreground">
           {feature.description}
-        </div>
+        </p>
       </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Agents / Backend preview — parsed text shown as mini UI cards
+// Main component
 // ---------------------------------------------------------------------------
-
-type ParsedAgent = { name: string; summary: string };
-
-/** Parse a loose markdown string like "**Name A** — does X. **Name B** — does Y."
- * into structured {name, summary} entries. Returns [] if no **name** markers. */
-function parseAgents(text: string): ParsedAgent[] {
-  const regex = /\*\*([^*]+)\*\*/g;
-  const matches = [...text.matchAll(regex)];
-  if (matches.length === 0) return [];
-
-  const parts: ParsedAgent[] = [];
-  for (let i = 0; i < matches.length; i++) {
-    const m = matches[i];
-    const name = m[1].trim();
-    const start = (m.index ?? 0) + m[0].length;
-    const end = i + 1 < matches.length ? matches[i + 1].index ?? text.length : text.length;
-    const summary = text
-      .slice(start, end)
-      .replace(/^[\s—\-–:.,()]+/, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    parts.push({ name, summary });
-  }
-  return parts;
-}
-
-function AgentMiniCard({ agent }: { agent: ParsedAgent }) {
-  return (
-    <div className="flex items-start gap-2.5 rounded-lg border border-border bg-background/40 px-3 py-2.5 transition-colors hover:bg-background/60">
-      <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-foreground/[0.06]">
-        <BotIcon className="size-3 text-foreground/70" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium leading-snug">{agent.name}</div>
-        {agent.summary ? (
-          <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-            {agent.summary}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function AgentsPreview({ text }: { text: string }) {
-  const parsed = parseAgents(text);
-  if (parsed.length > 0) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        {parsed.map((a, i) => (
-          <AgentMiniCard key={`${a.name}-${i}`} agent={a} />
-        ))}
-      </div>
-    );
-  }
-  return <ExpandableText text={text} threshold={180} />;
-}
-
-function BackendPreview({ text }: { text: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-background/40 px-3 py-2.5">
-      <ExpandableText text={text} threshold={180} />
-    </div>
-  );
-}
-
-function RuntimePanel({
-  icon,
-  label,
-  children,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="min-w-0 space-y-2.5">
-      <SectionLabel icon={icon} label={label} />
-      {children}
-    </div>
-  );
-}
-
-function NotAvailableState() {
-  return (
-    <div className="rounded-lg border border-dashed border-border/70 bg-background/30 px-3 py-2.5 text-[11.5px] text-muted-foreground/70">
-      Not available
-    </div>
-  );
-}
 
 export function PlanCard({
   plan,
@@ -248,9 +194,12 @@ export function PlanCard({
   onApprove,
   onRequestChanges,
 }: PlanCardProps) {
+  const [openFeatures, setOpenFeatures] = useState<Set<number>>(new Set());
   const [editMode, setEditMode] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const featureCount = plan.features?.length ?? 0;
+
+  const title = plan.title || "Build Plan";
+  const agents = plan.agents ? parseAgents(plan.agents) : [];
 
   return (
     <div className="relative rounded-2xl">
@@ -265,124 +214,35 @@ export function PlanCard({
         className="relative not-prose overflow-hidden rounded-2xl bg-[var(--composer-bg)]"
         style={{ boxShadow: "var(--composer-shadow)" }}
       >
-        <div className="px-5 py-4 sm:px-6 sm:py-5">
-          <div className="flex items-start gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06]">
-              <HammerIcon className="size-4 text-foreground/70" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">Build Plan</span>
-                <Badge variant="secondary" className="gap-1">
-                  {isStreaming ? (
-                    <SparklesIcon className="size-2.5" />
-                  ) : (
-                    <CheckCircle2Icon className="size-2.5" />
-                  )}
-                  {isStreaming ? "Streaming" : "Ready"}
-                </Badge>
-                {featureCount > 0 ? (
-                  <Badge variant="outline">
-                    {featureCount} feature{featureCount === 1 ? "" : "s"}
-                  </Badge>
-                ) : null}
-              </div>
-              <div className="mt-3">
-                {plan.overview ? (
-                  <ExpandableText text={plan.overview} threshold={360} />
-                ) : (
-                  <TextSkeleton />
-                )}
-              </div>
-            </div>
+        {/* Header + actions */}
+        <div className="px-5 pt-6 pb-4 sm:px-6 sm:pt-7 sm:pb-5">
+          <div className="text-[11px] font-medium text-muted-foreground/50 mb-2.5">
+            Plan
           </div>
-        </div>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">
+            {title}
+          </span>
+          {plan.overview ? (
+            <p className="mt-2 text-[14px] leading-relaxed text-foreground">
+              {plan.overview}
+            </p>
+          ) : (
+            <TextSkeleton lines={2} className="mt-3" />
+          )}
 
-        <div className="border-t border-border px-5 py-4 sm:px-6">
-          <SectionLabel
-            icon={<LayoutListIcon className="size-3" />}
-            label="Feature Scope"
-          />
-          <div className="mt-3 flex flex-col gap-1">
-            {plan.features ? (
-              plan.features.map((feature, index) => (
-                <FeatureItem
-                  key={`${feature.name}-${index}`}
-                  feature={feature}
-                  index={index}
-                />
-              ))
-            ) : (
-              <div className="flex flex-col gap-2">
-                <FeatureSkeleton />
-                <FeatureSkeleton />
-                <FeatureSkeleton />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-5 border-t border-border px-5 py-4 sm:px-6 md:grid-cols-[1.4fr_1fr]">
-          <RuntimePanel
-            icon={<BotIcon className="size-3" />}
-            label="Agents"
-          >
-            {plan.agents ? (
-              <AgentsPreview text={plan.agents} />
-            ) : isStreaming ? (
-              <TextSkeleton lines={2} />
-            ) : (
-              <NotAvailableState />
-            )}
-          </RuntimePanel>
-          <RuntimePanel
-            icon={<ServerIcon className="size-3" />}
-            label="Backend"
-          >
-            {plan.backend ? (
-              <BackendPreview text={plan.backend} />
-            ) : isStreaming ? (
-              <TextSkeleton lines={1} />
-            ) : (
-              <NotAvailableState />
-            )}
-          </RuntimePanel>
-        </div>
-
-        <div className="border-t border-border px-5 py-3.5 sm:px-6">
-          <Collapsible>
-            <CollapsibleTrigger className="group flex w-full items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground">
-              <ArrowRightLeftIcon className="size-3" />
-              Data Flow
-              <ChevronDownIcon className="size-3 transition-transform group-data-[state=open]:rotate-180" />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-3">
-                {plan.dataFlow ? (
-                  <ExpandableText text={plan.dataFlow} threshold={280} />
-                ) : (
-                  <TextSkeleton lines={3} />
-                )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
-
-        <div className="border-t border-border px-5 py-4 sm:px-6">
+          {/* Actions — right below description */}
           {!editMode ? (
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
               <Button
-                size="lg"
-                className="rounded-full"
+                className="rounded-full h-8 px-3.5 text-[13px]"
                 disabled={!actionsEnabled}
                 onClick={onApprove}
               >
-                Approve & Build
+                Approve
               </Button>
               <Button
-                size="lg"
                 variant="outline"
-                className="rounded-full"
+                className="rounded-full h-8 !pl-3 pr-3.5 text-[13px]"
                 disabled={!actionsEnabled}
                 onClick={() => setEditMode(true)}
               >
@@ -391,7 +251,7 @@ export function PlanCard({
               </Button>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="mt-5 flex flex-col gap-3">
               <textarea
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
@@ -400,9 +260,8 @@ export function PlanCard({
                 className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                 autoFocus
               />
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <Button
-                  size="lg"
                   className="rounded-full"
                   disabled={!feedback.trim()}
                   onClick={() => {
@@ -414,7 +273,6 @@ export function PlanCard({
                   Send Feedback
                 </Button>
                 <Button
-                  size="lg"
                   variant="ghost"
                   className="rounded-full"
                   onClick={() => {
@@ -428,6 +286,108 @@ export function PlanCard({
             </div>
           )}
         </div>
+
+        {/* Features */}
+        <div className="border-t border-border/50 px-5 py-5 sm:px-6">
+          <div className="text-[13px] font-semibold text-foreground/70 mb-2">
+            Features
+          </div>
+          <div className="space-y-1.5 -mx-3 sm:-mx-3">
+            {plan.features ? (
+              <>
+                {plan.features
+                  .filter((f) => f.emoji)
+                  .map((feature, index) => (
+                    <FeatureAccordionItem
+                      key={`${feature.name}-${index}`}
+                      feature={feature}
+                      index={index}
+                      isOpen={openFeatures.has(index)}
+                      onToggle={() =>
+                        setOpenFeatures((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(index)) next.delete(index);
+                          else next.add(index);
+                          return next;
+                        })
+                      }
+                    />
+                  ))}
+                {isStreaming &&
+                  plan.features.some((f) => !f.emoji) && <FeatureSkeleton />}
+              </>
+            ) : isStreaming ? (
+              <>
+                <FeatureSkeleton />
+                <FeatureSkeleton />
+                <FeatureSkeleton />
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Agents — hidden for now */}
+        {false && (plan.agents || isStreaming) && (
+          <div className="border-t border-border/50 px-5 py-5 sm:px-6">
+            <div className="text-[13px] font-semibold text-foreground/70 mb-3">
+              Agents
+            </div>
+            {plan.agents ? (
+              agents.length > 0 ? (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  {agents.map((agent, index) => (
+                    <Tooltip key={`${agent.name}-${index}`}>
+                      <TooltipTrigger asChild>
+                        <div
+                          className="animate-fade-in-up flex items-center gap-2.5 opacity-0 cursor-default"
+                          style={{ animationDelay: `${index * 60}ms` }}
+                        >
+                          <AgentAvatar seed={agent.name} />
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-medium leading-snug">
+                              {agent.name}
+                            </div>
+                            {agent.summary && (
+                              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground line-clamp-1">
+                                {agent.summary}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      {agent.summary && (
+                        <TooltipContent
+                          side="top"
+                          sideOffset={8}
+                          className="pointer-events-none max-w-xs rounded-xl bg-background px-4 py-3.5 text-foreground shadow-lg ring-1 ring-border/50 backdrop-blur-md data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-[state=closed]:hidden"
+                        >
+                          <div className="flex items-start gap-3">
+                            <AgentAvatar seed={agent.name} />
+                            <div className="min-w-0">
+                              <div className="text-[13px] font-semibold leading-snug">
+                                {agent.name}
+                              </div>
+                              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                                {agent.summary}
+                              </p>
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  {plan.agents}
+                </p>
+              )
+            ) : (
+              <TextSkeleton lines={1} />
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );

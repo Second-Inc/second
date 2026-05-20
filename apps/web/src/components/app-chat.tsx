@@ -838,12 +838,22 @@ function suggestionsFromPresentSuggestionsInput(input: unknown): BuildSuggestion
 function planDataFromPresentPlanInput(input: unknown): PlanData {
   const toolInput = asRecord(input);
   return {
+    title:
+      typeof toolInput?.title === "string"
+        ? toolInput.title
+        : null,
     overview:
       typeof toolInput?.overview === "string"
         ? toolInput.overview
         : null,
     features: Array.isArray(toolInput?.features)
-      ? (toolInput.features as { name: string; description: string }[])
+      ? (toolInput.features as { name: string; description: string; emoji: string | null }[]).map(
+          (f) => ({
+            name: typeof f?.name === "string" ? f.name : "",
+            description: typeof f?.description === "string" ? f.description : "",
+            emoji: typeof f?.emoji === "string" ? f.emoji : null,
+          }),
+        )
       : null,
     dataFlow:
       typeof toolInput?.dataFlow === "string"
@@ -1006,6 +1016,8 @@ function planApprovalAnalytics(input: unknown): AnalyticsProperties {
   const features = plan.features ?? [];
 
   return {
+    plan_title: plan.title,
+    plan_has_title: Boolean(plan.title),
     plan_has_overview: Boolean(plan.overview),
     plan_has_features: features.length > 0,
     plan_has_data_flow: Boolean(plan.dataFlow),

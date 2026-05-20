@@ -114,6 +114,7 @@ export function extractLatestUserText(messages: UIMessage[]): string {
 }
 
 function summarizePlanTool(input: Record<string, unknown>): string {
+  const title = stringValue(input.title);
   const overview = stringValue(input.overview);
   const features = Array.isArray(input.features)
     ? input.features
@@ -127,6 +128,7 @@ function summarizePlanTool(input: Record<string, unknown>): string {
   return truncate(
     [
       "Presented build plan.",
+      title ? `Title: ${title}` : null,
       overview ? `Overview: ${overview}` : null,
       features ? `Features: ${features}` : null,
       agents ? `Agents: ${agents}` : null,

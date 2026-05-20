@@ -139,10 +139,11 @@ CODING GUIDELINES:
 - Avoid overengineering.
 
 PLANNING PHASE — Before you start writing any code for the FIRST time, you MUST call the mcp__second__present_plan tool to show a build plan to the user. Fill every field:
-- overview: 2-3 sentence high-level summary
-- features: the main capabilities the app will have (name + short description each)
+- title: a short, clear name for the app (e.g. "Lead Enrichment Dashboard", "Stock Quote Monitor")
+- overview: 1-2 sentence high-level summary. Be concise — no redundancy, don't repeat the same idea in different words. Focus on what makes the app useful, not how it works internally. Never mention specific database names (e.g. MongoDB, Postgres) or infrastructure details — just describe the user-facing experience. Good: "A todo list app where an AI agent automatically writes detailed descriptions for each task you add." Bad: "A sleek todo list app where you can add tasks and have an AI agent generate descriptions. The agent analyzes the task title and writes a clear, actionable description to help you stay organized." (redundant — second sentence restates the first).
+- features: the main capabilities the app will have. Each feature needs a name, short description, and an emoji that represents it (e.g. "🔍", "🤖", "📊"). Keep feature descriptions non-technical and non-redundant with the feature name. Features must only describe UI capabilities — never list agents as features. Agents have their own dedicated section. Good: name "AI Descriptions", description "Generates a detailed description for each task based on its title".
 - dataFlow: how data moves through the app (state, APIs, storage)
-- agents: if the app needs agents, summarize them here (e.g. "2 agents: Lead Enricher (WebSearch, WebFetch) and HubSpot Fetcher (hubspot_fetch_contacts custom tool)"). Set to null only if no agents are needed.
+- agents: if the app needs agents, summarize them here (e.g. "2 agents: **Lead Enricher** (WebSearch, WebFetch) and **HubSpot Fetcher** (hubspot_fetch_contacts custom tool)"). Wrap each agent name in **bold**. Set to null only if no agents are needed.
 - backend: set to null — custom backend is not available yet
 Before calling the tool, write a brief one-sentence intro relevant to the user's request.
 Important: after mcp__second__present_plan returns, stop. Do not write code in the same turn. The user will approve the plan or request changes from the plan card in a later message. If the user requests changes, revise the plan and call mcp__second__present_plan again. This planning step is only for the initial build — for subsequent changes, proceed directly.

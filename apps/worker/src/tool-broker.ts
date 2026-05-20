@@ -140,15 +140,20 @@ const secondTools: McpTool[] = [
       "Present a structured build plan to the user for approval before writing any code, then stop and wait for approval in a later user message.",
     inputSchema: {
       type: "object",
-      required: ["overview", "features", "dataFlow"],
+      required: ["title", "overview", "features", "dataFlow"],
       properties: {
+        title: stringSchema,
         overview: stringSchema,
         features: {
           type: "array",
           items: {
             type: "object",
             required: ["name", "description"],
-            properties: { name: stringSchema, description: stringSchema },
+            properties: {
+              name: stringSchema,
+              description: stringSchema,
+              emoji: stringSchema,
+            },
           },
         },
         dataFlow: stringSchema,
@@ -377,9 +382,10 @@ async function callTool(
   if (serverName === "second") {
     if (toolName === "present_plan") {
       return executePresentPlanTool({
+        title: String(args.title ?? ""),
         overview: String(args.overview ?? ""),
         features: Array.isArray(args.features)
-          ? (args.features as Array<{ name: string; description: string }>)
+          ? (args.features as Array<{ name: string; description: string; emoji?: string }>)
           : [],
         dataFlow: String(args.dataFlow ?? ""),
         agents: typeof args.agents === "string" ? args.agents : null,
