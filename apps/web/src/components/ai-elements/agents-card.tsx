@@ -460,12 +460,22 @@ const AGENT_GRADIENTS = [
   "linear-gradient(to right, #74ebd5 0%, #9face6 100%)",
 ];
 
-function pickAgentGradient(seed: string): string {
+function agentGradientIndex(seed: string): number {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
     hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
   }
-  return AGENT_GRADIENTS[Math.abs(hash) % AGENT_GRADIENTS.length];
+  return Math.abs(hash) % AGENT_GRADIENTS.length;
+}
+
+function pickAgentGradient(seed: string): string {
+  return AGENT_GRADIENTS[agentGradientIndex(seed)];
+}
+
+function pickAgentGradientForIndex(seed: string, index: number): string {
+  return AGENT_GRADIENTS[
+    (agentGradientIndex(seed) + index) % AGENT_GRADIENTS.length
+  ] ?? pickAgentGradient(seed);
 }
 
 function AgentAvatar({ seed }: { seed: string }) {
@@ -879,7 +889,15 @@ function SystemPromptBlock({ prompt }: { prompt?: string }) {
 // Agent Node
 // ---------------------------------------------------------------------------
 
-function AgentNode({ agent }: { agent: AgentData }) {
+function AgentNode({
+  agent,
+  index,
+  singleAgent = false,
+}: {
+  agent: AgentData;
+  index: number;
+  singleAgent?: boolean;
+}) {
   const [promptOpen, setPromptOpen] = useState(false);
   const tools = agent.tools ?? [];
   const dataCollections = agent.dataCollections ?? [];
@@ -890,13 +908,20 @@ function AgentNode({ agent }: { agent: AgentData }) {
 
   return (
     <div
-      className="flex w-[calc(100%-3rem)] shrink-0 snap-start flex-col rounded-2xl border border-border/50 bg-[var(--composer-bg)] shadow-none"
+      className={cn(
+        "flex shrink-0 snap-start flex-col rounded-2xl border border-black/15 bg-[var(--composer-bg)] shadow-none dark:border-border/50",
+        singleAgent ? "w-full" : "w-[calc(100%-4.25rem)]",
+      )}
     >
       {/* Header — avatar left-aligned with name + description */}
       <div className="flex items-start gap-3.5 px-5 pt-5 pb-4 sm:px-6 sm:pt-6">
         <div
           className="size-11 shrink-0 rounded-full ring-1 ring-border/20"
-          style={{ backgroundImage: pickAgentGradient(agent.id || displayName) }}
+          style={{
+            backgroundImage: singleAgent
+              ? pickAgentGradient(agent.id || displayName)
+              : pickAgentGradientForIndex(agent.id || displayName, index),
+          }}
         />
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold">{displayName}</div>
@@ -1117,7 +1142,12 @@ export function AgentsCard({
             style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           >
             {agents.map((agent, index) => (
-              <AgentNode key={`${agent.id}-${index}`} agent={agent} />
+              <AgentNode
+                key={`${agent.id}-${index}`}
+                agent={agent}
+                index={index}
+                singleAgent={singleAgent}
+              />
             ))}
           </div>
 
