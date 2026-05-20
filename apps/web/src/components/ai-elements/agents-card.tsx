@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   AlertTriangleIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   DatabaseIcon,
   GlobeIcon,
   KeyRoundIcon,
@@ -878,25 +880,27 @@ function SystemPromptBlock({ prompt }: { prompt?: string }) {
 // ---------------------------------------------------------------------------
 
 function AgentNode({ agent }: { agent: AgentData }) {
+  const [promptOpen, setPromptOpen] = useState(false);
   const tools = agent.tools ?? [];
   const dataCollections = agent.dataCollections ?? [];
-  const hasResources = tools.length > 0 || dataCollections.length > 0;
   const displayName = agent.name || agent.id || "Agent";
+  const hasTools = tools.length > 0;
+  const hasData = dataCollections.length > 0;
+  const hasPrompt = Boolean(agent.systemPrompt);
 
   return (
-    <div className="px-5 py-5 sm:px-6">
-      {/* Agent identity */}
-      <div className="flex items-start gap-3">
-        <AgentAvatar seed={agent.id || displayName} />
+    <div
+      className="w-[calc(100%-3rem)] shrink-0 snap-start rounded-2xl bg-[var(--composer-bg)] flex flex-col"
+      style={{ boxShadow: "var(--composer-shadow)" }}
+    >
+      {/* Header — avatar left-aligned with name + description */}
+      <div className="flex items-start gap-3.5 px-5 pt-5 pb-4 sm:px-6 sm:pt-6">
+        <div
+          className="size-11 shrink-0 rounded-full ring-1 ring-border/20"
+          style={{ backgroundImage: pickAgentGradient(agent.id || displayName) }}
+        />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-sm font-medium">{displayName}</span>
-            {agent.id ? (
-              <span className="font-mono text-[11px] text-muted-foreground/80">
-                {agent.id}
-              </span>
-            ) : null}
-          </div>
+          <div className="text-[15px] font-semibold">{displayName}</div>
           {agent.description ? (
             <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
               {agent.description}
@@ -905,18 +909,55 @@ function AgentNode({ agent }: { agent: AgentData }) {
         </div>
       </div>
 
-      {/* Indented branch — tree line + tabs + prompt */}
-      <div className="relative mt-3.5 flex gap-3">
-        <div className="relative size-9 shrink-0">
-          <div className="absolute left-[calc(50%-0.5px)] top-0 bottom-0 w-px bg-border/70" />
+      {/* Tools — tabbed view */}
+      {hasTools && (
+        <div className="border-t border-border/30 px-5 py-4 sm:px-6">
+          <div className="text-[11px] font-medium text-muted-foreground/50 mb-2">
+            Tools
+          </div>
+          <ResourceTabs tools={tools} dataCollections={[]} />
         </div>
-        <div className="min-w-0 flex-1 space-y-3.5">
-          {hasResources ? (
-            <ResourceTabs tools={tools} dataCollections={dataCollections} />
-          ) : null}
-          <SystemPromptBlock prompt={agent.systemPrompt} />
+      )}
+
+      {/* Data collections */}
+      {hasData && (
+        <div className="border-t border-border/30 px-5 py-4 sm:px-6">
+          <div className="text-[11px] font-medium text-muted-foreground/50 mb-2">
+            Data
+          </div>
+          <ResourceTabs tools={[]} dataCollections={dataCollections} />
         </div>
-      </div>
+      )}
+
+      {/* System prompt — always visible, truncated with expand */}
+      {hasPrompt && (
+        <div className="border-t border-border/30 px-5 py-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setPromptOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/50 mb-2 transition-colors hover:text-muted-foreground"
+          >
+            System Prompt
+            <ChevronDownIcon
+              className={cn(
+                "size-3 transition-transform duration-200",
+                promptOpen && "rotate-180",
+              )}
+            />
+          </button>
+          <div
+            className={cn(
+              "relative text-[12.5px] leading-relaxed text-muted-foreground overflow-hidden transition-all duration-200",
+              promptOpen ? "max-h-[500px]" : "max-h-[3.5em]",
+            )}
+          >
+            {agent.systemPrompt}
+            {!promptOpen && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-b from-transparent to-[var(--composer-bg)]" />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -935,6 +976,10 @@ export function AgentsCard({
 }: AgentsCardProps) {
   const [editMode, setEditMode] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
   const agents = Array.isArray(data?.agents)
     ? data.agents.flatMap((agent) => {
         const normalized = normalizeAgent(agent);
@@ -942,169 +987,205 @@ export function AgentsCard({
       })
     : [];
   const hasAgents = agents.length > 0;
-  const toolCount =
-    agents.reduce(
-      (total, agent) => total + (agent.tools?.length ?? 0),
-      0,
-    );
+  const singleAgent = agents.length === 1;
+  const toolCount = agents.reduce(
+    (total, agent) => total + (agent.tools?.length ?? 0),
+    0,
+  );
   const validationIssues = validateAgents(agents);
   const hasValidationIssues = validationIssues.length > 0;
 
-  return (
-    <div className="relative rounded-2xl">
-      {actionsEnabled && (
-        <>
-          <div className="composer-gradient-border-short absolute -inset-[1px] rounded-2xl" />
-          <div className="composer-focus-glow-short absolute -inset-1.5 rounded-2xl" />
-        </>
-      )}
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  }, []);
 
+  const scroll = useCallback((direction: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const cardWidth = el.querySelector(":scope > div")?.clientWidth ?? 350;
+    el.scrollBy({ left: direction === "left" ? -cardWidth - 16 : cardWidth + 16, behavior: "smooth" });
+  }, []);
+
+  // Initialize scroll state after mount/update
+  const scrollRefCallback = useCallback(
+    (node: HTMLDivElement | null) => {
+      (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      if (node) {
+        updateScrollState();
+        node.addEventListener("scroll", updateScrollState, { passive: true });
+      }
+    },
+    [updateScrollState],
+  );
+
+  return (
+    <div className="not-prose space-y-4">
+      {/* Header — floating section */}
       <div
-        className="relative not-prose overflow-hidden rounded-2xl bg-[var(--composer-bg)]"
+        className="rounded-2xl bg-[var(--composer-bg)] px-5 pt-6 pb-4 sm:px-6 sm:pt-7 sm:pb-5"
         style={{ boxShadow: "var(--composer-shadow)" }}
       >
-        <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5 sm:px-6">
-          <span className="text-sm font-medium">Agents</span>
-          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
-            {hasValidationIssues ? (
-              <Badge variant="destructive" className="gap-1">
-                <AlertTriangleIcon className="size-2.5" />
-                Needs Fix
-              </Badge>
-            ) : null}
-            {hasAgents ? (
-              <span>
-                {agents.length} agent
-                {agents.length === 1 ? "" : "s"}
-                {toolCount > 0 ? (
-                  <>
-                    <span className="mx-1.5 text-muted-foreground/50">·</span>
-                    {toolCount} tool{toolCount === 1 ? "" : "s"}
-                  </>
-                ) : null}
-              </span>
-            ) : null}
-            {isStreaming ? (
-              <Badge variant="secondary" className="gap-1">
-                <SparklesIcon className="size-2.5" />
-                Streaming
-              </Badge>
-            ) : null}
+        <div>
+          <div className="text-[11px] font-medium text-muted-foreground/50 mb-2.5">
+            Agents
           </div>
-        </div>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">
+            {hasAgents
+              ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+              : "Agent configuration"}
+          </span>
+          {hasValidationIssues ? (
+            <Badge variant="destructive" className="gap-1 ml-2 align-middle">
+              <AlertTriangleIcon className="size-2.5" />
+              Needs Fix
+            </Badge>
+          ) : null}
 
-        {hasAgents ? (
-          <div className="flex flex-col divide-y divide-border">
+          {/* Actions */}
+          {!editMode ? (
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            <Button
+              className="rounded-full h-8 px-3.5 text-[13px]"
+              disabled={!actionsEnabled || hasValidationIssues}
+              onClick={onApprove}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-full h-8 !pl-3 pr-3.5 text-[13px]"
+              disabled={!actionsEnabled}
+              onClick={() => setEditMode(true)}
+            >
+              <PencilIcon data-icon="inline-start" />
+              Request Changes
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-col gap-3">
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="What would you like to change about the agent configuration?"
+              rows={3}
+              className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+              autoFocus
+            />
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Button
+                className="rounded-full h-8 px-3.5 text-[13px]"
+                disabled={!feedback.trim()}
+                onClick={() => {
+                  onRequestChanges(feedback.trim());
+                  setEditMode(false);
+                  setFeedback("");
+                }}
+              >
+                Send Feedback
+              </Button>
+              <Button
+                variant="ghost"
+                className="rounded-full h-8 px-3.5 text-[13px]"
+                onClick={() => {
+                  setEditMode(false);
+                  setFeedback("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+        </div>
+      </div>
+
+      {/* Agent carousel */}
+      {hasAgents ? (
+        <div className="relative">
+          <div
+            ref={scrollRefCallback}
+            className={cn(
+              "flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory py-1 scrollbar-none",
+              singleAgent && "justify-center snap-none",
+            )}
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
             {agents.map((agent, index) => (
               <AgentNode key={`${agent.id}-${index}`} agent={agent} />
             ))}
           </div>
-        ) : isStreaming ? (
-          <div className="px-5 py-5 sm:px-6">
-            <Skeleton className="h-28 rounded-lg" />
-          </div>
-        ) : (
-          <div className="px-5 py-5 text-sm text-muted-foreground sm:px-6">
-            No agents found in the presented configuration.
-          </div>
-        )}
 
-        {hasValidationIssues ? (
-          <div className="border-t border-border px-5 py-4 sm:px-6">
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
-              <div className="flex items-center gap-2 font-medium">
-                <AlertTriangleIcon className="size-3.5" />
-                Agent configuration needs changes before approval
-              </div>
-              <div className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed">
-                {validationIssues.map((issue, index) => (
-                  <div key={`${issue.agentName}-${issue.toolName}-${index}`}>
-                    <span className="font-medium">{issue.toolName}</span>
-                    <span className="text-destructive/75">
-                      {" "}
-                      in {issue.agentName}: {issue.message}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
+          {/* Left arrow */}
+          {!singleAgent && (
+            <button
+              type="button"
+              onClick={() => scroll("left")}
+              className={cn(
+                "absolute left-1 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full bg-background shadow-md ring-1 ring-border/50 text-foreground/70 transition-all hover:bg-muted",
+                canScrollLeft ? "opacity-100" : "opacity-0 pointer-events-none",
+              )}
+            >
+              <ChevronLeftIcon className="size-4" />
+            </button>
+          )}
 
-        {mockApprovalAcknowledged ? (
-          <div className="border-t border-border px-5 py-4 sm:px-6">
-            <Alert>
-              <ShieldCheckIcon />
-              <AlertTitle>Approved for mock-data development</AlertTitle>
-              <AlertDescription>
-                Continue building with these agents, but use mock data for
-                integrations until this app is reviewed by an admin or owner.
-              </AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
-
-        <div className="border-t border-border px-5 py-4 sm:px-6">
-          {!editMode ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                size="lg"
-                className="rounded-full"
-                disabled={!actionsEnabled || hasValidationIssues}
-                onClick={onApprove}
-              >
-                Approve Agents
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="rounded-full"
-                disabled={!actionsEnabled}
-                onClick={() => setEditMode(true)}
-              >
-                <PencilIcon data-icon="inline-start" />
-                Request Changes
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <textarea
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                placeholder="What would you like to change about the agent configuration?"
-                rows={3}
-                className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                autoFocus
-              />
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  size="lg"
-                  className="rounded-full"
-                  disabled={!feedback.trim()}
-                  onClick={() => {
-                    onRequestChanges(feedback.trim());
-                    setEditMode(false);
-                    setFeedback("");
-                  }}
-                >
-                  Send Feedback
-                </Button>
-                <Button
-                  size="lg"
-                  variant="ghost"
-                  className="rounded-full"
-                  onClick={() => {
-                    setEditMode(false);
-                    setFeedback("");
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
+          {/* Right arrow */}
+          {!singleAgent && (
+            <button
+              type="button"
+              onClick={() => scroll("right")}
+              className={cn(
+                "absolute right-1 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full bg-background shadow-md ring-1 ring-border/50 text-foreground/70 transition-all hover:bg-muted",
+                canScrollRight ? "opacity-100" : "opacity-0 pointer-events-none",
+              )}
+            >
+              <ChevronRightIcon className="size-4" />
+            </button>
           )}
         </div>
-      </div>
+      ) : isStreaming ? (
+        <Skeleton className="h-28 rounded-2xl" />
+      ) : (
+        <div className="text-sm text-muted-foreground">
+          No agents found in the presented configuration.
+        </div>
+      )}
+
+      {/* Validation issues */}
+      {hasValidationIssues ? (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangleIcon className="size-3.5" />
+            Agent configuration needs changes before approval
+          </div>
+          <div className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed">
+            {validationIssues.map((issue, index) => (
+              <div key={`${issue.agentName}-${issue.toolName}-${index}`}>
+                <span className="font-medium">{issue.toolName}</span>
+                <span className="text-destructive/75">
+                  {" "}
+                  in {issue.agentName}: {issue.message}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Mock approval notice */}
+      {mockApprovalAcknowledged ? (
+        <Alert>
+          <ShieldCheckIcon />
+          <AlertTitle>Approved for mock-data development</AlertTitle>
+          <AlertDescription>
+            Continue building with these agents, but use mock data for
+            integrations until this app is reviewed by an admin or owner.
+          </AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }
