@@ -503,7 +503,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-xs transition-colors",
+        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] transition-colors",
         active
           ? "border-foreground/45 text-foreground"
           : "border-transparent text-muted-foreground hover:text-foreground/85",
@@ -514,7 +514,7 @@ function TabButton({
       <span
         className={cn(
           "truncate max-w-[140px]",
-          tab.mono ? "font-mono text-[11px]" : "font-medium",
+          tab.mono ? "font-mono text-[12px]" : "font-medium",
         )}
       >
         {tab.label}
@@ -539,7 +539,7 @@ function GroupTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-3 text-xs font-medium transition-colors",
+        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 text-[13px] font-medium transition-colors",
         active
           ? "-mb-px bg-card text-foreground"
           : "text-muted-foreground hover:text-foreground",
@@ -558,7 +558,7 @@ function GroupTabButton({
 
 function MethodPill({ method }: { method: string }) {
   return (
-    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
+    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
       {method.toUpperCase()}
     </span>
   );
@@ -566,10 +566,10 @@ function MethodPill({ method }: { method: string }) {
 
 function DataDetail({ collection }: { collection: string }) {
   return (
-    <div className="text-xs">
+    <div className="text-[13px]">
       <div className="flex items-center gap-2">
         <DatabaseIcon className="size-3.5 text-muted-foreground" />
-        <span className="font-mono text-[13px] text-foreground">
+        <span className="font-mono text-[13.5px] text-foreground">
           {collection}
         </span>
         <Badge variant="outline" className="ml-auto">
@@ -596,7 +596,7 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
       : null);
 
   return (
-    <div className="text-xs">
+    <div className="text-[13px]">
       <div className="flex items-center gap-2.5">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background">
           {isCustom && domain ? (
@@ -618,12 +618,12 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-1.5 text-[13px] font-medium">
+          <div className="flex flex-wrap items-baseline gap-x-1.5 text-[14px] font-medium">
             <span className="text-muted-foreground">{toolCategory(tool)}</span>
             <span className="text-foreground">{toolDisplayName(tool)}</span>
           </div>
           {!tool.enabled ? (
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
+            <div className="mt-0.5 text-[12px] text-muted-foreground">
               Disabled
             </div>
           ) : null}
@@ -631,7 +631,7 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
       </div>
 
       {isCustom && tool.endpoint?.url ? (
-        <div className="mt-3 flex items-center gap-1.5 overflow-hidden rounded-md border border-border/70 bg-muted/30 px-2.5 py-1.5 text-[11px] font-mono">
+        <div className="mt-3 flex items-center gap-1.5 overflow-hidden rounded-md border border-border/70 bg-muted/30 px-2.5 py-1.5 text-[12px] font-mono">
           {tool.endpoint.method ? (
             <MethodPill method={tool.endpoint.method} />
           ) : null}
@@ -648,7 +648,7 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
       ) : null}
 
       {isCustom && tool.integration?.name ? (
-        <div className="mt-3 border-t border-border/70 pt-2.5 text-[11px] text-muted-foreground">
+        <div className="mt-3 border-t border-border/70 pt-2.5 text-[12px] text-muted-foreground">
           <div className="flex items-center gap-1.5">
             {isPublicTool ? (
               <GlobeIcon className="size-3" />
@@ -669,11 +669,11 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
               </span>
             )}
             {isPublicTool ? (
-              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[10px]">
+              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[11px]">
                 Public
               </Badge>
             ) : tool.integration.auth?.type === "oauth2" ? (
-              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[10px]">
+              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[11px]">
                 OAuth
               </Badge>
             ) : null}
@@ -681,14 +681,14 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
           {tool.integration.auth?.type === "oauth2" ? (
             <div className="mt-2 flex flex-col gap-1.5">
               <div className="flex flex-wrap gap-1.5">
-                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
+                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
                   {tool.integration.auth.providerKey}
                 </span>
-                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
+                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
                   triggering_user
                 </span>
                 {hostFromUrl(tool.integration.auth.tokenUrl) ? (
-                  <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
+                  <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
                     token: {hostFromUrl(tool.integration.auth.tokenUrl)}
                   </span>
                 ) : null}
@@ -698,7 +698,7 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
                   {tool.integration.auth.scopes.map((scope) => (
                     <span
                       key={scope}
-                      className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]"
+                      className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]"
                     >
                       {scope}
                     </span>
@@ -808,7 +808,7 @@ function ResourceTabs({
             })}
       </div>
 
-      <div className="p-3">{activePanel}</div>
+      <div className="p-3.5">{activePanel}</div>
     </div>
   );
 }
@@ -890,7 +890,7 @@ function AgentNode({ agent }: { agent: AgentData }) {
 
   return (
     <div
-      className="flex w-[calc(100%-3rem)] shrink-0 snap-start flex-col rounded-2xl border border-border/70 bg-card shadow-sm"
+      className="flex w-[calc(100%-3rem)] shrink-0 snap-start flex-col rounded-2xl border border-border/50 bg-[var(--composer-bg)] shadow-none"
     >
       {/* Header — avatar left-aligned with name + description */}
       <div className="flex items-start gap-3.5 px-5 pt-5 pb-4 sm:px-6 sm:pt-6">
@@ -901,40 +901,44 @@ function AgentNode({ agent }: { agent: AgentData }) {
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold">{displayName}</div>
           {agent.description ? (
-            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 line-clamp-2 max-w-[74ch] text-[13px] leading-relaxed text-muted-foreground">
               {agent.description}
             </p>
           ) : null}
         </div>
       </div>
 
-      {/* Tools — tabbed view */}
-      {hasTools && (
-        <div className="border-t border-border/30 px-5 py-4 sm:px-6">
-          <div className="text-[11px] font-medium text-muted-foreground/50 mb-2">
-            Tools
-          </div>
-          <ResourceTabs tools={tools} dataCollections={[]} />
-        </div>
-      )}
+      {(hasTools || hasData) && (
+        <div className="grid border-t border-border/25 divide-y divide-border/25">
+          {/* Tools — tabbed view */}
+          {hasTools && (
+            <div className="px-5 py-3.5 sm:px-6">
+              <div className="mb-2 text-[13px] font-semibold text-foreground/70">
+                Tools
+              </div>
+              <ResourceTabs tools={tools} dataCollections={[]} />
+            </div>
+          )}
 
-      {/* Data collections */}
-      {hasData && (
-        <div className="border-t border-border/30 px-5 py-4 sm:px-6">
-          <div className="text-[11px] font-medium text-muted-foreground/50 mb-2">
-            Data
-          </div>
-          <ResourceTabs tools={[]} dataCollections={dataCollections} />
+          {/* Data collections */}
+          {hasData && (
+            <div className="px-5 py-3.5 sm:px-6">
+              <div className="mb-2 text-[13px] font-semibold text-foreground/70">
+                Data
+              </div>
+              <ResourceTabs tools={[]} dataCollections={dataCollections} />
+            </div>
+          )}
         </div>
       )}
 
       {/* System prompt — always visible, truncated with expand */}
       {hasPrompt && (
-        <div className="border-t border-border/30 px-5 py-4 sm:px-6">
+        <div className="border-t border-border/25 px-5 py-3.5 sm:px-6">
           <button
             type="button"
             onClick={() => setPromptOpen((v) => !v)}
-            className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/50 mb-2 transition-colors hover:text-muted-foreground"
+            className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-foreground/70 transition-colors hover:text-foreground"
           >
             System Prompt
             <ChevronDownIcon
@@ -946,13 +950,13 @@ function AgentNode({ agent }: { agent: AgentData }) {
           </button>
           <div
             className={cn(
-              "relative text-[12.5px] leading-relaxed text-muted-foreground overflow-hidden transition-all duration-200",
-              promptOpen ? "max-h-[500px]" : "max-h-[3.5em]",
+              "relative overflow-hidden text-[13px] leading-relaxed text-muted-foreground transition-all duration-200",
+              promptOpen ? "max-h-[500px]" : "max-h-[2.7em]",
             )}
           >
             {agent.systemPrompt}
             {!promptOpen && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-b from-transparent to-[var(--composer-bg)]" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-b from-transparent to-[var(--composer-bg)]" />
             )}
           </div>
         </div>
