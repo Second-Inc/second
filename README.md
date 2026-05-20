@@ -69,12 +69,10 @@ Second is a local / on-prem Lovable for building internal software (e.g. competi
 
 ### Second VS other platforms
 
-Most platforms weren't built for deep, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
+Most platforms weren't built for deep, multiplayer, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
 **Generally, multiplayer human-agent work is where coordination gets hard and things start to break, fast.**
 
-Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build **your own collaborative agent orchestration apps,** tailored to what your team actually needs right now.
-
-Custom interfaces to manage agents.
+Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom interfaces to work with agents, tailored to what your team needs right now!
 
 ### How it Works
 
