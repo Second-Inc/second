@@ -76,9 +76,11 @@ Custom interfaces to manage agents.
 
 ### How it Works
 
-1. **Describe your app.** Tell Second what you need in a single prompt.
-2. **Second generates the app in your workspace.** The agents, scoped tools, a real-time DB, and a beautiful UI, all wired together.
-3. **Your team works alongside agents.** Collaborate on the same shared interface, in real time.
+Second is a single workspace.
+
+1. **You describe your app.** In a single prompt.
+2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
+3. **Your team now works alongside agents.** Collaborate on the same shared interface.
 
 `<<INSERT VIDEO/GIF OF APP GENERATION FLOW HERE>>`
 
