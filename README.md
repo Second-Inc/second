@@ -61,7 +61,7 @@ Bring your agent:
 
 ## What is Second?
 
-Imagine a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform real work instead of just answering questions.
+Imagine a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform actual work instead of just answering questions.
 
 <!-- Teams love Second because it makes multiplayer AI simple, loved and finally- easy. -->
 
@@ -70,13 +70,17 @@ Imagine a local / on-prem Lovable for building internal software (e.g. competito
 Most platforms weren't built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
 **Generally, multiplayer human-agent work is where coordination gets hard and things start to break, fast.**
 
-Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build **your own collaborative agent orchestration apps — around your team's workflows and needs!**
+Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build **your own collaborative agent orchestration apps,** tailored to what your team needs right now.
+
+Custom interfaces to manage agents.
 
 ### How it Works
 
 1. **Describe your app.** Tell Second what you need in a single prompt.
-2. **Second generates everything.** The agents, scoped tools, a real-time DB, and a beautiful UI, all wired together.
+2. **Second generates the app in your workspace.** The agents, scoped tools, a real-time DB, and a beautiful UI, all wired together.
 3. **Your team works alongside agents.** Collaborate on the same shared interface, in real time.
+
+`<<INSERT VIDEO/GIF OF APP GENERATION FLOW HERE>>`
 
 ---
 
@@ -164,7 +168,15 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 
 ## Why Second is Special
 
-**Second generates dynamic, agent-native software.** For each app, it creates **scoped tools** on the fly for every agent. Agents can never do things you don't want them to do, and they don't even have access to secrets.
+**Second generates dynamic, agent-native software.** For each app:
+
+- **Scoped tools created per app, for every agent.** Agents can never do things you don't want them to do.
+- **Second is true self-building software.** It generates the integrations, connection instructions, and scoped tools.
+- **Agents never see secrets.** Secrets are injected server-side.
+- **`agents.json`: governed policy as code.** Each app has an `agents.json`. Changes require admin approval via hash verification.
+- **Draft and published are fully separated.** Builders iterate freely with mock data. Published apps only run the last approved config.
+
+`<<INSERT VIDEO OF SELF-BUILDING INTEGRATION HERE>>`
 
 On top of that, Second handles the hard parts:
 
@@ -220,6 +232,8 @@ From a single prompt, build an app where agents:
 -->
 
 Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
+
+`<<INSERT SCREENSHOT OF COLLABORATIVE APP INTERFACE HERE>>`
 
 ---
 
