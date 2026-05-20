@@ -20,7 +20,10 @@ import {
 import { flushSync } from "react-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { StickToBottom } from "use-stick-to-bottom";
+import {
+  StickToBottom,
+  type StickToBottomContext,
+} from "use-stick-to-bottom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -541,6 +544,10 @@ type AppChatProps = {
   onStreamStart?: () => void;
   /** Called when any tool call reaches output-available */
   onToolCallComplete?: (toolName: string, toolCallId: string) => void;
+  /** Called when the current blocking approval card changes. */
+  onPendingApprovalChange?: (kind: "plan" | "agents" | "suggestions" | null) => void;
+  /** Called when the user acts on a blocking approval card. */
+  onApprovalAction?: (kind: "plan" | "agents" | "suggestions") => void;
   /** Called when a new builder message closes a pending app review */
   onReviewInvalidated?: () => void;
   /** Called when editing a published app creates an unpublished draft */
@@ -2467,6 +2474,8 @@ export function AppChat({
   onStreamComplete,
   onStreamStart,
   onToolCallComplete,
+  onPendingApprovalChange,
+  onApprovalAction,
   onReviewInvalidated,
   onDraftCreatedFromPublished,
   canApproveAgentConfig = false,
@@ -2724,6 +2733,16 @@ export function AppChat({
     () => pendingBlockingApprovalFromMessages(messages),
     [messages],
   );
+  const scrollChatToBottom = useCallback(() => {
+    void stickToBottomContextRef.current?.scrollToBottom({
+      animation: "smooth",
+      ignoreEscapes: true,
+      duration: 600,
+    });
+  }, []);
+  useEffect(() => {
+    onPendingApprovalChange?.(pendingApproval?.kind ?? null);
+  }, [onPendingApprovalChange, pendingApproval?.kind]);
   const trackedApprovalShownRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!pendingApproval) return;
@@ -3192,6 +3211,7 @@ export function AppChat({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isStopping, setIsStopping] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const stickToBottomContextRef = useRef<StickToBottomContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const copiedMessageResetRef = useRef<number | null>(null);
   const hasSentInitial = useRef(false);
@@ -3865,6 +3885,7 @@ export function AppChat({
         <StickToBottom
           className="relative flex-1 overflow-y-hidden"
           resize="smooth"
+          contextRef={stickToBottomContextRef}
         >
           <StickToBottom.Content className={`mx-auto space-y-6 p-4 pb-48 ${panelMode ? "max-w-full px-3" : "max-w-[720px] sm:p-6 sm:pb-48"}`}>
             {displayMessages.map((msg, messageIndex) => {
@@ -4064,6 +4085,7 @@ export function AppChat({
                                 isCurrentApproval && suggestions.length > 0 && !isBusy
                               }
                               onSelectSuggestion={(title) => {
+                                onApprovalAction?.("suggestions");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,
@@ -4101,6 +4123,8 @@ export function AppChat({
                               isStreaming={isStreaming}
                               actionsEnabled={isCurrentApproval && !isBusy}
                               onApprove={() => {
+                                scrollChatToBottom();
+                                onApprovalAction?.("plan");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,
@@ -4114,6 +4138,7 @@ export function AppChat({
                                 );
                               }}
                               onRequestChanges={(fb) => {
+                                onApprovalAction?.("plan");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,
@@ -4157,13 +4182,16 @@ export function AppChat({
                                 (agentsJsonApprovalSource === "build_chat_mock" &&
                                   latestAgentsToolCallId === part.toolCallId)
                               }
-                              onApprove={() =>
+                              onApprove={() => {
+                                scrollChatToBottom();
+                                onApprovalAction?.("agents");
                                 void approveAgentsConfiguration(
                                   agentsData,
                                   part.toolCallId,
-                                )
-                              }
+                                );
+                              }}
                               onRequestChanges={(fb) => {
+                                onApprovalAction?.("agents");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,

@@ -568,7 +568,7 @@ function GroupTabButton({
 
 function MethodPill({ method }: { method: string }) {
   return (
-    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
+    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
       {method.toUpperCase()}
     </span>
   );
@@ -576,20 +576,22 @@ function MethodPill({ method }: { method: string }) {
 
 function DataDetail({ collection }: { collection: string }) {
   return (
-    <div className="text-[13px]">
-      <div className="flex items-center gap-2">
-        <DatabaseIcon className="size-3.5 text-muted-foreground" />
-        <span className="font-mono text-[13.5px] text-foreground">
+    <div className="min-w-0 overflow-hidden text-[13px]">
+      <div className="flex min-w-0 items-center gap-2">
+        <DatabaseIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 break-words font-mono text-[13.5px] text-foreground">
           {collection}
         </span>
-        <Badge variant="outline" className="ml-auto">
+        <Badge variant="outline" className="ml-auto shrink-0">
           Collection
         </Badge>
       </div>
       <p className="mt-2 leading-relaxed text-muted-foreground">
         The agent reads from and writes to{" "}
-        <span className="font-mono text-foreground/80">{collection}</span> at
-        runtime.
+        <span className="break-words font-mono text-foreground/80">
+          {collection}
+        </span>{" "}
+        at runtime.
       </p>
     </div>
   );
@@ -606,8 +608,8 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
       : null);
 
   return (
-    <div className="text-[13px]">
-      <div className="flex items-center gap-2.5">
+    <div className="min-w-0 overflow-hidden text-[13px]">
+      <div className="flex min-w-0 items-center gap-2.5">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background">
           {isCustom && domain ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -628,9 +630,11 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-1.5 text-[14px] font-medium">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[14px] font-medium">
             <span className="text-muted-foreground">{toolCategory(tool)}</span>
-            <span className="text-foreground">{toolDisplayName(tool)}</span>
+            <span className="min-w-0 break-words text-foreground">
+              {toolDisplayName(tool)}
+            </span>
           </div>
           {!tool.enabled ? (
             <div className="mt-0.5 text-[12px] text-muted-foreground">
@@ -641,49 +645,49 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
       </div>
 
       {isCustom && tool.endpoint?.url ? (
-        <div className="mt-3 flex items-center gap-1.5 overflow-hidden rounded-md border border-border/70 bg-muted/30 px-2.5 py-1.5 text-[12px] font-mono">
+        <div className="mt-3 flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden rounded-md border border-border/70 bg-muted/30 px-2.5 py-1.5 text-[12px] font-mono">
           {tool.endpoint.method ? (
             <MethodPill method={tool.endpoint.method} />
           ) : null}
-          <span className="truncate text-muted-foreground">
+          <span className="min-w-0 flex-1 whitespace-normal break-all leading-relaxed text-muted-foreground">
             {tool.endpoint.url}
           </span>
         </div>
       ) : null}
 
       {description ? (
-        <p className="mt-3 leading-relaxed text-muted-foreground">
+        <p className="mt-3 break-words leading-relaxed text-muted-foreground">
           {description}
         </p>
       ) : null}
 
       {isCustom && tool.integration?.name ? (
         <div className="mt-3 border-t border-border/70 pt-2.5 text-[12px] text-muted-foreground">
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             {isPublicTool ? (
-              <GlobeIcon className="size-3" />
+              <GlobeIcon className="size-3 shrink-0" />
             ) : (
-              <KeyRoundIcon className="size-3" />
+              <KeyRoundIcon className="size-3 shrink-0" />
             )}
             {isPublicTool ? (
-              <span>
+              <span className="min-w-0 break-words">
                 Uses public{" "}
                 <span className="text-foreground/80">{tool.integration.name}</span>{" "}
                 API
               </span>
             ) : (
-              <span>
+              <span className="min-w-0 break-words">
                 Requires{" "}
                 <span className="text-foreground/80">{tool.integration.name}</span>{" "}
                 integration
               </span>
             )}
             {isPublicTool ? (
-              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[11px]">
+              <Badge variant="outline" className="ml-auto h-5 shrink-0 px-1.5 text-[11px]">
                 Public
               </Badge>
             ) : tool.integration.auth?.type === "oauth2" ? (
-              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[11px]">
+              <Badge variant="outline" className="ml-auto h-5 shrink-0 px-1.5 text-[11px]">
                 OAuth
               </Badge>
             ) : null}
@@ -760,7 +764,7 @@ function ResourceTabs({
   })();
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card">
       {/* Row 1 — Group tabs (only if both groups exist) */}
       {hasBoth ? (
         <div className="flex items-stretch border-b border-border bg-muted/40">
@@ -818,7 +822,7 @@ function ResourceTabs({
             })}
       </div>
 
-      <div className="p-3.5">{activePanel}</div>
+      <div className="min-w-0 overflow-hidden p-3.5">{activePanel}</div>
     </div>
   );
 }
@@ -909,7 +913,7 @@ function AgentNode({
   return (
     <div
       className={cn(
-        "flex shrink-0 snap-start flex-col rounded-2xl border border-black/15 bg-[var(--composer-bg)] shadow-none dark:border-border/50",
+        "flex min-w-0 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-black/15 bg-[var(--composer-bg)] shadow-none dark:border-border/50",
         singleAgent ? "w-full" : "w-[calc(100%-4.25rem)]",
       )}
     >
