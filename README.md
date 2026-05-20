@@ -36,79 +36,57 @@ npx --yes @second-inc/cli
 | Apple Silicon Mac (M1-M5) | **Available now** |
 | Intel Mac, Linux, Windows | Coming soon |
 
-<br>
-
-## What is Second?
-
-<!-- Let every team ship personal software across your org: a factory for custom internal software where humans and agents work together, on the same shared interfaces. -->
-
-<!-- Second is a factory for custom internal software, purpose-built for human2agent work. -->
-
-Second is where your human team collaborates with your agent team on real work - via custom apps you build for your use-cases!
-
-Imagine a Lovable-like experience for building complete internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:**
-- Agents read and write to the same real-time DB as your team does
-- They get dynamically generated, scoped tools to do the work inside the apps you've built
-- They collaborate with your team on the same shared apps and interfaces
-
-Second allows you to create the multiplayer human-agent interfaces of your dreams!
-
-On top of that, Second handles the hard parts:
-
-| Capability | &nbsp; |
-|:---|:---|
-| **🤹 Multi-agent orchestration** | Multiple specialized agents per app |
-| **⏲️ Long-running async work** | Scheduled jobs, periodic research, background tasks |
-| **🗃️ Live data persistence** | Real-time DB with Change Streams; survives restarts and churn |
-
-Teams love Second because it makes multiplayer AI (human team + agent team) simple and visual.
-
-## Why Second?
-
-Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
-
-Second lets you build custom internal software that fits your team's actual workflows, not the other way around.
-
-> [!TIP]
-> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise).
->
-> Need help with security, SSO, deployment, cost management, runtime setup, and SLA support? Contact [sales@second.so](mailto:sales@second.so).
-
-## Bring Your Agent
-
-Bring your own agent harness, switch runtimes and models per message, per app, without restarting conversations.
+Bring your agent:
 
 <table>
   <tr>
-    <td width="120" align="center">
+    <td width="70" align="center">
       <img src="apps/web/public/icons/claude-code.svg" width="28" height="28" alt="Claude Code">
     </td>
-    <td width="120" align="center">
+    <td width="70" align="center">
       <img src="apps/web/public/icons/codex.svg" width="28" height="28" alt="Codex">
     </td>
-    <td width="120" align="center">
+    <td width="70" align="center">
       <img src="apps/web/public/icons/opencode.svg" width="28" height="28" alt="OpenCode">
     </td>
   </tr>
   <tr>
-    <td align="center"><sub><strong>Claude Code</strong></sub></td>
-    <td align="center"><sub><strong>Codex</strong></sub></td>
-    <td align="center"><sub><strong>OpenCode</strong></sub></td>
-  </tr>
-  <tr>
     <td align="center">✅</td>
     <td align="center">✅</td>
-    <td align="center"><sub>Coming soon</sub></td>
+    <td align="center"><sub>Soon</sub></td>
   </tr>
 </table>
 
-## Personal Software Factory
+<br>
+
+## What is Second?
+
+Imagine a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform real work instead of just answering questions.
+
+<!-- Teams love Second because it makes multiplayer AI simple, loved and finally- easy. -->
+
+### Second VS other platforms
+
+Most platforms weren't built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
+**Generally, multiplayer human-agent work is where coordination gets hard and things start to break, fast.**
+
+Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build **your own collaborative agent orchestration apps — around your team's workflows and needs!**
+
+### How it Works
+
+1. **Describe your app.** Tell Second what you need in a single prompt.
+2. **Second generates everything.** The agents, scoped tools, a real-time DB, and a beautiful UI, all wired together.
+3. **Your team works alongside agents.** Collaborate on the same shared interface, in real time.
+
+---
+
+## The Internal Platform Everyone Needs (and Builds)
+
+Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable — but most never reach production (security, governance, integrations, maintenance, agent access control...). To solve this, they built internal platforms for themselves.
+
+**Second lets every organization have that.**
 
 Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
-
-Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable, but most of these projects never reach production because of various reasons (security, integrations, governance, safe deployments, maintenance, agent access control, and so on...).
-
-**To solve this, they built internal platforms for themselves. Second lets every organization have that.**
 
 <table>
   <tr>
@@ -118,16 +96,16 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
         <li>Build custom apps from a single prompt</li>
         <li>Run multiple agents in parallel across workflows</li>
         <li>Real-time collaborative UI with agents and humans on the same page</li>
-        <li>No code required — designed for non-technical teams</li>
+        <li>Never blocked: integrations return mock data until connected</li>
       </ul>
       <br>
     </td>
     <td width="50%" valign="top">
       <h3 align="center">🛠️ For Platform Engineers</h3>
       <ul>
+        <li>Fine-grained access control per app, per agent, per integration</li>
         <li>One-time workspace setup, unlimited apps</li>
         <li>Full governance: draft/review/publish lifecycle</li>
-        <li>Fine-grained access control per app, per agent, per integration</li>
         <li>Deploy on your own k8s, air-gapped or on-prem</li>
       </ul>
       <br>
@@ -184,6 +162,18 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 </tr>
 </table>
 
+## Why Second is Special
+
+**Second generates dynamic, agent-native software.** For each app, it creates **scoped tools** on the fly for every agent. Agents can never do things you don't want them to do, and they don't even have access to secrets.
+
+On top of that, Second handles the hard parts:
+
+| Capability | &nbsp; |
+|:---|:---|
+| **🤹 Multi-agent orchestration** | Multiple specialized agents per app |
+| **⏲️ Long-running async work** | Scheduled jobs, periodic research, background tasks |
+| **🗃️ Live data persistence** | Real-time DB with Change Streams; survives restarts and churn |
+
 <!-- ## Second Is Right For You If
 
 - ✅ Your team has Claude, Codex, or Lovable prototypes that need to become real production software.
@@ -195,7 +185,7 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 - ✅ You have security constraints that require local, self-hosted, or on-prem deployment.
 -->
 
-## Problems Second Solves
+<!-- ## Problems Second Solves
 
 | Without Second | With Second |
 |---|---|
@@ -204,6 +194,7 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 | ❌ Every integration becomes a one-off security project. | ✅ Second generates scoped tools and keeps secrets server-side. |
 | ❌ Agent permissions are hard to explain, approve, and audit. | ✅ `agents.json`, RBAC, approvals, and audit logs make access explicit. |
 | ❌ Every team rebuilds deployment, governance, and collaboration from scratch. | ✅ One workspace gives teams and platform engineers the same foundation. |
+-->
 
 ---
 
