@@ -137,6 +137,174 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 | **⏲️ Scheduled Agent Jobs** | Agents run on a schedule for periodic research, monitoring, and background tasks |
 | **🚀 One-Command Setup** | From zero to running with `npx @second-inc/cli` |
 
+## What You Can Build
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+<h3>🔍 Competitor Research Dashboard</h3>
+
+<sub>**Flow:** 🤖 Monitor → 👤 Review and flag → 🤖 Compile report → 👤 Share</sub><br>
+<sub>**Tools:** Web Search, Google Alerts, Drive</sub><br>
+<sub>**Agents:** Research Agent, Alert Agent, Report Agent</sub>
+
+```
+┌─────────────────────────────────┐
+│ LIVE FEED             3 new ▼   │
+├─────────────────────────────────┤
+│                                 │
+│ 🤖 Acme raised prices 12%     │
+│    Source: pricing page crawl   │
+│    → 👤 [Flag]  [Archive]     │
+│                                 │
+│ 🤖 RivalCo blog: "Q3 Roadmap" │
+│    Source: RSS monitor          │
+│    → 👤 [Read]  [Dismiss]     │
+│                                 │
+│ 👤 You flagged: Acme Series B  │
+│ 🤖 → Added to weekly report   │
+│                                 │
+├─────────────────────────────────┤
+│ 💬 Report Agent:               │
+│ "Weekly digest ready. 3 price   │
+│  alerts, 2 product launches,    │
+│  1 funding round flagged."      │
+│                                 │
+│ 👤 [Download PDF] [Share]      │
+└─────────────────────────────────┘
+```
+
+</td>
+<td width="50%" valign="top">
+
+<h3>📹 Content Curation Pipeline</h3>
+
+<sub>**Flow:** 🤖 Fetch videos → 👤 Select clips → 🤖 Cut and upload → 👤 Approve</sub><br>
+<sub>**Tools:** YouTube API, Clipping Service, Google Drive</sub><br>
+<sub>**Agents:** Curator Agent, Clip Agent</sub>
+
+```
+┌─────────────────────────────────┐
+│ VIDEOS THIS WEEK       12 ▼    │
+├────────┬────────┬───────────────┤
+│ Title  │ Source │ Status        │
+├────────┼────────┼───────────────┤
+│ "AI    │ YT     │ ✅ Clipped   │
+│ Agents │        │    → Drive    │
+│ 2025"  │        │               │
+├────────┼────────┼───────────────┤
+│ "Build │ YT     │ 👤 Review    │
+│ Your   │        │   [Select]    │
+│ Agent" │        │   [Skip]      │
+├────────┼────────┼───────────────┤
+│ "Agent │ YT     │ 🤖 Fetched   │
+│ Ops at │        │    Pending    │
+│ Scale" │        │               │
+├────────┴────────┴───────────────┤
+│ 💬 Clip Agent:                 │
+│ "Clipped first 2 min. Uploaded  │
+│  to /Content/May-2025."         │
+│                                 │
+│ 👤 [Approve] [Re-clip] [Next] │
+└─────────────────────────────────┘
+```
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+<h3>🎯 Lead Enrichment Pipeline</h3>
+
+<sub>**Flow:** 🤖 Scrape leads → 🤖 Enrich from LinkedIn + web → 🤖 Score and rank → 👤 Team reviews top leads</sub><br>
+<sub>**Tools:** HubSpot, LinkedIn, Web Search</sub><br>
+<sub>**Agents:** Scraper Agent, Enrichment Agent, Scoring Agent</sub>
+
+```
+┌─────────────────────────────────┐
+│ PIPELINE            47 leads ▼  │
+├────────┬───────┬────────────────┤
+│ Lead   │ Score │ Status         │
+├────────┼───────┼────────────────┤
+│ Acme   │ 92/100│ ✅ Ready      │
+│ Corp   │       │ 👤 [Call]     │
+├────────┼───────┼────────────────┤
+│ Nova   │ 78/100│ 🤖 Enriching  │
+│ Labs   │       │ 🤖 Score next │
+├────────┼───────┼────────────────┤
+│ Peak   │  --   │ 🤖 Scraping.. │
+│ Inc    │       │    3 sources   │
+├────────┴───────┴────────────────┤
+│ 💬 Scoring Agent:              │
+│ "Acme Corp: 200 employees,      │
+│  Series A, hiring 3 engineers.  │
+│  Score: 92. Ready for review."  │
+│                                 │
+│ 👤 [Accept] [Edit] [Skip]     │
+└─────────────────────────────────┘
+```
+
+</td>
+<td width="50%" valign="top">
+
+<h3>📊 GTM War Room</h3>
+
+<sub>**Flow:** 🤖 Agent pulls weekly metrics → 👤 PMM reviews positioning → 👤 Sales adds field notes → 🤖 Agent generates battlecard</sub><br>
+<sub>**Tools:** HubSpot, Slack, Google Docs, Analytics</sub><br>
+<sub>**Agents:** Metrics Agent, Battlecard Agent</sub>
+
+```
+┌─────────────────────────────────┐
+│ GTM WAR ROOM       Week 21 ▼   │
+├─────────────────────────────────┤
+│                                 │
+│ 📈 THIS WEEK                   │
+│ Pipeline: $320k (+14%)          │
+│ Win rate: 38% (up from 31%)     │
+│ Lost to competitor: 3 deals     │
+│                                 │
+│ 👤 PMM added positioning note: │
+│ "Emphasize self-hosted angle    │
+│  vs. Acme's cloud-only offer"   │
+│                                 │
+│ 👤 Sales added field note:     │
+│ "Acme offering 40% discounts    │
+│  to win back churned accounts"  │
+│                                 │
+├─────────────────────────────────┤
+│ 💬 Battlecard Agent:           │
+│ "Updated battlecard with new    │
+│  field intel. 2 new objection   │
+│  handlers added."               │
+│                                 │
+│ 👤 [Review card] [Push to Docs]│
+└─────────────────────────────────┘
+```
+
+</td>
+</tr>
+</table>
+
+And many more:
+
+| Use Case | What It Does | Tools | Agents |
+|:---|:---|:---|:---|
+| **Social Media Ops** | Draft posts, schedule across platforms, track engagement, repurpose top performers | Twitter/X, LinkedIn, Buffer | Content Agent, Analytics Agent |
+| **Recruiting Pipeline** | Source candidates, screen resumes, schedule interviews, track pipeline | LinkedIn, ATS, Google Calendar, Gmail | Sourcing Agent, Screening Agent |
+| **Customer Success** | Pull data from CRMs and support tools, surface churn risk, draft outreach | HubSpot, Intercom, Slack | Insights Agent, Outreach Agent |
+| **Invoice & Expense Tracking** | Collect invoices from email, extract data, match to POs, flag discrepancies | Gmail, Google Drive, Accounting API | Extraction Agent, Matching Agent |
+| **Compliance Monitoring** | Scan for policy violations, flag issues, route to approvers | Internal APIs, Slack, Jira | Compliance Agent, Routing Agent |
+| **Internal Knowledge Base** | Continuously index docs, summarize updates, answer team questions | Notion, Confluence, Slack | Indexing Agent, Q&A Agent |
+| **Founder's Daily Brief** | Aggregate metrics, news, emails, and calendar into one morning summary | Gmail, Google Calendar, Analytics, Web Search | Brief Agent |
+
+Your team sees everything in one collaborative interface. Agents write to the same database your team reads from. No export, no copy-paste, no context switching.
+
+---
+
 ## Why Second is Special
 
 **Second generates dynamic, agent-native software.** For each app:
@@ -178,33 +346,6 @@ On top of that, Second handles the hard parts:
 | ❌ Agent permissions are hard to explain, approve, and audit. | ✅ `agents.json`, RBAC, approvals, and audit logs make access explicit. |
 | ❌ Every team rebuilds deployment, governance, and collaboration from scratch. | ✅ One workspace gives teams and platform engineers the same foundation. |
 -->
-
----
-
-## What You Can Build
-
-Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
-
-- **Competitor intelligence:** Agents monitor competitors, aggregate news, alert on pricing changes, and collect case studies.
-- **Lead enrichment pipelines:** Agents research and qualify leads while your team reviews and acts.
-- **Content operations:** Agents draft, research, and organize while editors review in real time.
-- **Customer success dashboards:** Agents pull data from CRMs and support tools so teams can act on insights.
-- **Internal knowledge bases:** Agents continuously index and organize docs while teams search and annotate.
-- **Compliance monitoring:** Agents scan for policy violations while approvers review and resolve.
-
-<!-- ### Example: Competitor Research
-
-From a single prompt, build an app where agents:
-- Produce a live **news feed** of latest competitor updates
-- Run a scheduled job that **alerts on pricing changes**
-- Maintain a **research overview** page with structured analysis
-- Collect and store **PDFs and case studies** found across the web
-
--->
-
-Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
-
-`<<INSERT SCREENSHOT OF COLLABORATIVE APP INTERFACE HERE>>`
 
 ---
 
