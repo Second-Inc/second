@@ -32,6 +32,11 @@ type TokenUsageBreakdown = {
   cachedInputTokens: number;
 };
 
+type ThreadTokenUsageSnapshot = {
+  totalTokens: number;
+  modelContextWindow: number | null;
+};
+
 type SearchResult = {
   title: string;
   url: string;
@@ -305,6 +310,18 @@ function appServerErrorMessage(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+function codexErrorInfoName(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  const record = asRecord(value);
+  const keys = Object.keys(record);
+  return keys.length === 1 ? keys[0] ?? null : null;
+}
+
+function isContextWindowExceededError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /context\s+window|ran out of room|ContextWindowExceeded/i.test(message);
 }
 
 function isMissingCodexThreadError(error: unknown): boolean {
@@ -841,6 +858,42 @@ function tokenUsageFromNotification(params: JsonObject): TokenUsageBreakdown | n
   };
 }
 
+function threadTokenUsageSnapshotFromNotification(params: JsonObject): ThreadTokenUsageSnapshot | null {
+  const tokenUsage = asRecord(params.tokenUsage);
+  const total = asRecord(tokenUsage.total);
+  if (Object.keys(total).length === 0) return null;
+  return {
+    totalTokens:
+      numberValue(total.inputTokens) +
+      numberValue(total.outputTokens) +
+      numberValue(total.cachedInputTokens),
+    modelContextWindow:
+      typeof tokenUsage.modelContextWindow === "number" &&
+        Number.isFinite(tokenUsage.modelContextWindow)
+        ? tokenUsage.modelContextWindow
+        : null,
+  };
+}
+
+const DEFAULT_CODEX_AUTO_COMPACT_LIMIT = 244_800;
+const LARGE_INCOMING_PROMPT_CHARS = 120_000;
+
+function estimatePromptTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function shouldRunNativePreTurnCompaction(
+  prompt: string,
+  usage: ThreadTokenUsageSnapshot | undefined,
+): boolean {
+  if (prompt.length >= LARGE_INCOMING_PROMPT_CHARS) return true;
+  if (!usage || usage.totalTokens <= 0) return false;
+  const autoCompactLimit = usage.modelContextWindow
+    ? Math.floor(usage.modelContextWindow * 0.95)
+    : DEFAULT_CODEX_AUTO_COMPACT_LIMIT;
+  return usage.totalTokens + estimatePromptTokens(prompt) >= autoCompactLimit;
+}
+
 function sandboxMode(value: string): "read-only" | "workspace-write" | "danger-full-access" {
   if (value === "read-only" || value === "danger-full-access") return value;
   return "workspace-write";
@@ -883,6 +936,7 @@ export class CodexAppServerClient {
   private readyPromise: Promise<void>;
   private activeRun: ActiveCodexRun | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
+  private threadTokenUsage = new Map<string, ThreadTokenUsageSnapshot>();
   private readonly command: string;
   private readonly onClose?: () => void;
   private readonly apiKey?: string;
@@ -1092,6 +1146,10 @@ export class CodexAppServerClient {
     let processError: Error | null = null;
     let turnCompleted = false;
     let cancelled = false;
+    let compactionTurnId: string | null = null;
+    let compacting = false;
+    let compactResolve: (() => void) | null = null;
+    let compactReject: ((error: Error) => void) | null = null;
     const traceEnabled = process.env.SECOND_CODEX_TRACE === "1";
     const traceStartedAt = Date.now();
 
@@ -1224,6 +1282,50 @@ export class CodexAppServerClient {
 
     const terminateChild = () => {
       this.close();
+    };
+
+    const finishNativeCompaction = (error?: Error) => {
+      const resolve = compactResolve;
+      const reject = compactReject;
+      compactResolve = null;
+      compactReject = null;
+      compacting = false;
+      compactionTurnId = null;
+      if (error) {
+        reject?.(error);
+      } else {
+        resolve?.();
+      }
+    };
+
+    const waitForNativeCompaction = async (activeThreadId: string) => {
+      if (cancelled) return;
+      trace("thread.compact.start", { threadId: activeThreadId });
+      compacting = true;
+      compactionTurnId = null;
+      const compactDone = new Promise<void>((resolve, reject) => {
+        compactResolve = resolve;
+        compactReject = reject;
+      });
+      const timeout = setTimeout(() => {
+        finishNativeCompaction(new Error("Codex native compaction timed out"));
+      }, 120_000);
+      try {
+        await this.sendRequest("thread/compact/start", { threadId: activeThreadId });
+        await compactDone;
+        this.threadTokenUsage.delete(activeThreadId);
+        trace("thread.compact.done", { threadId: activeThreadId });
+      } finally {
+        clearTimeout(timeout);
+        if (compacting) finishNativeCompaction();
+      }
+    };
+
+    const maybeCompactBeforeTurn = async (activeThreadId: string) => {
+      const usage = this.threadTokenUsage.get(activeThreadId);
+      if (!shouldRunNativePreTurnCompaction(options.prompt, usage)) return false;
+      await waitForNativeCompaction(activeThreadId);
+      return true;
     };
 
     const pendingMcpToolName = (serverName: string): string | null => {
@@ -1482,10 +1584,73 @@ export class CodexAppServerClient {
       const notificationSummary = summarizeCodexNotificationForTrace(method, params);
       if (notificationSummary) trace("codex.notify", notificationSummary);
 
+      if (compacting) {
+        const notificationTurnId =
+          stringValue(params.turnId) ?? stringValue(asRecord(params.turn).id);
+        const item = asRecord(params.item);
+        const isCompactionItem = itemType(item) === "contextCompaction";
+
+        if (
+          notificationTurnId &&
+          !compactionTurnId &&
+          (method === "turn/started" ||
+            method === "turn/completed" ||
+            method === "error" ||
+            isCompactionItem)
+        ) {
+          compactionTurnId = notificationTurnId;
+        }
+
+        if (method === "turn/started") {
+          return;
+        }
+
+        if (isCompactionItem) {
+          return;
+        }
+
+        if (method === "thread/compacted") {
+          finishNativeCompaction();
+          return;
+        }
+
+        if (
+          notificationTurnId &&
+          compactionTurnId &&
+          notificationTurnId === compactionTurnId
+        ) {
+          if (method === "error") {
+            const error = asRecord(params.error);
+            finishNativeCompaction(
+              new Error(stringValue(error.message) ?? appServerErrorMessage(params.error)),
+            );
+            return;
+          }
+
+          if (method === "turn/completed") {
+            const turn = asRecord(params.turn);
+            if (stringValue(turn.status) === "failed") {
+              const error = asRecord(turn.error);
+              finishNativeCompaction(
+                new Error(stringValue(error.message) ?? "Codex native compaction failed"),
+              );
+            } else {
+              finishNativeCompaction();
+            }
+            return;
+          }
+
+          return;
+        }
+      }
+
       if (method === "error") {
         const error = asRecord(params.error);
-        pushError(stringValue(error.message) ?? appServerErrorMessage(params.error));
+        const errorMessage = stringValue(error.message) ?? appServerErrorMessage(params.error);
+        const errorInfo = codexErrorInfoName(error.codexErrorInfo);
+        pushError(errorMessage);
         if (!params.willRetry) {
+          trace("codex.error.terminal", { errorInfo, errorMessage });
           turnCompleted = true;
           terminateChild();
         }
@@ -1505,6 +1670,8 @@ export class CodexAppServerClient {
       if (method === "thread/tokenUsage/updated") {
         if (shouldHandleTurnScopedNotification(params)) {
           currentTurnUsage = tokenUsageFromNotification(params);
+          const usage = threadTokenUsageSnapshotFromNotification(params);
+          if (usage && threadId) this.threadTokenUsage.set(threadId, usage);
         }
         return;
       }
@@ -1696,21 +1863,44 @@ export class CodexAppServerClient {
       }
 
       if (cancelled) return;
-      const turnResult = await this.sendRequest("turn/start", {
-        threadId: startedThreadId,
-        input: [
-          {
-            type: "text",
-            text: options.prompt,
-            text_elements: [],
-          },
-        ],
-        cwd: options.cwd,
-        approvalPolicy: "never",
-        model: options.settings.model,
-        effort: options.settings.params.reasoningEffort ?? "high",
-        summary: "auto",
-      });
+      let compactedBeforeTurn = false;
+      try {
+        compactedBeforeTurn = await maybeCompactBeforeTurn(startedThreadId);
+      } catch (error) {
+        trace("thread.compact.failed", {
+          threadId: startedThreadId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      const startTurn = () =>
+        this.sendRequest("turn/start", {
+          threadId: startedThreadId,
+          input: [
+            {
+              type: "text",
+              text: options.prompt,
+              text_elements: [],
+            },
+          ],
+          cwd: options.cwd,
+          approvalPolicy: "never",
+          model: options.settings.model,
+          effort: options.settings.params.reasoningEffort ?? "high",
+          summary: "auto",
+        });
+
+      let turnResult: unknown;
+      try {
+        turnResult = await startTurn();
+      } catch (error) {
+        if (!compactedBeforeTurn && isContextWindowExceededError(error)) {
+          await waitForNativeCompaction(startedThreadId);
+          turnResult = await startTurn();
+        } else {
+          throw error;
+        }
+      }
       if (cancelled) return;
       const turn = asRecord(asRecord(turnResult).turn);
       const startedTurnId = stringValue(turn.id);

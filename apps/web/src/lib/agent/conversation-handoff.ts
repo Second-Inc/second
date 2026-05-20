@@ -350,7 +350,7 @@ export function buildRuntimePrompt(input: RuntimePromptInput): string {
       : "Use them as conversation context, but treat the workspace files on disk as authoritative for current app code.";
   const continuationReason = handoff.approvalStopToolName
     ? `after the user approved the latest ${approvalStopLabel(handoff.approvalStopToolName)}`
-    : "after the user changed the model or runtime";
+    : "with restored Second conversation context";
   const continuityInstruction = handoff.approvalStopToolName
     ? "The provider-native session may not contain the approved context. Use the recent Second conversation below to continue from the approved item. Do not ask the user to repeat the plan or configuration unless it is actually missing below."
     : `The provider-native session may not contain the recent Second chat messages below. ${sourceAuthority}`;

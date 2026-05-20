@@ -107,3 +107,33 @@ test("normal continuation still trusts provider-covered history", () => {
 
   assert.equal(prompt, "Latest message");
 });
+
+test("handoff prompt does not claim the user changed model or runtime", () => {
+  const messages = [
+    {
+      id: "user-1",
+      role: "user",
+      parts: [{ type: "text", text: "First message" }],
+    },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      parts: [{ type: "text", text: "First answer" }],
+    },
+    {
+      id: "user-2",
+      role: "user",
+      parts: [{ type: "text", text: "Latest message" }],
+    },
+  ] as unknown as UIMessage[];
+
+  const prompt = buildRuntimePrompt({
+    messages,
+    nativeHistoryMessageCount: 0,
+    targetRuntimeId: "codex-cli",
+    targetModel: "gpt-5.5",
+  });
+
+  assert.match(prompt, /restored Second conversation context/);
+  assert.doesNotMatch(prompt, /changed the model or runtime/);
+});
