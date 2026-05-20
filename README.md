@@ -104,7 +104,6 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
         <li>Real-time collaborative UI with agents and humans on the same page</li>
         <li>Never blocked: integrations return mock data until connected</li>
       </ul>
-      <br>
     </td>
     <td width="50%" valign="top">
       <h3 align="center">🛠️ For Platform Engineers</h3>
@@ -114,7 +113,6 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
         <li>Full governance: draft/review/publish lifecycle</li>
         <li>Deploy on your own k8s, air-gapped or on-prem</li>
       </ul>
-      <br>
     </td>
   </tr>
 </table>
@@ -123,50 +121,21 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 
 ## Features
 
-<table>
-<tr>
-<td align="center" width="33%">
-<h3>🔧 Self-Building Integrations</h3>
-Second builds itself: integrations are generated on demand with exact connection instructions.
-</td>
-<td align="center" width="33%">
-<h3>🤖 App Agents</h3>
-Each app gets its own agents, with tools and data access presented for approval.
-</td>
-<td align="center" width="33%">
-<h3>🔌 BYO Agent</h3>
-Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>👥 Multiplayer Sessions</h3>
-Talk with Claude Code or Codex, invite teammates into the session, and collaborate with shared context.
-</td>
-<td align="center">
-<h3>🔒 Permissions</h3>
-Agents run with approved tools, data, and integrations. Everything is scoped and audited.
-</td>
-<td align="center">
-<h3>⚡ Realtime</h3>
-Live data, change streams, and optimistic updates keep teams and agents synced.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🧠 Workspace Agents</h3>
-Create reusable agents with prompts, skills, models, and team visibility.
-</td>
-<td align="center">
-<h3>📚 Workspace Skills</h3>
-Define instructions once, then attach them to agents across the workspace.
-</td>
-<td align="center">
-<h3>🛡️ Governance</h3>
-Draft, review, approve, and publish apps with agents and integrations under control.
-</td>
-</tr>
-</table>
+| Feature | &nbsp; |
+|:---|:---|
+| **🔧 Self-Building** | Integrations are generated on demand with exact connection instructions |
+| **🤖 App Agents** | Each app gets its own agents, with tools and data access presented for approval |
+| **🔌 BYO Agent** | Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message |
+| **⚡ Realtime** | Live data, change streams, and optimistic updates keep teams and agents synced |
+| **👥 Multiplayer Sessions** | Talk with your agents, invite teammates into the session, and collaborate with shared context |
+| **🔒 Agent Permissions** | Agents run with approved tools, data, and integrations. Everything is scoped and audited |
+| **🛡️ Governance** | Draft, review, approve, and publish apps with agents and integrations under control |
+| **📋 Audit Logs** | Every agent action, tool call, data write, and access denial recorded and searchable |
+| **🏠 Self-Hosted / On-Prem** | Deploy on your own infrastructure. Your k8s cluster, your VPC, your rules |
+| **🧠 Workspace Agents** | Create reusable agents with prompts, skills, models, and team visibility |
+| **📚 Workspace Skills** | Define instructions once, then attach them to agents across the workspace |
+| **⏲️ Scheduled Agent Jobs** | Agents run on a schedule for periodic research, monitoring, and background tasks |
+| **🚀 One-Command Setup** | From zero to running with `npx @second-inc/cli` |
 
 ## Why Second is Special
 
