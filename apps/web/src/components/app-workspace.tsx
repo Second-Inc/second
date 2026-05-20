@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { UIMessage } from "ai";
 import {
@@ -15,7 +16,8 @@ import {
   BotIcon,
   HammerIcon,
   Info,
-  PanelRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   FolderClosed,
   Database,
   Maximize2,
@@ -166,7 +168,25 @@ type AgentMode = "panel" | "full" | "hidden";
 type MainView = "preview" | "files" | "data";
 type ToolRecoveryStatus = "fixing" | null;
 
+const DEFAULT_BUILDER_PANEL_WIDTH = 400;
+const MIN_BUILDER_PANEL_WIDTH = 320;
+const FALLBACK_MAX_BUILDER_PANEL_WIDTH = 720;
+const MIN_MAIN_PANE_WIDTH = 360;
 const APP_AGENT_RUNS_HINT_STORAGE_PREFIX = "second:app-agent-runs-hint";
+const BUILDER_AGENT_TOGGLE_HINT_STORAGE_PREFIX =
+  "second:builder-agent-toggle-hint";
+
+function maxBuilderPanelWidth(): number {
+  if (typeof window === "undefined") return FALLBACK_MAX_BUILDER_PANEL_WIDTH;
+  return Math.max(MIN_BUILDER_PANEL_WIDTH, window.innerWidth - MIN_MAIN_PANE_WIDTH);
+}
+
+function clampBuilderPanelWidth(width: number): number {
+  return Math.min(
+    Math.max(width, MIN_BUILDER_PANEL_WIDTH),
+    maxBuilderPanelWidth(),
+  );
+}
 
 const FIRST_APP_AGENT_CONFETTI_PIECES = [
   "left-[10%] top-6 size-1.5 rounded-full bg-chart-1 duration-300",
@@ -183,6 +203,10 @@ const FIRST_APP_AGENT_CONFETTI_PIECES = [
 
 function appAgentRunsHintStorageKey(userId: string): string {
   return `${APP_AGENT_RUNS_HINT_STORAGE_PREFIX}:user:${userId}`;
+}
+
+function builderAgentToggleHintStorageKey(userId: string): string {
+  return `${BUILDER_AGENT_TOGGLE_HINT_STORAGE_PREFIX}:user:${userId}`;
 }
 
 function isActiveRunStatus(status: string | null | undefined): boolean {
@@ -425,6 +449,12 @@ function BarTooltipButton({
   disabled,
   active,
   activeLabel,
+  tooltipOpen,
+  tooltipContent,
+  tooltipClassName,
+  className,
+  iconClassName,
+  onTooltipClick,
   onClick,
 }: {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -432,13 +462,19 @@ function BarTooltipButton({
   disabled?: boolean;
   active?: boolean;
   activeLabel?: string;
+  tooltipOpen?: boolean;
+  tooltipContent?: ReactNode;
+  tooltipClassName?: string;
+  className?: string;
+  iconClassName?: string;
+  onTooltipClick?: () => void;
   onClick?: () => void;
 }) {
   const showActiveLabel = active && activeLabel;
   const hasInspectorLabel = Boolean(activeLabel);
 
   return (
-    <Tooltip>
+    <Tooltip open={tooltipOpen}>
       <TooltipTrigger asChild>
         <Button
           type="button"
@@ -450,12 +486,14 @@ function BarTooltipButton({
             showActiveLabel
               ? "h-7 px-2.5 text-xs text-foreground"
               : "text-muted-foreground",
+            className,
           )}
           disabled={disabled}
           onClick={onClick}
           aria-label={label}
         >
           <Icon
+            className={iconClassName}
             data-icon={showActiveLabel ? "inline-start" : undefined}
             strokeWidth={1.5}
           />
@@ -467,7 +505,13 @@ function BarTooltipButton({
           ) : null}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
+      <TooltipContent
+        side="bottom"
+        className={tooltipClassName}
+        onClick={onTooltipClick}
+      >
+        {tooltipContent ?? label}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -586,6 +630,13 @@ export function AppWorkspace({
       hasDoneBuildingInMessages(initialMessages),
   );
   const [agentMode, setAgentMode] = useState<AgentMode>("panel");
+  const [builderPanelWidth, setBuilderPanelWidth] = useState(
+    DEFAULT_BUILDER_PANEL_WIDTH,
+  );
+  const [isBuilderPanelResizing, setIsBuilderPanelResizing] = useState(false);
+  const builderPanelResizeGuideRef = useRef<HTMLDivElement | null>(null);
+  const builderPanelResizeDraftWidthRef = useRef(DEFAULT_BUILDER_PANEL_WIDTH);
+  const builderPanelResizeRafRef = useRef<number | null>(null);
   const [mainView, setMainView] = useState<MainView>("preview");
   const [chatFocusRequest, setChatFocusRequest] = useState(0);
   const [usage, setUsage] = useState<RunUsage | null>(initialUsage);
@@ -958,6 +1009,8 @@ export function AppWorkspace({
     ? `Agent runs (${activeAppAgentRunCount})`
     : "Agent runs";
   const [agentRunsHintOpen, setAgentRunsHintOpen] = useState(false);
+  const [builderAgentToggleHintOpen, setBuilderAgentToggleHintOpen] =
+    useState(false);
 
   useWorkspaceRealtimeEvent(useCallback((event) => {
     if (event.workspaceId !== workspaceId) return;
@@ -1096,6 +1149,25 @@ export function AppWorkspace({
         appAgentRunsHintStorageKey(currentUserId),
         "seen",
       );
+    }
+  }, [currentUserId]);
+
+  const dismissBuilderAgentToggleHint = useCallback(() => {
+    setBuilderAgentToggleHintOpen(false);
+    window.localStorage.setItem(
+      builderAgentToggleHintStorageKey(currentUserId),
+      "seen",
+    );
+  }, [currentUserId]);
+
+  const hideBuilderAgentFromFloatingButton = useCallback(() => {
+    setAgentMode("hidden");
+    if (
+      !window.localStorage.getItem(
+        builderAgentToggleHintStorageKey(currentUserId),
+      )
+    ) {
+      setBuilderAgentToggleHintOpen(true);
     }
   }, [currentUserId]);
 
@@ -1368,14 +1440,115 @@ export function AppWorkspace({
     : agentRunsOpen || streamDialogRun
       ? false
       : undefined;
+  const builderAgentToggleTooltipOpen = builderAgentToggleHintOpen
+    ? true
+    : undefined;
+  const updateBuilderPanelResizeGuide = useCallback((width: number) => {
+    if (builderPanelResizeRafRef.current !== null) {
+      window.cancelAnimationFrame(builderPanelResizeRafRef.current);
+    }
+    builderPanelResizeRafRef.current = window.requestAnimationFrame(() => {
+      builderPanelResizeRafRef.current = null;
+      if (builderPanelResizeGuideRef.current) {
+        builderPanelResizeGuideRef.current.style.right = `${width}px`;
+      }
+    });
+  }, []);
+  const startBuilderPanelResize = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+
+      const startX = event.clientX;
+      const startWidth = builderPanelWidth;
+      const handle = event.currentTarget;
+      const previousCursor = document.body.style.cursor;
+      const previousUserSelect = document.body.style.userSelect;
+      builderPanelResizeDraftWidthRef.current = startWidth;
+      setIsBuilderPanelResizing(true);
+      updateBuilderPanelResizeGuide(startWidth);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      try {
+        handle.setPointerCapture(event.pointerId);
+      } catch {
+        // The fixed drag overlay still captures mouse input if pointer capture is unavailable.
+      }
+
+      let finished = false;
+      const finishResize = () => {
+        if (finished) return;
+        finished = true;
+        if (builderPanelResizeRafRef.current !== null) {
+          window.cancelAnimationFrame(builderPanelResizeRafRef.current);
+          builderPanelResizeRafRef.current = null;
+        }
+        setBuilderPanelWidth(builderPanelResizeDraftWidthRef.current);
+        setIsBuilderPanelResizing(false);
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousUserSelect;
+        try {
+          if (handle.hasPointerCapture(event.pointerId)) {
+            handle.releasePointerCapture(event.pointerId);
+          }
+        } catch {
+          // Ignore stale capture state after browser-level pointer cancellation.
+        }
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", finishResize);
+        window.removeEventListener("pointercancel", finishResize);
+        window.removeEventListener("blur", finishResize);
+      };
+
+      const onPointerMove = (moveEvent: globalThis.PointerEvent) => {
+        moveEvent.preventDefault();
+        const nextWidth = clampBuilderPanelWidth(
+          startWidth + startX - moveEvent.clientX,
+        );
+        builderPanelResizeDraftWidthRef.current = nextWidth;
+        updateBuilderPanelResizeGuide(nextWidth);
+      };
+
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", finishResize);
+      window.addEventListener("pointercancel", finishResize);
+      window.addEventListener("blur", finishResize);
+    },
+    [builderPanelWidth, updateBuilderPanelResizeGuide],
+  );
+  const handleBuilderPanelResizeKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const delta = event.shiftKey ? 48 : 24;
+      setBuilderPanelWidth((width) =>
+        clampBuilderPanelWidth(
+          width + (event.key === "ArrowLeft" ? delta : -delta),
+        ),
+      );
+    },
+    [],
+  );
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-      {agentRunsHintOpen ? (
+      {agentRunsHintOpen || builderAgentToggleHintOpen ? (
         <div
           className="fixed inset-0 z-40 bg-background/10 backdrop-blur-[2px] animate-in fade-in-0 duration-150"
           aria-hidden="true"
         />
+      ) : null}
+      {isBuilderPanelResizing ? (
+        <div
+          className="fixed inset-0 z-50 cursor-col-resize touch-none select-none"
+          aria-hidden="true"
+        >
+          <div
+            ref={builderPanelResizeGuideRef}
+            className="absolute inset-y-0 w-px bg-ring shadow-[0_0_0_1px_hsl(var(--ring)/0.28)]"
+            style={{ right: builderPanelWidth }}
+          />
+        </div>
       ) : null}
 
       {/* Top bar — visible for active chat, with app controls once a preview exists */}
@@ -1383,7 +1556,7 @@ export function AppWorkspace({
         <div
           className={cn(
             "flex h-11 shrink-0 items-center justify-between border-b bg-background px-3",
-            !agentRunsHintOpen && "z-10",
+            !agentRunsHintOpen && !builderAgentToggleHintOpen && "z-10",
           )}
         >
           {/* Left: status */}
@@ -1721,16 +1894,29 @@ export function AppWorkspace({
                   />
 
                   {/* Toggle agent panel */}
-                  <BarTooltipButton
-                    icon={PanelRight}
-                    label={
-                      agentMode === "hidden" ? "Show agent" : "Hide agent"
-                    }
-                    active={agentMode !== "hidden"}
-                    onClick={() =>
-                      setAgentMode((m) => (m === "hidden" ? "panel" : "hidden"))
-                    }
-                  />
+                  <div className={cn("relative", builderAgentToggleHintOpen && "z-[60]")}>
+                    <BarTooltipButton
+                      icon={agentMode === "hidden" ? PanelLeftClose : PanelLeftOpen}
+                      label={
+                        agentMode === "hidden" ? "Show agent" : "Hide agent"
+                      }
+                      active={agentMode !== "hidden"}
+                      className="size-[26px]"
+                      iconClassName="size-3.5"
+                      tooltipOpen={builderAgentToggleTooltipOpen}
+                      tooltipContent={
+                        builderAgentToggleHintOpen
+                          ? "You can always show the agent panel again by clicking this button."
+                          : undefined
+                      }
+                      onClick={() => {
+                        if (builderAgentToggleHintOpen) {
+                          dismissBuilderAgentToggleHint();
+                        }
+                        setAgentMode((m) => (m === "hidden" ? "panel" : "hidden"));
+                      }}
+                    />
+                  </div>
                 </>
               )}
           </div>
@@ -1792,6 +1978,40 @@ export function AppWorkspace({
         )}
 
         {/* Chat pane — always in the DOM, visibility via CSS */}
+        {showAgent && panelMode && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize builder agent sidebar"
+            aria-valuemin={MIN_BUILDER_PANEL_WIDTH}
+            aria-valuenow={Math.round(builderPanelWidth)}
+            tabIndex={0}
+            className="group relative w-1 shrink-0 cursor-col-resize touch-none bg-transparent outline-none"
+            onPointerDown={startBuilderPanelResize}
+            onKeyDown={handleBuilderPanelResizeKeyDown}
+            onDoubleClick={() =>
+              setBuilderPanelWidth(DEFAULT_BUILDER_PANEL_WIDTH)
+            }
+          >
+            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/20 group-focus-visible:bg-ring group-active:bg-ring" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  className="absolute left-1/2 top-[calc(50%+1px)] z-20 size-[26px] -translate-x-1/2 -translate-y-1/2 rounded-full border-border/70 bg-white text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground dark:bg-[#18191B] dark:hover:bg-muted"
+                  aria-label="Hide agent"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={hideBuilderAgentFromFloatingButton}
+                >
+                  <PanelLeftOpen className="size-3.5" strokeWidth={1.5} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Hide agent</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
         <div
           className={
             !canCollaborateApp
@@ -1802,10 +2022,11 @@ export function AppWorkspace({
               ? "flex-1 flex flex-col"
               : showAgent
                 ? panelMode
-                  ? "w-[385px] shrink-0 border-l flex flex-col"
-                  : "flex-1 flex flex-col"
+                  ? "relative shrink-0 flex flex-col"
+                  : "relative flex-1 flex flex-col"
                 : "hidden"
           }
+          style={showAgent && panelMode ? { width: builderPanelWidth } : undefined}
         >
           {canCollaborateApp ? (
             <RecoverableErrorBoundary
