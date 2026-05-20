@@ -890,8 +890,7 @@ function AgentNode({ agent }: { agent: AgentData }) {
 
   return (
     <div
-      className="w-[calc(100%-3rem)] shrink-0 snap-start rounded-2xl bg-[var(--composer-bg)] flex flex-col"
-      style={{ boxShadow: "var(--composer-shadow)" }}
+      className="flex w-[calc(100%-3rem)] shrink-0 snap-start flex-col rounded-2xl border border-border/70 bg-card shadow-sm"
     >
       {/* Header — avatar left-aligned with name + description */}
       <div className="flex items-start gap-3.5 px-5 pt-5 pb-4 sm:px-6 sm:pt-6">
