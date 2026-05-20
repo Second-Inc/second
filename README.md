@@ -18,8 +18,6 @@
   <a href="#platform-support"><img src="https://img.shields.io/badge/Platform-Apple_Silicon-lightgrey.svg" alt="Platform"></a>
 </p>
 
-<h3 align="center">⭐ Like what we're doing? Give us a star ⬆️</h3>
-
 <p align="center">
   <a href="#quick-start"><strong>Quick Start</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="https://docs.second.so"><strong>Docs</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
@@ -42,11 +40,14 @@ npx --yes @second-inc/cli
 
 ## What is Second?
 
-Second is a factory for shipping internal software built for human-agent collaboration.
+Imagine an on-prem Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:**
+- Agents read and write to the same real-time DB as your human team does
+- They get dynamically generated, scoped tools to do the work inside the apps you've built
+- They collaborate with your human team on the same shared apps and interfaces, and just work alongside your team
 
-Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
+---
 
-**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built, and most importantly work alongside your human team.
+**Why?:** Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
 
 Second is open-source, self-hosted, bring your own agent.
 
@@ -83,18 +84,6 @@ Bring your own agent harness, switch runtimes and models per message, per app, w
   </tr>
 </table>
 
-## Core Philosophy: Agent-Native Software
-
-Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
-
-On top of that, Second handles the hard parts:
-
-| Capability | How It Works |
-|---|---|
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
-
 ## Personal Software Factory
 
 Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
@@ -127,6 +116,18 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
     </td>
   </tr>
 </table>
+
+## Core Philosophy: Agent-Native Software
+
+Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
+
+On top of that, Second handles the hard parts:
+
+| Capability | How It Works |
+|---|---|
+| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
+| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
+| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
 
 ---
 
