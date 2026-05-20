@@ -248,12 +248,21 @@ app.post("/sessions/:appId/messages", async (c) => {
     startDependencyWarmup(resolvedWorkDir);
   }
 
+  const existingSession = sessionManager.get(appId);
+
   // If we have a JSONL session file to restore (cross-container resume),
-  // write it to disk before creating the session
+  // write it to disk before creating the session. When this worker already has
+  // the same live Claude session file, keep that file authoritative so Claude's
+  // native auto-compaction is not rolled back by an older persisted snapshot.
   if (
     body.sessionState?.runtimeId === "claude-code" &&
     body.sessionState.sessionId &&
-    body.sessionState.data
+    body.sessionState.data &&
+    !(
+      existingSession?.sessionState?.runtimeId === "claude-code" &&
+      existingSession.sessionState.sessionId === body.sessionState.sessionId &&
+      readSessionJsonl(resolvedWorkDir, body.sessionState.sessionId) !== null
+    )
   ) {
     restoreSessionJsonl(
       resolvedWorkDir,

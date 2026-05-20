@@ -1664,7 +1664,7 @@ export class CodexAppServerClient {
             sandbox,
             baseInstructions: options.systemPrompt,
             developerInstructions: "",
-            persistExtendedHistory: false,
+            persistExtendedHistory: true,
           });
         } catch (error) {
           if (!isMissingCodexThreadError(error)) throw error;
@@ -1684,7 +1684,7 @@ export class CodexAppServerClient {
         baseInstructions: options.systemPrompt,
         developerInstructions: "",
         experimentalRawEvents: false,
-        persistExtendedHistory: false,
+        persistExtendedHistory: true,
       });
 
       if (cancelled) return;

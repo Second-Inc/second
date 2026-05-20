@@ -25,6 +25,19 @@ export interface Session {
   destroy(): void;
 }
 
+function sameProviderSession(
+  current: ProviderSessionState | null,
+  next: ProviderSessionState | null,
+): boolean {
+  return Boolean(
+    current?.runtimeId &&
+      next?.runtimeId &&
+      current.runtimeId === next.runtimeId &&
+      current.sessionId &&
+      current.sessionId === next.sessionId,
+  );
+}
+
 class SessionImpl implements Session {
   appId: string;
   sessionState: ProviderSessionState | null = null;
@@ -131,7 +144,12 @@ export class SessionManager {
     if (existing) {
       existing.config = config;
       if (resumeSessionState !== undefined) {
-        existing.sessionState = resumeSessionState;
+        // A live worker session has the provider's latest on-disk/runtime
+        // state. Do not overwrite it with an older app-persisted snapshot for
+        // the same provider session, because that can undo native compaction.
+        if (!sameProviderSession(existing.sessionState, resumeSessionState)) {
+          existing.sessionState = resumeSessionState;
+        }
       }
       return existing;
     }
