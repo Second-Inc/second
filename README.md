@@ -14,10 +14,11 @@
 
 <h1>Second</h1>
 
-**Agents don't belong in chat windows.**
+**Humans and agents, side by side.**
 
-Second is a factory for custom internal software, purpose-built for human2agent work.<br>
-Let your team ship custom internal apps from a prompt, where agents work natively alongside your humans.
+Second is a factory for custom internal software,<br>purpose-built for human2agent work.
+
+<!-- Let your team ship custom internal apps from a prompt, where agents work natively alongside your humans. -->
 
 <a href="https://github.com/Second-Inc/second/actions"><img src="https://img.shields.io/github/actions/workflow/status/Second-Inc/second/ci.yml?label=CI" alt="CI"></a>&nbsp;&nbsp;
 <a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>
@@ -62,16 +63,16 @@ Bring your agent:
 
 ## What is Second?
 
-Imagine a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform actual work instead of just answering questions.
+Second is a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform actual work instead of just answering questions.
 
 <!-- Teams love Second because it makes multiplayer AI simple, loved and finally- easy. -->
 
 ### Second VS other platforms
 
-Most platforms weren't built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
+Most platforms weren't built for deep, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
 **Generally, multiplayer human-agent work is where coordination gets hard and things start to break, fast.**
 
-Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build **your own collaborative agent orchestration apps,** tailored to what your team needs right now.
+Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build **your own collaborative agent orchestration apps,** tailored to what your team actually needs right now.
 
 Custom interfaces to manage agents.
 
@@ -81,7 +82,7 @@ Second is a single workspace.
 
 1. **You describe your app.** In a single prompt.
 2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
-3. **Your team now works alongside agents.** Collaborate on the same shared interface.
+3. **Your team now works alongside agents-** in the same shared interface.
 
 `<<INSERT VIDEO/GIF OF APP GENERATION FLOW HERE>>`
 
@@ -89,7 +90,7 @@ Second is a single workspace.
 
 ## The Internal Platform Everyone Needs (and Builds)
 
-Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable — but most never reach production (security, governance, integrations, maintenance, agent access control...). To solve this, they built internal platforms for themselves.
+Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable- but most never reach production (security, governance, integrations, maintenance, agent access control...). To solve this, they built internal platforms for themselves.
 
 **Second lets every organization have that.**
 
