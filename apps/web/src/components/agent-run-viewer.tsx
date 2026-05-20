@@ -27,6 +27,7 @@ type AgentRunListProps = {
 };
 
 const agentRunListCache = new Map<string, AgentRunSummary[]>();
+const agentRunListLoadedCache = new Set<string>();
 
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor(
@@ -170,10 +171,12 @@ export function AgentRunList({
   onRunClick,
 }: AgentRunListProps) {
   const cacheKey = `${workspaceId}:${appId}`;
+  const hasCachedResult = agentRunListLoadedCache.has(cacheKey);
   const cachedRuns = agentRunListCache.get(cacheKey) ?? [];
   const [runs, setRuns] = useState<AgentRunSummary[]>(cachedRuns);
-  const [loading, setLoading] = useState(cachedRuns.length === 0);
+  const [loading, setLoading] = useState(!hasCachedResult);
   const [loadFailed, setLoadFailed] = useState(false);
+  const hasLoadedRef = useRef(hasCachedResult);
 
   const activeRuns = runs.filter((r) => isRunActive(r.status));
   const pastRuns = runs.filter((r) => !isRunActive(r.status));
@@ -197,7 +200,6 @@ export function AgentRunList({
     const unblockSpinner = window.setTimeout(() => {
       if (cancelled) return;
       setLoading(false);
-      setLoadFailed((agentRunListCache.get(cacheKey)?.length ?? 0) === 0);
     }, 1500);
 
     async function fetchRuns() {
@@ -217,11 +219,19 @@ export function AgentRunList({
         if (res.ok && !cancelled && !controller.signal.aborted) {
           const data = (await res.json()) as { runs: AgentRunSummary[] };
           agentRunListCache.set(cacheKey, data.runs);
+          agentRunListLoadedCache.add(cacheKey);
+          hasLoadedRef.current = true;
           setRuns(data.runs);
           setLoadFailed(false);
+        } else if (!cancelled && !controller.signal.aborted && !hasLoadedRef.current) {
+          setLoadFailed(true);
         }
       } catch {
-        if (!cancelled && (timedOut || !controller.signal.aborted)) {
+        if (
+          !cancelled &&
+          !hasLoadedRef.current &&
+          (timedOut || !controller.signal.aborted)
+        ) {
           setLoadFailed((agentRunListCache.get(cacheKey)?.length ?? 0) === 0);
         }
       } finally {

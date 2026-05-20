@@ -166,7 +166,7 @@ export function AppCollaboratorsDialog({
             size={showLabel ? "sm" : "icon-sm"}
             className={cn(
               "rounded-full text-muted-foreground",
-              showLabel ? "h-8 px-2.5 text-xs" : "",
+              showLabel ? "h-7 px-2.5 text-xs" : "",
             )}
             disabled={!canManageCollaborators}
             onClick={() => setOpen(true)}

@@ -26,6 +26,7 @@
     "mongodb": "^6.21.0",
     "next": "^16.2.6",
     "postcss": "8.5.14",
+    "posthog-js": "^1.374.2",
     "radix-ui": "^1.4.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",

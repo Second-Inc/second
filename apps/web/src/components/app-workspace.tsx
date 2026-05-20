@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { UIMessage } from "ai";
 import {
@@ -15,7 +16,8 @@ import {
   BotIcon,
   HammerIcon,
   Info,
-  PanelRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   FolderClosed,
   Database,
   Maximize2,
@@ -62,6 +64,7 @@ import {
 } from "@/components/app-publish-dialog";
 import { isDoneBuildingSuccessOutput } from "@/lib/agent/done-building";
 import type {
+  AgentRunFailure,
   AppPublishStatus,
   AgentsJsonApprovalSource,
   IntegrationPermissionGroup,
@@ -118,6 +121,7 @@ type AppWorkspaceProps = {
   initialMessages: UIMessage[];
   initialRunAttachments?: AttachmentReference[];
   runStatus: "pending" | "streaming" | "completed" | "failed" | null;
+  initialRunFailure?: AgentRunFailure | null;
   initialToolRecoveryStatus?: ToolRecoveryStatus;
   initialToolRecoveryToolName?: string | null;
   initialUsage: RunUsage | null;
@@ -164,7 +168,26 @@ type AgentMode = "panel" | "full" | "hidden";
 type MainView = "preview" | "files" | "data";
 type ToolRecoveryStatus = "fixing" | null;
 
+const DEFAULT_BUILDER_PANEL_WIDTH = 400;
+const AGENTS_APPROVAL_PANEL_WIDTH = 535;
+const MIN_BUILDER_PANEL_WIDTH = 320;
+const FALLBACK_MAX_BUILDER_PANEL_WIDTH = 720;
+const MIN_MAIN_PANE_WIDTH = 360;
 const APP_AGENT_RUNS_HINT_STORAGE_PREFIX = "second:app-agent-runs-hint";
+const BUILDER_AGENT_TOGGLE_HINT_STORAGE_PREFIX =
+  "second:builder-agent-toggle-hint";
+
+function maxBuilderPanelWidth(): number {
+  if (typeof window === "undefined") return FALLBACK_MAX_BUILDER_PANEL_WIDTH;
+  return Math.max(MIN_BUILDER_PANEL_WIDTH, window.innerWidth - MIN_MAIN_PANE_WIDTH);
+}
+
+function clampBuilderPanelWidth(width: number): number {
+  return Math.min(
+    Math.max(width, MIN_BUILDER_PANEL_WIDTH),
+    maxBuilderPanelWidth(),
+  );
+}
 
 const FIRST_APP_AGENT_CONFETTI_PIECES = [
   "left-[10%] top-6 size-1.5 rounded-full bg-chart-1 duration-300",
@@ -181,6 +204,10 @@ const FIRST_APP_AGENT_CONFETTI_PIECES = [
 
 function appAgentRunsHintStorageKey(userId: string): string {
   return `${APP_AGENT_RUNS_HINT_STORAGE_PREFIX}:user:${userId}`;
+}
+
+function builderAgentToggleHintStorageKey(userId: string): string {
+  return `${BUILDER_AGENT_TOGGLE_HINT_STORAGE_PREFIX}:user:${userId}`;
 }
 
 function isActiveRunStatus(status: string | null | undefined): boolean {
@@ -423,6 +450,12 @@ function BarTooltipButton({
   disabled,
   active,
   activeLabel,
+  tooltipOpen,
+  tooltipContent,
+  tooltipClassName,
+  className,
+  iconClassName,
+  onTooltipClick,
   onClick,
 }: {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -430,13 +463,19 @@ function BarTooltipButton({
   disabled?: boolean;
   active?: boolean;
   activeLabel?: string;
+  tooltipOpen?: boolean;
+  tooltipContent?: ReactNode;
+  tooltipClassName?: string;
+  className?: string;
+  iconClassName?: string;
+  onTooltipClick?: () => void;
   onClick?: () => void;
 }) {
   const showActiveLabel = active && activeLabel;
   const hasInspectorLabel = Boolean(activeLabel);
 
   return (
-    <Tooltip>
+    <Tooltip open={tooltipOpen}>
       <TooltipTrigger asChild>
         <Button
           type="button"
@@ -448,12 +487,14 @@ function BarTooltipButton({
             showActiveLabel
               ? "h-7 px-2.5 text-xs text-foreground"
               : "text-muted-foreground",
+            className,
           )}
           disabled={disabled}
           onClick={onClick}
           aria-label={label}
         >
           <Icon
+            className={iconClassName}
             data-icon={showActiveLabel ? "inline-start" : undefined}
             strokeWidth={1.5}
           />
@@ -465,7 +506,13 @@ function BarTooltipButton({
           ) : null}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
+      <TooltipContent
+        side="bottom"
+        className={tooltipClassName}
+        onClick={onTooltipClick}
+      >
+        {tooltipContent ?? label}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -535,6 +582,7 @@ export function AppWorkspace({
   initialMessages,
   initialRunAttachments = [],
   runStatus,
+  initialRunFailure = null,
   initialToolRecoveryStatus = null,
   initialToolRecoveryToolName = null,
   initialUsage,
@@ -583,12 +631,27 @@ export function AppWorkspace({
       hasDoneBuildingInMessages(initialMessages),
   );
   const [agentMode, setAgentMode] = useState<AgentMode>("panel");
+  const [builderPanelWidth, setBuilderPanelWidth] = useState(
+    DEFAULT_BUILDER_PANEL_WIDTH,
+  );
+  const builderPanelWidthRef = useRef(DEFAULT_BUILDER_PANEL_WIDTH);
+  const autoExpandedBuilderPanelRestoreWidthRef = useRef<number | null>(null);
+  const [pendingBuilderApprovalKind, setPendingBuilderApprovalKind] = useState<
+    "plan" | "agents" | "suggestions" | null
+  >(null);
+  const [isBuilderPanelResizing, setIsBuilderPanelResizing] = useState(false);
+  const builderPanelResizeGuideRef = useRef<HTMLDivElement | null>(null);
+  const builderPanelResizeDraftWidthRef = useRef(DEFAULT_BUILDER_PANEL_WIDTH);
+  const builderPanelResizeRafRef = useRef<number | null>(null);
   const [mainView, setMainView] = useState<MainView>("preview");
   const [chatFocusRequest, setChatFocusRequest] = useState(0);
   const [usage, setUsage] = useState<RunUsage | null>(initialUsage);
   const [appAgentUsageSummary, setAppAgentUsageSummary] =
     useState<AppAgentUsageSummary | null>(null);
   const appAgentUsage = appAgentUsageSummary?.usage ?? null;
+  useEffect(() => {
+    builderPanelWidthRef.current = builderPanelWidth;
+  }, [builderPanelWidth]);
   const modelUsageEntries = useMemo(
     () =>
       flattenModelUsageEntries(
@@ -955,6 +1018,11 @@ export function AppWorkspace({
     ? `Agent runs (${activeAppAgentRunCount})`
     : "Agent runs";
   const [agentRunsHintOpen, setAgentRunsHintOpen] = useState(false);
+  const [builderAgentToggleHintOpen, setBuilderAgentToggleHintOpen] =
+    useState(false);
+  const [builderDividerTooltip, setBuilderDividerTooltip] = useState<
+    "hide" | "resize" | null
+  >(null);
 
   useWorkspaceRealtimeEvent(useCallback((event) => {
     if (event.workspaceId !== workspaceId) return;
@@ -1093,6 +1161,25 @@ export function AppWorkspace({
         appAgentRunsHintStorageKey(currentUserId),
         "seen",
       );
+    }
+  }, [currentUserId]);
+
+  const dismissBuilderAgentToggleHint = useCallback(() => {
+    setBuilderAgentToggleHintOpen(false);
+    window.localStorage.setItem(
+      builderAgentToggleHintStorageKey(currentUserId),
+      "seen",
+    );
+  }, [currentUserId]);
+
+  const hideBuilderAgentFromFloatingButton = useCallback(() => {
+    setAgentMode("hidden");
+    if (
+      !window.localStorage.getItem(
+        builderAgentToggleHintStorageKey(currentUserId),
+      )
+    ) {
+      setBuilderAgentToggleHintOpen(true);
     }
   }, [currentUserId]);
 
@@ -1365,14 +1452,182 @@ export function AppWorkspace({
     : agentRunsOpen || streamDialogRun
       ? false
       : undefined;
+  const builderAgentToggleTooltipOpen = builderAgentToggleHintOpen
+    ? true
+    : undefined;
+  const restoreAutoExpandedBuilderPanel = useCallback(() => {
+    const restoreWidth = autoExpandedBuilderPanelRestoreWidthRef.current;
+    if (restoreWidth === null) return;
+    autoExpandedBuilderPanelRestoreWidthRef.current = null;
+    setBuilderPanelWidth(clampBuilderPanelWidth(restoreWidth));
+  }, []);
+  useEffect(() => {
+    if (isBuilderPanelResizing) return;
+    let animationFrame: number | null = null;
+    const scheduleBuilderPanelWidth = (width: number) => {
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        setBuilderPanelWidth(clampBuilderPanelWidth(width));
+      });
+    };
+
+    const shouldExpandForAgentsApproval =
+      showAgent &&
+      panelMode &&
+      !isBuilderRunActive &&
+      pendingBuilderApprovalKind === "agents";
+
+    if (!shouldExpandForAgentsApproval) {
+      const restoreWidth = autoExpandedBuilderPanelRestoreWidthRef.current;
+      if (restoreWidth !== null) {
+        autoExpandedBuilderPanelRestoreWidthRef.current = null;
+        scheduleBuilderPanelWidth(restoreWidth);
+      }
+      return () => {
+        if (animationFrame !== null) {
+          window.cancelAnimationFrame(animationFrame);
+        }
+      };
+    }
+
+    const currentWidth = builderPanelWidthRef.current;
+    if (currentWidth >= AGENTS_APPROVAL_PANEL_WIDTH) {
+      return () => {
+        if (animationFrame !== null) {
+          window.cancelAnimationFrame(animationFrame);
+        }
+      };
+    }
+
+    if (autoExpandedBuilderPanelRestoreWidthRef.current === null) {
+      autoExpandedBuilderPanelRestoreWidthRef.current = currentWidth;
+    }
+
+    const targetWidth = clampBuilderPanelWidth(AGENTS_APPROVAL_PANEL_WIDTH);
+    if (targetWidth > currentWidth) {
+      scheduleBuilderPanelWidth(targetWidth);
+    }
+
+    return () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+    };
+  }, [
+    isBuilderPanelResizing,
+    isBuilderRunActive,
+    panelMode,
+    pendingBuilderApprovalKind,
+    showAgent,
+  ]);
+  const updateBuilderPanelResizeGuide = useCallback((width: number) => {
+    if (builderPanelResizeRafRef.current !== null) {
+      window.cancelAnimationFrame(builderPanelResizeRafRef.current);
+    }
+    builderPanelResizeRafRef.current = window.requestAnimationFrame(() => {
+      builderPanelResizeRafRef.current = null;
+      if (builderPanelResizeGuideRef.current) {
+        builderPanelResizeGuideRef.current.style.right = `${width}px`;
+      }
+    });
+  }, []);
+  const startBuilderPanelResize = useCallback(
+    (event: PointerEvent<HTMLElement>) => {
+      event.preventDefault();
+      autoExpandedBuilderPanelRestoreWidthRef.current = null;
+
+      const startX = event.clientX;
+      const startWidth = builderPanelWidth;
+      const handle = event.currentTarget;
+      const previousCursor = document.body.style.cursor;
+      const previousUserSelect = document.body.style.userSelect;
+      builderPanelResizeDraftWidthRef.current = startWidth;
+      setIsBuilderPanelResizing(true);
+      updateBuilderPanelResizeGuide(startWidth);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      try {
+        handle.setPointerCapture(event.pointerId);
+      } catch {
+        // The fixed drag overlay still captures mouse input if pointer capture is unavailable.
+      }
+
+      let finished = false;
+      const finishResize = () => {
+        if (finished) return;
+        finished = true;
+        if (builderPanelResizeRafRef.current !== null) {
+          window.cancelAnimationFrame(builderPanelResizeRafRef.current);
+          builderPanelResizeRafRef.current = null;
+        }
+        setBuilderPanelWidth(builderPanelResizeDraftWidthRef.current);
+        setIsBuilderPanelResizing(false);
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousUserSelect;
+        try {
+          if (handle.hasPointerCapture(event.pointerId)) {
+            handle.releasePointerCapture(event.pointerId);
+          }
+        } catch {
+          // Ignore stale capture state after browser-level pointer cancellation.
+        }
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", finishResize);
+        window.removeEventListener("pointercancel", finishResize);
+        window.removeEventListener("blur", finishResize);
+      };
+
+      const onPointerMove = (moveEvent: globalThis.PointerEvent) => {
+        moveEvent.preventDefault();
+        const nextWidth = clampBuilderPanelWidth(
+          startWidth + startX - moveEvent.clientX,
+        );
+        builderPanelResizeDraftWidthRef.current = nextWidth;
+        updateBuilderPanelResizeGuide(nextWidth);
+      };
+
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", finishResize);
+      window.addEventListener("pointercancel", finishResize);
+      window.addEventListener("blur", finishResize);
+    },
+    [builderPanelWidth, updateBuilderPanelResizeGuide],
+  );
+  const handleBuilderPanelResizeKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      autoExpandedBuilderPanelRestoreWidthRef.current = null;
+      const delta = event.shiftKey ? 48 : 24;
+      setBuilderPanelWidth((width) =>
+        clampBuilderPanelWidth(
+          width + (event.key === "ArrowLeft" ? delta : -delta),
+        ),
+      );
+    },
+    [],
+  );
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-      {agentRunsHintOpen ? (
+      {agentRunsHintOpen || builderAgentToggleHintOpen ? (
         <div
           className="fixed inset-0 z-40 bg-background/10 backdrop-blur-[2px] animate-in fade-in-0 duration-150"
           aria-hidden="true"
         />
+      ) : null}
+      {isBuilderPanelResizing ? (
+        <div
+          className="fixed inset-0 z-50 cursor-col-resize touch-none select-none"
+          aria-hidden="true"
+        >
+          <div
+            ref={builderPanelResizeGuideRef}
+            className="absolute inset-y-0 w-px bg-ring shadow-[0_0_0_1px_hsl(var(--ring)/0.28)]"
+            style={{ right: builderPanelWidth }}
+          />
+        </div>
       ) : null}
 
       {/* Top bar — visible for active chat, with app controls once a preview exists */}
@@ -1380,7 +1635,7 @@ export function AppWorkspace({
         <div
           className={cn(
             "flex h-11 shrink-0 items-center justify-between border-b bg-background px-3",
-            !agentRunsHintOpen && "z-10",
+            !agentRunsHintOpen && !builderAgentToggleHintOpen && "z-10",
           )}
         >
           {/* Left: status */}
@@ -1718,16 +1973,29 @@ export function AppWorkspace({
                   />
 
                   {/* Toggle agent panel */}
-                  <BarTooltipButton
-                    icon={PanelRight}
-                    label={
-                      agentMode === "hidden" ? "Show agent" : "Hide agent"
-                    }
-                    active={agentMode !== "hidden"}
-                    onClick={() =>
-                      setAgentMode((m) => (m === "hidden" ? "panel" : "hidden"))
-                    }
-                  />
+                  <div className={cn("relative", builderAgentToggleHintOpen && "z-[60]")}>
+                    <BarTooltipButton
+                      icon={agentMode === "hidden" ? PanelLeftClose : PanelLeftOpen}
+                      label={
+                        agentMode === "hidden" ? "Show agent" : "Hide agent"
+                      }
+                      active={agentMode !== "hidden"}
+                      className="size-[26px]"
+                      iconClassName="size-3.5"
+                      tooltipOpen={builderAgentToggleTooltipOpen}
+                      tooltipContent={
+                        builderAgentToggleHintOpen
+                          ? "You can always show the agent panel again by clicking this button."
+                          : undefined
+                      }
+                      onClick={() => {
+                        if (builderAgentToggleHintOpen) {
+                          dismissBuilderAgentToggleHint();
+                        }
+                        setAgentMode((m) => (m === "hidden" ? "panel" : "hidden"));
+                      }}
+                    />
+                  </div>
                 </>
               )}
           </div>
@@ -1738,7 +2006,11 @@ export function AppWorkspace({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Main pane: preview or file explorer */}
         {showPreview && (
-          <div className="flex-1 min-w-0 min-h-0 overflow-hidden bg-background">
+          <div
+            className="flex-1 min-w-0 min-h-0 overflow-hidden bg-background"
+            onPointerEnter={() => setBuilderDividerTooltip(null)}
+            onMouseEnter={() => setBuilderDividerTooltip(null)}
+          >
             <RecoverableErrorBoundary
               name="AppWorkspace.MainPane"
               resetKey={`${appId}:${sourceVersion}:${mainView}:${sourceFiles ? Object.keys(sourceFiles).length : 0}`}
@@ -1789,20 +2061,107 @@ export function AppWorkspace({
         )}
 
         {/* Chat pane — always in the DOM, visibility via CSS */}
+        {showAgent && panelMode && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize builder agent sidebar"
+            aria-valuemin={MIN_BUILDER_PANEL_WIDTH}
+            aria-valuenow={Math.round(builderPanelWidth)}
+            tabIndex={0}
+            className="group relative w-1 shrink-0 cursor-col-resize touch-none bg-transparent outline-none"
+            onPointerDown={startBuilderPanelResize}
+            onKeyDown={handleBuilderPanelResizeKeyDown}
+            onDoubleClick={() => {
+              autoExpandedBuilderPanelRestoreWidthRef.current = null;
+              setBuilderPanelWidth(DEFAULT_BUILDER_PANEL_WIDTH);
+            }}
+          >
+            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/20 group-focus-visible:bg-ring group-active:bg-ring" />
+            <Tooltip
+              delayDuration={0}
+              open={builderDividerTooltip === "hide"}
+              onOpenChange={(open) =>
+                setBuilderDividerTooltip(open ? "hide" : null)
+              }
+            >
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="builder-agent-divider-button absolute left-1/2 top-[calc(50%-20px)] z-20 inline-flex size-[26px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border/55 bg-white text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-[#18191B] dark:hover:bg-muted"
+                  aria-label="Hide agent"
+                  onPointerEnter={() => setBuilderDividerTooltip("hide")}
+                  onPointerLeave={() => setBuilderDividerTooltip(null)}
+                  onFocus={() => setBuilderDividerTooltip("hide")}
+                  onBlur={() => setBuilderDividerTooltip(null)}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    setBuilderDividerTooltip(null);
+                  }}
+                  onClick={hideBuilderAgentFromFloatingButton}
+                >
+                  <PanelLeftOpen className="size-3.5" strokeWidth={1.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={8}>Hide agent</TooltipContent>
+            </Tooltip>
+            <Tooltip
+              delayDuration={0}
+              open={builderDividerTooltip === "resize"}
+              onOpenChange={(open) =>
+                setBuilderDividerTooltip(open ? "resize" : null)
+              }
+            >
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="builder-agent-divider-button absolute left-1/2 top-[calc(50%+20px)] z-20 inline-flex size-[26px] -translate-x-1/2 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-full border border-border/55 bg-white text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-[#18191B] dark:hover:bg-muted"
+                  aria-label="Drag to resize agent panel"
+                  onPointerEnter={() => setBuilderDividerTooltip("resize")}
+                  onPointerLeave={() => setBuilderDividerTooltip(null)}
+                  onFocus={() => setBuilderDividerTooltip("resize")}
+                  onBlur={() => setBuilderDividerTooltip(null)}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    setBuilderDividerTooltip(null);
+                    startBuilderPanelResize(event);
+                  }}
+                  onClick={(event) => event.preventDefault()}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="flex h-4 items-center gap-[3px]"
+                  >
+                    <span className="h-3.5 w-px rounded-full bg-current opacity-70" />
+                    <span className="h-3.5 w-px rounded-full bg-current opacity-70" />
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="left" sideOffset={8}>
+                Drag to resize
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
         <div
-          className={
+          className={cn(
             !canCollaborateApp
               ? "hidden"
               : !isDraftVersion
-              ? "hidden"
-              : !previewVisible
-              ? "flex-1 flex flex-col"
-              : showAgent
-                ? panelMode
-                  ? "w-[385px] shrink-0 border-l flex flex-col"
-                  : "flex-1 flex flex-col"
-                : "hidden"
-          }
+                ? "hidden"
+                : !previewVisible
+                  ? "flex-1 flex flex-col"
+                  : showAgent
+                    ? panelMode
+                      ? "relative shrink-0 flex flex-col"
+                      : "relative flex-1 flex flex-col"
+                    : "hidden",
+            showAgent &&
+              panelMode &&
+              !isBuilderPanelResizing &&
+              "transition-[width] duration-200 ease-out",
+          )}
+          style={showAgent && panelMode ? { width: builderPanelWidth } : undefined}
         >
           {canCollaborateApp ? (
             <RecoverableErrorBoundary
@@ -1819,7 +2178,8 @@ export function AppWorkspace({
                 runId={runId}
                 initialMessages={initialMessages}
                 initialRunAttachments={initialRunAttachments}
-                runStatus={runStatus}
+                runStatus={builderRunStatus}
+                initialRunFailure={initialRunFailure}
                 toolRecoveryStatus={activeToolRecoveryStatus}
                 toolRecoveryToolName={toolRecoveryToolName}
                 panelMode={panelMode}
@@ -1827,6 +2187,8 @@ export function AppWorkspace({
                 onStreamComplete={onStreamComplete}
                 onStreamStart={onStreamStart}
                 onToolCallComplete={onToolCallComplete}
+                onPendingApprovalChange={setPendingBuilderApprovalKind}
+                onApprovalAction={restoreAutoExpandedBuilderPanel}
                 onReviewInvalidated={() => {
                   setInvalidatedReviewKey(reviewRequestedKey ?? "active");
                   setLocalDraftStarted(true);

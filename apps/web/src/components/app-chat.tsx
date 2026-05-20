@@ -20,20 +20,27 @@ import {
 import { flushSync } from "react-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { StickToBottom } from "use-stick-to-bottom";
+import {
+  StickToBottom,
+  type StickToBottomContext,
+} from "use-stick-to-bottom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp,
+  AlertTriangleIcon,
   CheckIcon,
   ChevronDownIcon,
+  CopyIcon,
   ExternalLinkIcon,
   FileIcon,
   HammerIcon,
   Info,
   Pause,
+  PencilIcon,
   Plus,
   PlugZapIcon,
+  RotateCcw,
 } from "lucide-react";
 import { AppLoader } from "@/components/app-loader";
 import { ModelSelector } from "@/components/model-selector";
@@ -48,6 +55,7 @@ import {
   parseDoneBuildingOutput,
 } from "@/lib/agent/done-building";
 import type {
+  AgentRunFailure,
   AgentsJsonApprovalSource,
   RunUsage,
 } from "@/lib/db/types";
@@ -86,12 +94,16 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { integrationIconUrl } from "@/lib/integration-icons";
 import {
   integrationRouteSegment,
   normalizeIntegrationDomain as normalizeDomain,
-  slugifyIntegrationRouteSegment,
 } from "@/lib/integration-routes";
 import {
   MAX_ATTACHMENT_FILE_BYTES,
@@ -105,6 +117,7 @@ import {
   captureAnalyticsEvent,
   runtimeModelFamily,
   textAnalyticsProperties,
+  type AnalyticsProperties,
 } from "@/lib/analytics";
 import { reportClientError } from "@/lib/client-error-reporting";
 
@@ -138,6 +151,265 @@ function WorkingIndicator() {
         Working
       </span>
     </div>
+  );
+}
+
+function ChatFailureRow({
+  message,
+  retryable,
+  retryDisabled,
+  onRetry,
+  tone = "danger",
+  actionLabel = "Try again",
+}: {
+  message: string;
+  retryable: boolean;
+  retryDisabled: boolean;
+  onRetry: () => void;
+  tone?: "danger" | "neutral";
+  actionLabel?: string;
+}) {
+  const Icon = tone === "neutral" ? Info : AlertTriangleIcon;
+  return (
+    <div
+      className={cn(
+        "not-prose flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-foreground",
+        tone === "neutral"
+          ? "border-border bg-background"
+          : "border-destructive/20 bg-destructive/5",
+      )}
+    >
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          tone === "neutral" ? "text-muted-foreground" : "text-destructive",
+        )}
+        strokeWidth={1.8}
+      />
+      <span className="min-w-0 flex-1 text-[13px] leading-5 text-muted-foreground">
+        {message}
+      </span>
+      {retryable ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs"
+          disabled={retryDisabled}
+          onClick={onRetry}
+        >
+          <RotateCcw className="size-3.5" strokeWidth={1.8} />
+          {actionLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function messageText(message: UIMessage): string {
+  const chunks: string[] = [];
+  for (const part of message.parts ?? []) {
+    if (part?.type === "text" && typeof part.text === "string") {
+      chunks.push(part.text);
+    }
+  }
+  return chunks.join("");
+}
+
+type UserTurn = {
+  index: number;
+  message: UIMessage;
+  text: string;
+};
+
+function assistantHasVisibleContent(message: UIMessage): boolean {
+  return (message.parts ?? []).some((part) => {
+    if (!part || typeof part !== "object") return false;
+    if (part.type === "text") return part.text.trim().length > 0;
+    if (part.type === "reasoning") return part.text.trim().length > 0;
+    return part.type === "dynamic-tool";
+  });
+}
+
+function assistantTurnHasEnded(
+  messages: UIMessage[],
+  assistantIndex: number,
+): boolean {
+  for (let index = assistantIndex + 1; index < messages.length; index += 1) {
+    const role = messages[index]?.role;
+    if (role === "user" || role === "assistant") return true;
+  }
+  return false;
+}
+
+function findUserTurnBeforeMessage(
+  messages: UIMessage[],
+  messageId: string,
+): UserTurn | null {
+  const messageIndex = messages.findIndex((message) => message.id === messageId);
+  if (messageIndex <= 0) return null;
+
+  for (let index = messageIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") continue;
+    const text = messageText(message).trim();
+    if (text) return { index, message, text };
+  }
+
+  return null;
+}
+
+function messageWithEditedText(message: UIMessage, text: string): UIMessage {
+  return {
+    ...message,
+    parts: [{ type: "text", text }],
+  };
+}
+
+function MessageActionButton({
+  label,
+  icon: Icon,
+  onClick,
+  disabled = false,
+  active = false,
+  activeIcon,
+}: {
+  label: string;
+  icon: typeof CopyIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  activeIcon?: typeof CheckIcon;
+}) {
+  const ActiveIcon = activeIcon;
+  return (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="size-8 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          <span className="relative flex size-4 items-center justify-center">
+            <Icon
+              className={cn(
+                "absolute size-4 transition-all duration-100 ease-out",
+                active ? "scale-75 opacity-0" : "scale-100 opacity-100",
+              )}
+              strokeWidth={1.8}
+            />
+            {ActiveIcon ? (
+              <ActiveIcon
+                className={cn(
+                  "absolute size-4 text-muted-foreground transition-all duration-100 ease-out",
+                  active ? "scale-100 opacity-100" : "scale-75 opacity-0",
+                )}
+                strokeWidth={1.9}
+              />
+            ) : null}
+          </span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={6} className="font-medium">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function UserMessageEditor({
+  value,
+  attachments,
+  disabled,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  value: string;
+  attachments: AttachmentReference[];
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const textarea = editRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }, []);
+
+  useLayoutEffect(() => {
+    const textarea = editRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(68, textarea.scrollHeight)}px`;
+  }, [value]);
+
+  return (
+    <form
+      className="relative w-full rounded-2xl"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="composer-gradient-border-short absolute -inset-[1px] rounded-2xl" />
+      <div
+        className="relative flex flex-col rounded-2xl bg-[var(--composer-bg)]"
+        style={{ boxShadow: "var(--composer-shadow)" }}
+      >
+        <textarea
+          ref={editRef}
+          value={value}
+          disabled={disabled}
+          rows={2}
+          className="min-h-[68px] w-full resize-none overflow-hidden bg-transparent px-[22px] pt-[14px] pb-1 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-50"
+          style={{ fontFamily: "inherit" }}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              onSubmit();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+        />
+        <div className={cn(
+          "px-[14px]",
+          attachments.length > 0 ? "pb-2" : "hidden",
+        )}>
+          <UserMessageAttachments attachments={attachments} />
+        </div>
+        <div className="flex justify-end gap-2 px-3.5 pb-3 pt-0.5">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 rounded-full px-4"
+            disabled={disabled}
+            onClick={onCancel}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            className="h-9 rounded-full px-4"
+            disabled={disabled || value.trim().length === 0}
+          >
+            Send
+          </Button>
+        </div>
+      </div>
+    </form>
   );
 }
 
@@ -259,6 +531,7 @@ type AppChatProps = {
   initialMessages: UIMessage[];
   initialRunAttachments?: AttachmentReference[];
   runStatus: "pending" | "streaming" | "completed" | "failed" | null;
+  initialRunFailure?: AgentRunFailure | null;
   toolRecoveryStatus?: "fixing" | null;
   toolRecoveryToolName?: string | null;
   /** When true, renders in narrow side-panel mode (360px). */
@@ -271,6 +544,10 @@ type AppChatProps = {
   onStreamStart?: () => void;
   /** Called when any tool call reaches output-available */
   onToolCallComplete?: (toolName: string, toolCallId: string) => void;
+  /** Called when the current blocking approval card changes. */
+  onPendingApprovalChange?: (kind: "plan" | "agents" | "suggestions" | null) => void;
+  /** Called when the user acts on a blocking approval card. */
+  onApprovalAction?: (kind: "plan" | "agents" | "suggestions") => void;
   /** Called when a new builder message closes a pending app review */
   onReviewInvalidated?: () => void;
   /** Called when editing a published app creates an unpublished draft */
@@ -565,9 +842,217 @@ function suggestionsFromPresentSuggestionsInput(input: unknown): BuildSuggestion
   return normalizeBuildSuggestions(record?.suggestions);
 }
 
+function planDataFromPresentPlanInput(input: unknown): PlanData {
+  const toolInput = asRecord(input);
+  return {
+    title:
+      typeof toolInput?.title === "string"
+        ? toolInput.title
+        : null,
+    overview:
+      typeof toolInput?.overview === "string"
+        ? toolInput.overview
+        : null,
+    features: Array.isArray(toolInput?.features)
+      ? (toolInput.features as { name: string; description: string; emoji: string | null }[]).map(
+          (f) => ({
+            name: typeof f?.name === "string" ? f.name : "",
+            description: typeof f?.description === "string" ? f.description : "",
+            emoji: typeof f?.emoji === "string" ? f.emoji : null,
+          }),
+        )
+      : null,
+    dataFlow:
+      typeof toolInput?.dataFlow === "string"
+        ? toolInput.dataFlow
+        : null,
+    agents:
+      typeof toolInput?.agents === "string"
+        ? toolInput.agents
+        : null,
+    backend:
+      typeof toolInput?.backend === "string"
+        ? toolInput.backend
+        : null,
+  };
+}
+
+const MAX_APPROVAL_ANALYTICS_ITEMS = 10;
+
+function agentAuthKind(agent: AgentsCardData["agents"][number]): string {
+  const tools = Array.isArray(agent.tools) ? agent.tools : [];
+  const hasOAuth = tools.some((tool) => tool.integration?.auth?.type === "oauth2");
+  const hasStaticSecret = tools.some((tool) =>
+    tool.integration?.auth?.type === "static_secret"
+  );
+
+  if (hasOAuth && hasStaticSecret) return "mixed";
+  if (hasOAuth) return "oauth";
+  if (hasStaticSecret) return "static_secret";
+  return "none";
+}
+
+function agentsApprovalAnalytics(
+  input: unknown,
+  output: unknown,
+): AnalyticsProperties {
+  const inputAgents = agentsFromPresentAgentsInput(input);
+  const outputAgents = agentsFromPresentAgentsOutput(output);
+  const agents = inputAgents.length > 0 ? inputAgents : outputAgents;
+  const visibleAgents = agents.slice(0, MAX_APPROVAL_ANALYTICS_ITEMS);
+  const toolCounts = agents.reduce(
+    (totals, agent) => {
+      const tools = Array.isArray(agent.tools) ? agent.tools : [];
+      totals.toolCount += tools.length;
+      totals.enabledToolCount += tools.filter((tool) => tool.enabled !== false).length;
+      totals.recommendedToolCount += tools.filter((tool) => tool.recommended).length;
+      totals.customToolCount += tools.filter((tool) => tool.type === "custom").length;
+      totals.builtinToolCount += tools.filter((tool) => tool.type === "builtin").length;
+      totals.integrationCount += tools.filter((tool) => tool.integration).length;
+      return totals;
+    },
+    {
+      toolCount: 0,
+      enabledToolCount: 0,
+      recommendedToolCount: 0,
+      customToolCount: 0,
+      builtinToolCount: 0,
+      integrationCount: 0,
+    },
+  );
+
+  return {
+    agent_count: agents.length,
+    agent_detail_count: visibleAgents.length,
+    agent_ids: visibleAgents.map((agent) => agent.id),
+    agent_names: visibleAgents.map((agent) => agent.name),
+    agent_descriptions: visibleAgents.map((agent) => agent.description),
+    agent_system_prompts: visibleAgents.map((agent) => agent.systemPrompt),
+    agent_tool_count: toolCounts.toolCount,
+    agent_enabled_tool_count: toolCounts.enabledToolCount,
+    agent_recommended_tool_count: toolCounts.recommendedToolCount,
+    agent_custom_tool_count: toolCounts.customToolCount,
+    agent_builtin_tool_count: toolCounts.builtinToolCount,
+    agent_integration_count: toolCounts.integrationCount,
+    agent_data_collection_count: agents.reduce(
+      (sum, agent) => sum + (agent.dataCollections?.length ?? 0),
+      0,
+    ),
+    agent_tool_names: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : []).map((tool) => tool.name)
+    ),
+    agent_tool_display_names: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : [])
+        .map((tool) => tool.displayName)
+        .filter((name): name is string => Boolean(name))
+    ),
+    agent_integration_names: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : [])
+        .map((tool) => tool.integration?.name)
+        .filter((name): name is string => Boolean(name))
+    ),
+    agent_integration_domains: visibleAgents.flatMap((agent) =>
+      (Array.isArray(agent.tools) ? agent.tools : [])
+        .map((tool) => tool.integration?.domain)
+        .filter((domain): domain is string => Boolean(domain))
+    ),
+    agent_data_collection_names: visibleAgents.flatMap((agent) =>
+      agent.dataCollections ?? []
+    ),
+    agents: visibleAgents.map((agent) => {
+      const tools = Array.isArray(agent.tools) ? agent.tools : [];
+      return {
+        id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        system_prompt: agent.systemPrompt,
+        tool_count: tools.length,
+        enabled_tool_count: tools.filter((tool) => tool.enabled !== false).length,
+        recommended_tool_count: tools.filter((tool) => tool.recommended).length,
+        custom_tool_count: tools.filter((tool) => tool.type === "custom").length,
+        builtin_tool_count: tools.filter((tool) => tool.type === "builtin").length,
+        integration_count: tools.filter((tool) => tool.integration).length,
+        auth_kind: agentAuthKind(agent),
+        data_collection_count: agent.dataCollections?.length ?? 0,
+        data_collection_names: agent.dataCollections ?? [],
+        tools: tools.map((tool) => ({
+          type: tool.type,
+          name: tool.name,
+          display_name: tool.displayName ?? null,
+          enabled: tool.enabled,
+          recommended: tool.recommended,
+          integration: tool.integration
+            ? {
+                name: tool.integration.name,
+                domain: tool.integration.domain,
+              }
+            : null,
+        })),
+      };
+    }),
+  };
+}
+
+function suggestionsApprovalAnalytics(
+  input: unknown,
+  output: unknown,
+): AnalyticsProperties {
+  const inputSuggestions = suggestionsFromPresentSuggestionsInput(input);
+  const outputSuggestions = suggestionsFromPresentSuggestionsOutput(output);
+  const suggestions = inputSuggestions.length > 0
+    ? inputSuggestions
+    : outputSuggestions;
+  const visibleSuggestions = suggestions.slice(0, MAX_APPROVAL_ANALYTICS_ITEMS);
+
+  return {
+    suggestion_count: suggestions.length,
+    suggestion_detail_count: visibleSuggestions.length,
+    suggestion_titles: visibleSuggestions.map((suggestion) => suggestion.title),
+    suggestion_subtitles: visibleSuggestions.map((suggestion) => suggestion.subtitle),
+    suggestions: visibleSuggestions.map((suggestion) => ({
+      title: suggestion.title,
+      subtitle: suggestion.subtitle,
+      subtitle_length: suggestion.subtitle.length,
+      has_emoji: Boolean(suggestion.emoji),
+    })),
+  };
+}
+
+function planApprovalAnalytics(input: unknown): AnalyticsProperties {
+  const plan = planDataFromPresentPlanInput(input);
+  const features = plan.features ?? [];
+
+  return {
+    plan_title: plan.title,
+    plan_has_title: Boolean(plan.title),
+    plan_has_overview: Boolean(plan.overview),
+    plan_has_features: features.length > 0,
+    plan_has_data_flow: Boolean(plan.dataFlow),
+    plan_has_agents: Boolean(plan.agents),
+    plan_has_backend: Boolean(plan.backend),
+    plan_feature_count: features.length,
+    plan_feature_names: features
+      .slice(0, MAX_APPROVAL_ANALYTICS_ITEMS)
+      .map((feature) => feature.name),
+    plan_overview: plan.overview,
+    plan_features: features.map((feature) => ({
+      name: feature.name,
+      description: feature.description,
+    })),
+    plan_data_flow: plan.dataFlow,
+    plan_agents: plan.agents,
+    plan_backend: plan.backend,
+    plan_overview_length: plan.overview?.length ?? 0,
+    plan_data_flow_length: plan.dataFlow?.length ?? 0,
+    plan_agents_length: plan.agents?.length ?? 0,
+    plan_backend_length: plan.backend?.length ?? 0,
+  };
+}
+
 type PendingApproval = {
   kind: "plan" | "suggestions" | "agents";
   toolCallId: string;
+  analytics: AnalyticsProperties;
 };
 
 function blockingApprovalKind(toolName: string): PendingApproval["kind"] | null {
@@ -599,21 +1084,24 @@ function pendingBlockingApprovalFromMessages(
         record.state === "output-available" &&
         record.preliminary !== true
       ) {
+        const analytics = kind === "agents"
+          ? agentsApprovalAnalytics(record.input, record.output)
+          : kind === "suggestions"
+            ? suggestionsApprovalAnalytics(record.input, record.output)
+            : planApprovalAnalytics(record.input);
         if (
           kind === "agents" &&
-          agentsFromPresentAgentsInput(record.input).length === 0 &&
-          agentsFromPresentAgentsOutput(record.output).length === 0
+          analytics.agent_count === 0
         ) {
           continue;
         }
         if (
           kind === "suggestions" &&
-          suggestionsFromPresentSuggestionsInput(record.input).length === 0 &&
-          suggestionsFromPresentSuggestionsOutput(record.output).length === 0
+          analytics.suggestion_count === 0
         ) {
           continue;
         }
-        return { kind, toolCallId: record.toolCallId };
+        return { kind, toolCallId: record.toolCallId, analytics };
       }
     }
   }
@@ -628,6 +1116,46 @@ function sanitizeMessages(messages: UIMessage[]): UIMessage[] {
       ? message.parts.filter((part): part is NonNullable<typeof part> => part != null)
       : [],
   }));
+}
+
+type ChatRunSnapshot = {
+  messages?: UIMessage[];
+  status?: string | null;
+  failure?: AgentRunFailure | null;
+  usage?: RunUsage | null;
+};
+
+function latestUserTurn(messages: UIMessage[]): UserTurn | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") continue;
+    const text = messageText(message).trim();
+    if (text) return { index, message, text };
+  }
+  return null;
+}
+
+function latestAssistantTurnHasStarted(messages: UIMessage[]): boolean {
+  let latestUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      latestUserIndex = index;
+      break;
+    }
+  }
+
+  for (let index = latestUserIndex + 1; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant") continue;
+    if ((message.parts ?? []).some((part) => part != null)) return true;
+  }
+  return false;
+}
+
+function isUserStoppedFailure(
+  failure: AgentRunFailure | null | undefined,
+): boolean {
+  return failure?.code === "user_stopped";
 }
 
 function permissionKey(groupName: string, permission: string): string {
@@ -749,18 +1277,39 @@ function latestIntegrationSetupFromMessages(
     const parts = msg.parts ?? [];
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
       const part = parts[partIndex];
+      const record = asRecord(part);
       if (
-        part?.type !== "dynamic-tool" ||
-        part.toolName !== "mcp__second__present_integration_setup"
+        record?.type !== "dynamic-tool" ||
+        record.toolName !== "mcp__second__present_integration_setup" ||
+        record.state !== "output-available" ||
+        record.preliminary === true ||
+        !integrationSetupOutputWasSynced(record.output)
       ) {
         continue;
       }
-      const input = asRecord(part.input);
+      const input = asRecord(record.input);
       return normalizeSetupIntegrations(input?.integrations);
     }
   }
 
   return [];
+}
+
+function integrationSetupOutputWasSynced(output: unknown): boolean {
+  const parsed = parseToolTextOutput(output);
+  const record = asRecord(parsed);
+  if (record) {
+    if (record.ok === false || record.synced === false) return false;
+    if (record.ok === true && record.synced === true) return true;
+  }
+
+  if (typeof parsed !== "string") return false;
+  const text = parsed.toLowerCase();
+  return (
+    text.includes("presented to user and synced") &&
+    !text.includes("not synced") &&
+    !text.includes("not fully synced")
+  );
 }
 
 function integrationNeedsSetup(
@@ -838,14 +1387,10 @@ function IntegrationSetupComposerCallout({
   const primaryLiveIntegration = primaryIntegration
     ? findLiveIntegrationKey(primaryIntegration, liveIntegrationKeys ?? null, appId)
     : undefined;
-  const setupRouteSegment =
-    primaryLiveIntegration && liveIntegrationKeys?.length
-      ? integrationRouteSegment(primaryLiveIntegration, liveIntegrationKeys)
-      : slugifyIntegrationRouteSegment(
-          primaryIntegration?.name || primaryIntegration?.domain || "integration",
-        );
   const integrationSetupTarget = primaryIntegration
-    ? `/w/${workspaceId}/settings/integrations/${encodeURIComponent(setupRouteSegment)}?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`
+    ? primaryLiveIntegration && liveIntegrationKeys?.length
+      ? `/w/${workspaceId}/settings/integrations/${encodeURIComponent(integrationRouteSegment(primaryLiveIntegration, liveIntegrationKeys))}?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`
+      : `/w/${workspaceId}/settings/integrations?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`
     : `/w/${workspaceId}/settings/integrations?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`;
   const trackSetupNavigation = () => {
     captureAnalyticsEvent("integration setup started", {
@@ -1361,6 +1906,7 @@ function useRunSync({
   statusRef,
   setMessages,
   resumeStream,
+  onSnapshot,
   initialRunStatus,
   initialMessageCount,
 }: {
@@ -1373,14 +1919,12 @@ function useRunSync({
   statusRef: React.RefObject<string>;
   setMessages: (messages: UIMessage[]) => void;
   resumeStream: () => Promise<void>;
+  onSnapshot?: (snapshot: ChatRunSnapshot) => void;
   initialRunStatus: string | null;
   initialMessageCount: number;
 }): boolean {
   const [isSyncLoading, setIsSyncLoading] = useState(
-    () => initialRunStatus === "streaming",
-  );
-  const [isInitialCheckPending, setIsInitialCheckPending] = useState(
-    () => Boolean(chatApiUrl) && initialRunStatus !== "pending",
+    () => initialRunStatus === "streaming" && initialMessageCount > 0,
   );
   // When true, a setInterval polls GET /chat as a fallback for tabs
   // whose resumeStream() got 204 but the run is still active.
@@ -1392,6 +1936,10 @@ function useRunSync({
   const wasStreamingRef = useRef(false);
   const syncGenRef = useRef(0);
   const lastResumeAttemptAtRef = useRef(0);
+  const deferredRunSyncRef = useRef<{
+    pending: boolean;
+    showLoading: boolean;
+  }>({ pending: false, showLoading: false });
 
   // Refs for values accessed inside async callbacks (avoids stale closures
   // and keeps the event-subscription effect's dependency array stable).
@@ -1415,6 +1963,10 @@ function useRunSync({
   useEffect(() => {
     setMessagesRef.current = setMessages;
   }, [setMessages]);
+  const onSnapshotRef = useRef(onSnapshot);
+  useEffect(() => {
+    onSnapshotRef.current = onSnapshot;
+  }, [onSnapshot]);
 
   /** Ensures messages from the server won't crash useChat or rendering.
    *  Strips null/undefined parts that can appear after MongoDB round-trips. */
@@ -1440,7 +1992,9 @@ function useRunSync({
     shouldPollRef.current = shouldPoll;
   }, [shouldPoll]);
 
-  const startLiveSyncRef = useRef<(options?: { force?: boolean }) => void>(
+  const startLiveSyncRef = useRef<
+    (options?: { force?: boolean; showLoading?: boolean }) => void
+  >(
     () => {},
   );
   useEffect(() => {
@@ -1454,72 +2008,98 @@ function useRunSync({
       const gen = syncGenRef.current;
       resumeActiveRef.current = true;
       lastResumeAttemptAtRef.current = Date.now();
-      setIsSyncLoading(true);
       setShouldPoll(false);
-      window.setTimeout(() => {
-        if (syncGenRef.current !== gen) return;
-        const liveStatus = statusRef.current;
-        if (liveStatus === "streaming" || liveStatus === "submitted") return;
-        // A reconnect request can sit behind old browser sockets. Keep
-        // syncing in the background, but do not pin the chat on "Working".
-        setIsSyncLoading(false);
-        setShouldPoll(true);
-      }, 10000);
-
-      // Fetch current messages first so the newest user message appears immediately.
-      const url = chatApiUrlRef.current;
-      if (url) {
-        fetchRunSnapshot(url)
-          .then((res) => res.json())
-          .then(({ messages }: { messages: UIMessage[] }) =>
-            safeSetMessagesIfIdle(messages),
-          )
-          .catch(() => {});
+      if (options?.showLoading) {
+        setIsSyncLoading(true);
       }
 
-      resumeStreamRef
-        .current()
-        .then(async () => {
-          // If useChat attached to stream, it will transition to submitted/streaming.
+      const beginResume = () => {
+        if (syncGenRef.current !== gen) return;
+        setIsSyncLoading(true);
+        window.setTimeout(() => {
+          if (syncGenRef.current !== gen) return;
           const liveStatus = statusRef.current;
-          if (liveStatus === "streaming" || liveStatus === "submitted") {
-            return;
-          }
+          if (liveStatus === "streaming" || liveStatus === "submitted") return;
+          // A reconnect request can sit behind old browser sockets. Keep
+          // syncing in the background, but do not pin the chat on "Working".
+          setIsSyncLoading(false);
+          setShouldPoll(true);
+        }, 10000);
 
-          const latestUrl = chatApiUrlRef.current;
-          if (!latestUrl) {
-            setIsSyncLoading(false);
-            setShouldPoll(false);
-            return;
-          }
-
-          try {
-            const res = await fetchRunSnapshot(latestUrl);
-            if (!res.ok) return;
-            const { messages, status: runStatus } = (await res.json()) as {
-              messages: UIMessage[];
-              status: string | null;
-            };
-            safeSetMessagesIfIdle(messages);
-            if (runStatus === "streaming") {
-              // Resume didn't attach; keep this tab fresh via polling fallback.
-              setShouldPoll(true);
-            } else {
-              setShouldPoll(false);
-              setIsSyncLoading(false);
+        resumeStreamRef
+          .current()
+          .then(async () => {
+            // If useChat attached to stream, it will transition to submitted/streaming.
+            const liveStatus = statusRef.current;
+            if (liveStatus === "streaming" || liveStatus === "submitted") {
+              return;
             }
-          } catch {
+
+            const latestUrl = chatApiUrlRef.current;
+            if (!latestUrl) {
+              setIsSyncLoading(false);
+              setShouldPoll(false);
+              return;
+            }
+
+            try {
+              const res = await fetchRunSnapshot(latestUrl);
+              if (!res.ok) return;
+              const snapshot = (await res.json()) as ChatRunSnapshot;
+              onSnapshotRef.current?.(snapshot);
+              const messages = snapshot.messages ?? [];
+              const runStatus = snapshot.status ?? null;
+              safeSetMessagesIfIdle(messages);
+              if (runStatus === "streaming") {
+                // Resume didn't attach; keep this tab fresh via polling fallback.
+                setShouldPoll(true);
+              } else {
+                setShouldPoll(false);
+                setIsSyncLoading(false);
+              }
+            } catch {
+              setShouldPoll(true);
+            }
+          })
+          .catch(() => {
+            // Resume failed; polling fallback keeps this tab reasonably fresh.
             setShouldPoll(true);
+          })
+          .finally(() => {
+            if (syncGenRef.current === gen) {
+              resumeActiveRef.current = false;
+            }
+          });
+      };
+
+      const url = chatApiUrlRef.current;
+      if (!url) {
+        beginResume();
+        return;
+      }
+
+      // Fetch current messages first so stale stream-ready events don't flash
+      // a reconnect indicator after the run has already completed or failed.
+      fetchRunSnapshot(url)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((snapshot: ChatRunSnapshot | null) => {
+          if (syncGenRef.current !== gen) return;
+          if (!snapshot) {
+            beginResume();
+            return;
+          }
+          onSnapshotRef.current?.(snapshot);
+          safeSetMessagesIfIdle(snapshot.messages ?? []);
+          if (snapshot.status === "streaming") {
+            beginResume();
+          } else {
+            resumeActiveRef.current = false;
+            setShouldPoll(false);
+            setIsSyncLoading(false);
           }
         })
         .catch(() => {
-          // Resume failed; polling fallback keeps this tab reasonably fresh.
-          setShouldPoll(true);
-        })
-        .finally(() => {
-          if (syncGenRef.current === gen) {
-            resumeActiveRef.current = false;
-          }
+          beginResume();
         });
     };
   });
@@ -1539,9 +2119,8 @@ function useRunSync({
       }, 0);
     };
 
-    if (!url) {
+    if (!url || initialRunStatus !== "streaming") {
       scheduleState(() => {
-        setIsInitialCheckPending(false);
         setIsSyncLoading(false);
       });
       return () => {
@@ -1553,28 +2132,21 @@ function useRunSync({
     }
 
     initialCheckTimer = window.setTimeout(() => {
-      if (!cancelled) {
-        setIsInitialCheckPending(false);
-      }
+      if (!cancelled) setIsSyncLoading(false);
     }, 5000);
 
     scheduleState(() => {
-      setIsInitialCheckPending(initialRunStatus !== "pending");
-      if (initialRunStatus === "streaming") {
-        setIsSyncLoading(true);
-      }
+      setIsSyncLoading(initialMessageCount > 0);
     });
 
     fetchRunSnapshot(url)
       .then((res) => (res.ok ? res.json() : null))
       .then(
         (
-          data: {
-            messages?: UIMessage[];
-            status?: string | null;
-          } | null,
+          data: ChatRunSnapshot | null,
         ) => {
           if (cancelled || !data) return;
+          onSnapshotRef.current?.(data);
 
           const latestMessages = sanitizeMessages(data.messages ?? []);
           if (latestMessages.length > initialMessageCount) {
@@ -1599,7 +2171,6 @@ function useRunSync({
           if (initialCheckTimer !== null) {
             window.clearTimeout(initialCheckTimer);
           }
-          setIsInitialCheckPending(false);
         }
       });
 
@@ -1638,13 +2209,10 @@ function useRunSync({
           fetchRunSnapshot(url)
             .then((res) => res.json())
             .then(
-              ({
-                messages,
-                status: runStatus,
-              }: {
-                messages: UIMessage[];
-                status: string | null;
-              }) => {
+              (snapshot: ChatRunSnapshot) => {
+                onSnapshotRef.current?.(snapshot);
+                const messages = snapshot.messages ?? [];
+                const runStatus = snapshot.status ?? null;
                 safeSetMessagesIfIdle(messages);
                 if (runStatus !== "streaming") {
                   setIsSyncLoading(false);
@@ -1665,6 +2233,46 @@ function useRunSync({
     }
   }, [status, isSyncLoading, safeSetMessagesIfIdle, fetchRunSnapshot]);
 
+  // A lifecycle event can arrive while this tab is still unwinding the previous
+  // observer stream. Do not start a second resume then; catch up as soon as the
+  // AI SDK returns to ready and only show loading if the run is still active.
+  useEffect(() => {
+    if (status !== "ready" || !deferredRunSyncRef.current.pending) return;
+
+    const pendingShowLoading = deferredRunSyncRef.current.showLoading;
+    deferredRunSyncRef.current = { pending: false, showLoading: false };
+    const url = chatApiUrlRef.current;
+    if (!url) return;
+
+    let cancelled = false;
+    fetchRunSnapshot(url)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((snapshot: ChatRunSnapshot | null) => {
+        if (cancelled || !snapshot) return;
+        onSnapshotRef.current?.(snapshot);
+        safeSetMessagesIfIdle(snapshot.messages ?? []);
+        if (snapshot.status === "streaming") {
+          startLiveSyncRef.current({
+            force: true,
+            showLoading: pendingShowLoading,
+          });
+        } else {
+          setShouldPoll(false);
+          setIsSyncLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setShouldPoll(false);
+          setIsSyncLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, safeSetMessagesIfIdle, fetchRunSnapshot]);
+
   // ---- Polling observer sync ----
   useEffect(() => {
     if (!shouldPoll) return;
@@ -1683,11 +2291,11 @@ function useRunSync({
       try {
         const res = await fetchRunSnapshot(url);
         if (res.ok) {
-          const { messages, status: runStatus } = (await res.json()) as {
-            messages: UIMessage[];
-            status: string | null;
-          };
+          const snapshot = (await res.json()) as ChatRunSnapshot;
           if (cancelled) return;
+          onSnapshotRef.current?.(snapshot);
+          const messages = snapshot.messages ?? [];
+          const runStatus = snapshot.status ?? null;
           safeSetMessagesIfIdle(messages);
           if (runStatus === "streaming") {
             const currentStatus = statusRef.current;
@@ -1739,10 +2347,22 @@ function useRunSync({
     }
 
     const currentStatus = statusRef.current;
-    if (currentStatus === "streaming" || currentStatus === "submitted") return;
+    if (currentStatus === "streaming" || currentStatus === "submitted") {
+      if (event.type === "run.starting" || event.type === "run.stream_ready") {
+        deferredRunSyncRef.current = {
+          pending: true,
+          showLoading:
+            deferredRunSyncRef.current.showLoading ||
+            event.type === "run.starting",
+        };
+      }
+      return;
+    }
 
     // run.starting/run.stream_ready: another tab or a resumed POST is active.
-    if (event.type === "run.starting" || event.type === "run.stream_ready") {
+    if (event.type === "run.starting") {
+      startLiveSyncRef.current({ force: true, showLoading: true });
+    } else if (event.type === "run.stream_ready") {
       startLiveSyncRef.current({ force: true });
     } else if (event.type === "run.completed" || event.type === "run.failed") {
       setShouldPoll(false);
@@ -1750,8 +2370,9 @@ function useRunSync({
       if (url) {
         fetchRunSnapshot(url)
           .then((res) => res.json())
-          .then(({ messages }: { messages: UIMessage[] }) => {
-            safeSetMessagesIfIdle(messages);
+          .then((snapshot: ChatRunSnapshot) => {
+            onSnapshotRef.current?.(snapshot);
+            safeSetMessagesIfIdle(snapshot.messages ?? []);
             setIsSyncLoading(false);
           })
           .catch(() => setIsSyncLoading(false));
@@ -1768,7 +2389,70 @@ function useRunSync({
     workspaceId,
   ]));
 
-  return isSyncLoading || isInitialCheckPending;
+  // A background tab can miss or delay BroadcastChannel-delivered workspace
+  // events. When it becomes active again, catch up from the authorized run
+  // snapshot and attach if the run is streaming.
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+
+    const catchUpIfVisible = async () => {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      if (inFlight) return;
+      const currentStatus = statusRef.current;
+      if (currentStatus === "streaming" || currentStatus === "submitted") return;
+      const url = chatApiUrlRef.current;
+      if (!url) return;
+
+      inFlight = true;
+      try {
+        const res = await fetchRunSnapshot(url);
+        if (!res.ok || cancelled) return;
+        const snapshot = (await res.json()) as ChatRunSnapshot;
+        if (cancelled) return;
+        onSnapshotRef.current?.(snapshot);
+        safeSetMessagesIfIdle(snapshot.messages ?? []);
+        if (snapshot.status === "streaming") {
+          startLiveSyncRef.current({ force: true });
+        } else {
+          setShouldPoll(false);
+          setIsSyncLoading(false);
+        }
+      } catch {
+        // Focus catch-up is best-effort; realtime and later navigation can recover.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void catchUpIfVisible();
+      }
+    };
+    const onFocus = () => {
+      void catchUpIfVisible();
+    };
+    const onPageShow = () => {
+      void catchUpIfVisible();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [fetchRunSnapshot, safeSetMessagesIfIdle, statusRef]);
+
+  return isSyncLoading;
 }
 
 export function AppChat({
@@ -1782,6 +2466,7 @@ export function AppChat({
   initialMessages,
   initialRunAttachments = [],
   runStatus,
+  initialRunFailure = null,
   toolRecoveryStatus = null,
   toolRecoveryToolName = null,
   panelMode = false,
@@ -1789,6 +2474,8 @@ export function AppChat({
   onStreamComplete,
   onStreamStart,
   onToolCallComplete,
+  onPendingApprovalChange,
+  onApprovalAction,
   onReviewInvalidated,
   onDraftCreatedFromPublished,
   canApproveAgentConfig = false,
@@ -1806,6 +2493,9 @@ export function AppChat({
 
   const [runtimeSettings, setRuntimeSettings] = useState(
     normalizeRuntimeSettings(initialRuntimeSettings ?? DEFAULT_RUNTIME_SETTINGS),
+  );
+  const [runFailure, setRunFailure] = useState<AgentRunFailure | null>(
+    initialRunFailure,
   );
   const runtimeSettingsRef = useRef(runtimeSettings);
   useEffect(() => {
@@ -1864,7 +2554,6 @@ export function AppChat({
   // client-side route change must not explicitly abort them before MongoDB has
   // the final assistant/tool messages.
   const fetchAbortRef = useRef(new AbortController());
-  const chatPostAbortRef = useRef<AbortController | null>(null);
   const [liveSyncSuspended, setLiveSyncSuspended] = useState(false);
   useEffect(() => {
     // On each mount (including Strict-Mode remount) create a fresh
@@ -1874,7 +2563,8 @@ export function AppChat({
   }, []);
   useEffect(() => {
     setLiveSyncSuspended(false);
-  }, [runId]);
+    setRunFailure(initialRunFailure);
+  }, [initialRunFailure, runId]);
 
   const releaseLiveObserversForNavigation = useCallback(() => {
     // A settings navigation can otherwise wait behind the current tab's
@@ -1914,23 +2604,14 @@ export function AppChat({
   const transportFetch = useCallback<typeof globalThis.fetch>(
     async (input, init) => {
       const isChatPost = init?.method === "POST";
-      const ownSignal = isChatPost
-        ? undefined
-        : fetchAbortRef.current.signal;
+      const ownSignal = isChatPost ? undefined : fetchAbortRef.current.signal;
       const signal = ownSignal && init?.signal
         ? ((AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any?.([init.signal, ownSignal]) ?? ownSignal)
         : (ownSignal ?? init?.signal);
-      const chatPostSignal = isChatPost
-        ? (() => {
-            const controller = new AbortController();
-            chatPostAbortRef.current = controller;
-            return controller.signal;
-          })()
-        : signal;
 
       const response = await globalThis.fetch(input, {
         ...init,
-        signal: chatPostSignal,
+        signal,
       });
       if (
         isChatPost &&
@@ -1982,7 +2663,7 @@ export function AppChat({
         : undefined,
     [chatApi, transportFetch],
   );
-  const { messages, sendMessage, status, error, setMessages, resumeStream, stop } =
+  const { messages, sendMessage, status, error, setMessages, resumeStream, stop, clearError } =
     useChat({
       id: runId ?? undefined,
       messages: initialMessages,
@@ -2000,12 +2681,39 @@ export function AppChat({
   // work like navigation. Live `messages` is still used by effects for
   // immediate callback dispatch (build-complete, tool-completion).
   const deferredMessages = useDeferredValue(messages);
+  const displayMessages =
+    status === "submitted" ? messages : deferredMessages;
 
 
   const statusRef = useRef(status);
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  const handleRunSnapshot = useCallback((snapshot: ChatRunSnapshot) => {
+    if (!Object.prototype.hasOwnProperty.call(snapshot, "failure")) return;
+
+    if (snapshot.status !== "failed") {
+      setRunFailure(null);
+      return;
+    }
+
+    const currentStatus = statusRef.current;
+    if (currentStatus === "streaming" || currentStatus === "submitted") return;
+
+    const snapshotMessageCount = snapshot.messages?.length;
+    if (
+      typeof snapshotMessageCount === "number" &&
+      snapshotMessageCount < messagesRef.current.length
+    ) {
+      return;
+    }
+
+    setRunFailure(snapshot.failure ?? null);
+  }, []);
 
   const isSyncLoading = useRunSync({
     workspaceId,
@@ -2017,6 +2725,7 @@ export function AppChat({
     statusRef,
     setMessages,
     resumeStream,
+    onSnapshot: handleRunSnapshot,
     initialRunStatus: runStatus,
     initialMessageCount: initialMessages.length,
   });
@@ -2024,6 +2733,16 @@ export function AppChat({
     () => pendingBlockingApprovalFromMessages(messages),
     [messages],
   );
+  const scrollChatToBottom = useCallback(() => {
+    void stickToBottomContextRef.current?.scrollToBottom({
+      animation: "smooth",
+      ignoreEscapes: true,
+      duration: 600,
+    });
+  }, []);
+  useEffect(() => {
+    onPendingApprovalChange?.(pendingApproval?.kind ?? null);
+  }, [onPendingApprovalChange, pendingApproval?.kind]);
   const trackedApprovalShownRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!pendingApproval) return;
@@ -2038,6 +2757,7 @@ export function AppChat({
       run_id: runId,
       tool_call_id: pendingApproval.toolCallId,
       approval_type: pendingApproval.kind,
+      ...pendingApproval.analytics,
     });
   }, [appId, pendingApproval, runId, workspaceId]);
   const latestAgentsToolCallId = useMemo(() => {
@@ -2141,6 +2861,7 @@ export function AppChat({
 
     return requestedIntegrationSetup.filter((integration) => {
       const live = findLiveIntegrationKey(integration, appIntegrationKeys, appId);
+      if (!live) return false;
       return integrationNeedsSetup(integration, live);
     });
   }, [appId, requestedIntegrationSetup, appIntegrationKeys]);
@@ -2152,6 +2873,13 @@ export function AppChat({
       !appIntegrationKeys ||
       pendingIntegrationSetup.length !== 0 ||
       trackedIntegrationSetupCompletionKeysRef.current.has(requestedIntegrationSetupKey)
+    ) {
+      return;
+    }
+    if (
+      !requestedIntegrationSetup.every((integration) =>
+        findLiveIntegrationKey(integration, appIntegrationKeys, appId),
+      )
     ) {
       return;
     }
@@ -2227,7 +2955,8 @@ export function AppChat({
     ) {
       fetch(chatApi)
         .then((res) => res.json())
-        .then((data: { usage?: RunUsage | null }) => {
+        .then((data: ChatRunSnapshot) => {
+          handleRunSnapshot(data);
           if (data.usage) {
             onStreamCompleteRef.current?.(data.usage);
           } else {
@@ -2236,7 +2965,7 @@ export function AppChat({
         })
         .catch(() => onStreamCompleteRef.current?.(null));
     }
-  }, [status, chatApi]);
+  }, [status, chatApi, handleRunSnapshot]);
 
   // Detect done_building tool in messages
   useEffect(() => {
@@ -2321,8 +3050,7 @@ export function AppChat({
   useEffect(() => {
     if (!runId || trackedBuildFailureRunIdsRef.current.has(runId)) return;
 
-    const streamError =
-      error && error instanceof TypeError === false ? error : null;
+    const streamError = error ?? null;
     const failedByStatus = runStatus === "failed";
     if (!streamError && !failedByStatus) return;
 
@@ -2347,6 +3075,40 @@ export function AppChat({
     runStatus,
     runtimeSettings.model,
     runtimeSettings.runtimeId,
+    workspaceId,
+  ]);
+
+  const reportedChatErrorsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!error || !runId) return;
+    const key = `${runId}:${error.name}:${error.message}`;
+    if (reportedChatErrorsRef.current.has(key)) return;
+    reportedChatErrorsRef.current.add(key);
+    void reportClientError({
+      source: "chat-stream",
+      error,
+      context: {
+        component: "AppChat",
+        workspaceId,
+        appId,
+        runId,
+        runStatus,
+        runtimeId: runtimeSettings.runtimeId,
+        runtimeModel: runtimeSettings.model,
+        chatStatus: status,
+        online: typeof navigator !== "undefined" ? navigator.onLine : undefined,
+        visibilityState:
+          typeof document !== "undefined" ? document.visibilityState : undefined,
+      },
+    });
+  }, [
+    appId,
+    error,
+    runId,
+    runStatus,
+    runtimeSettings.model,
+    runtimeSettings.runtimeId,
+    status,
     workspaceId,
   ]);
 
@@ -2444,8 +3206,14 @@ export function AppChat({
 
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [isStopping, setIsStopping] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const stickToBottomContextRef = useRef<StickToBottomContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const copiedMessageResetRef = useRef<number | null>(null);
   const hasSentInitial = useRef(false);
   const validatedInitialRunRef = useRef<string | null>(null);
   const hydratedRunRef = useRef<string | null>(null);
@@ -2459,26 +3227,121 @@ export function AppChat({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [focusComposerKey]);
+  useEffect(() => {
+    return () => {
+      if (copiedMessageResetRef.current !== null) {
+        window.clearTimeout(copiedMessageResetRef.current);
+      }
+    };
+  }, []);
   const sendMessageSafely = useCallback(
-    (text: string, attachmentsToSend: AttachmentReference[] = []) => {
+    (
+      text: string,
+      attachmentsToSend: AttachmentReference[] = [],
+      extraBody: Record<string, unknown> = {},
+      messageId?: string,
+    ) => {
       statusRef.current = "submitted";
+      setLiveSyncSuspended(false);
+      setRunFailure(null);
+      clearError();
       const attachmentBody =
         attachmentsToSend.length > 0
           ? { attachments: attachmentsToSend }
           : undefined;
+      const body = {
+        ...extraBody,
+        ...(attachmentBody ?? {}),
+      };
       const metadata =
         attachmentsToSend.length > 0
           ? { attachments: attachmentsToSend }
           : undefined;
       void sendMessage(
-        metadata ? { text, metadata } : { text },
-        attachmentBody ? { body: attachmentBody } : undefined,
+        {
+          text,
+          ...(metadata ? { metadata } : {}),
+          ...(messageId ? { messageId } : {}),
+        },
+        Object.keys(body).length > 0 ? { body } : undefined,
       );
     },
-    [sendMessage],
+    [clearError, sendMessage],
   );
+  const canStopActiveRun = useMemo(
+    () => status === "streaming" && latestAssistantTurnHasStarted(messages),
+    [messages, status],
+  );
+  const stopBuilderRun = useCallback(async () => {
+    if (!canStopActiveRun) return;
+    if (!chatApi) {
+      stop();
+      return;
+    }
+
+    setIsStopping(true);
+    setLiveSyncSuspended(true);
+    let stopSucceeded = false;
+    try {
+      const response = await fetch(`${chatApi}/stop`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const snapshot = (await response.json().catch(() => null)) as
+        | { failure?: AgentRunFailure | null; workerCancelled?: boolean; error?: string }
+        | null;
+      if (snapshot?.failure) setRunFailure(snapshot.failure);
+      if (!response.ok) {
+        toast.error("Could not stop the run.", {
+          description: snapshot?.error ?? "Please try again.",
+        });
+      } else {
+        stopSucceeded = true;
+      }
+      if (response.ok && snapshot?.failure?.code === "worker_cancel_failed") {
+        toast.info("Run stopped locally.", {
+          description: "The worker did not confirm cancellation, so this was reported.",
+        });
+      }
+    } catch (stopError) {
+      toast.error("Could not stop the run.", {
+        description:
+          stopError instanceof Error ? stopError.message : "Network error.",
+      });
+      void reportClientError({
+        source: "chat-stream",
+        error: stopError,
+        context: {
+          component: "AppChat.stopBuilderRun",
+          workspaceId,
+          appId,
+          runId,
+        },
+      });
+    } finally {
+      stop();
+      clearError();
+      setIsStopping(false);
+      if (!stopSucceeded) {
+        setLiveSyncSuspended(false);
+      }
+    }
+  }, [appId, canStopActiveRun, chatApi, clearError, runId, stop, workspaceId]);
   const isBusy =
-    status === "streaming" || status === "submitted" || isSyncLoading;
+    status === "streaming" || status === "submitted" || isSyncLoading || isStopping;
+  const [assistantActionsReady, setAssistantActionsReady] = useState(!isBusy);
+  useEffect(() => {
+    if (isBusy) {
+      setAssistantActionsReady(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setAssistantActionsReady(true);
+    }, 160);
+
+    return () => window.clearTimeout(timer);
+  }, [isBusy]);
   const isUploadingAttachments = attachments.some(
     (attachment) => attachment.status === "uploading",
   );
@@ -2676,6 +3539,9 @@ export function AppChat({
     hasSentInitial.current = false;
     validatedInitialRunRef.current = null;
     hydratedRunRef.current = null;
+    setEditingMessageId(null);
+    setEditingText("");
+    setCopiedMessageId(null);
   }, [runId]);
 
   useEffect(() => {
@@ -2696,16 +3562,14 @@ export function AppChat({
       .then((res) => (res.ok ? res.json() : null))
       .then(
         (
-          data: {
-            messages?: UIMessage[];
-            status?: string | null;
-          } | null,
+          data: ChatRunSnapshot | null,
         ) => {
           if (cancelled) return;
           if (!data) {
             hydratedRunRef.current = null;
             return;
           }
+          handleRunSnapshot(data);
           if (
             statusRef.current === "streaming" ||
             statusRef.current === "submitted"
@@ -2733,7 +3597,7 @@ export function AppChat({
         hydratedRunRef.current = null;
       }
     };
-  }, [runId, chatApi, initialMessages.length, runStatus, setMessages]);
+  }, [runId, chatApi, handleRunSnapshot, initialMessages.length, runStatus, setMessages]);
 
   useEffect(() => {
     const hasScheduledAutoStart = Boolean(autoStartPrompt?.trim());
@@ -2752,16 +3616,14 @@ export function AppChat({
         .then((res) => (res.ok ? res.json() : null))
         .then(
           (
-            data: {
-              messages?: UIMessage[];
-              status?: string | null;
-            } | null,
-          ) => {
-            if (cancelled) return;
-            if (!data) {
-              validatedInitialRunRef.current = null;
-              return;
-            }
+          data: ChatRunSnapshot | null,
+        ) => {
+          if (cancelled) return;
+          if (!data) {
+            validatedInitialRunRef.current = null;
+            return;
+          }
+          handleRunSnapshot(data);
 
             const latestMessages = sanitizeMessages(data?.messages ?? []);
             const latestStatus = data?.status ?? null;
@@ -2797,7 +3659,7 @@ export function AppChat({
         }
       };
     }
-  }, [runId, chatApi, initialMessages.length, runStatus, autoStartPrompt, initialPrompt, appName, initialRunAttachments, setMessages, sendMessageSafely]);
+  }, [runId, chatApi, handleRunSnapshot, initialMessages.length, runStatus, autoStartPrompt, initialPrompt, appName, initialRunAttachments, setMessages, sendMessageSafely]);
 
   function handleSubmit() {
     const readyAttachments = attachments.filter(
@@ -2842,9 +3704,7 @@ export function AppChat({
     (attachment) => attachment.status === "uploaded",
   ).length;
   const pendingApprovalPlaceholder =
-    isSyncLoading
-      ? "Connecting to stream..."
-      : pendingApproval?.kind === "plan"
+    pendingApproval?.kind === "plan"
       ? "Approve or request changes to the plan to continue..."
       : pendingApproval?.kind === "suggestions"
         ? "Choose a suggestion to continue..."
@@ -2852,9 +3712,159 @@ export function AppChat({
         ? "Approve or request changes to the agents to continue..."
         : "Send a message...";
   const firstUserMessageId = useMemo(
-    () => deferredMessages.find((message) => message.role === "user")?.id ?? null,
-    [deferredMessages],
+    () => messages.find((message) => message.role === "user")?.id ?? null,
+    [messages],
   );
+  const retryTurn = useMemo(() => latestUserTurn(messages), [messages]);
+  const retryText = retryTurn?.text ?? "";
+  const hasRenderedErrorPart = useMemo(
+    () =>
+      displayMessages
+        .slice(retryTurn ? retryTurn.index + 1 : 0)
+        .some((message) =>
+          (message.parts ?? []).some((part) => asRecord(part)?.type === "error"),
+        ),
+    [displayMessages, retryTurn],
+  );
+  const routeFailureStillCurrent =
+    runStatus === "failed" && messages.length <= initialMessages.length;
+  const isUserStopped = isUserStoppedFailure(runFailure);
+  const visibleFailureMessage = useMemo(() => {
+    if (isUserStopped) return "Second's response was stopped by the user.";
+    if (runFailure?.message) return runFailure.message;
+    if (error instanceof TypeError) {
+      return "The stream disconnected. Retry the last message to continue.";
+    }
+    if (error?.message) return error.message;
+    if (routeFailureStillCurrent) {
+      return "The run failed. Retry the last message to continue.";
+    }
+    return null;
+  }, [error, isUserStopped, routeFailureStillCurrent, runFailure]);
+  const failureRetryable =
+    Boolean(retryText) &&
+    (runFailure?.retryable ?? (Boolean(error) || routeFailureStillCurrent));
+  const showFailureRow =
+    !isBusy &&
+    !hasRenderedErrorPart &&
+    Boolean(visibleFailureMessage) &&
+    (Boolean(error) || Boolean(runFailure) || routeFailureStillCurrent);
+  const messageMutationDisabled = isBusy || Boolean(pendingApproval) || !chatApi;
+  const attachmentsForUserMessage = useCallback(
+    (message: UIMessage): AttachmentReference[] => {
+      const attachmentsForRetry = messageAttachments(message);
+      if (attachmentsForRetry.length > 0) return attachmentsForRetry;
+      return message.id === firstUserMessageId ? initialRunAttachments : [];
+    },
+    [firstUserMessageId, initialRunAttachments],
+  );
+  const markMessageCopied = useCallback((messageId: string) => {
+    if (copiedMessageResetRef.current !== null) {
+      window.clearTimeout(copiedMessageResetRef.current);
+    }
+    setCopiedMessageId(messageId);
+    copiedMessageResetRef.current = window.setTimeout(() => {
+      setCopiedMessageId((current) => current === messageId ? null : current);
+      copiedMessageResetRef.current = null;
+    }, 1400);
+  }, []);
+  const copyMessageText = useCallback(async (messageId: string, text: string) => {
+    if (!text.trim()) {
+      toast.info("Nothing to copy.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      markMessageCopied(messageId);
+    } catch (copyError) {
+      toast.error("Could not copy message.", {
+        description:
+          copyError instanceof Error ? copyError.message : "Clipboard access failed.",
+      });
+    }
+  }, [markMessageCopied]);
+  const rerunUserMessage = useCallback(
+    (
+      messageId: string,
+      options: {
+        text?: string;
+        source: "failure_retry" | "assistant_retry" | "user_edit";
+      },
+    ) => {
+      if (messageMutationDisabled) return;
+      const messageIndex = messages.findIndex((message) => message.id === messageId);
+      if (messageIndex < 0) return;
+
+      const currentMessage = messages[messageIndex];
+      if (currentMessage.role !== "user") return;
+      const nextText = (options.text ?? messageText(currentMessage)).trim();
+      if (!nextText) return;
+
+      const attachmentsForRetry = attachmentsForUserMessage(currentMessage);
+      const nextUserMessage = messageWithEditedText(currentMessage, nextText);
+      const nextMessages = [
+        ...messages.slice(0, messageIndex),
+        nextUserMessage,
+      ];
+
+      setRunFailure(null);
+      clearError();
+      setEditingMessageId(null);
+      setEditingText("");
+      flushSync(() => setMessages(nextMessages));
+      sendMessageSafely(
+        nextText,
+        attachmentsForRetry,
+        { retryLastMessageId: currentMessage.id },
+        currentMessage.id,
+      );
+      captureAnalyticsEvent(
+        options.source === "user_edit" ? "chat edit submitted" : "chat retry clicked",
+        {
+          workspace_id: workspaceId,
+          app_id: appId,
+          run_id: runId,
+          retry_mode: "rerun_user_turn",
+          action_source: options.source,
+          failure_code: runFailure?.code ?? error?.name ?? null,
+        },
+      );
+    },
+    [
+      appId,
+      attachmentsForUserMessage,
+      clearError,
+      error,
+      messageMutationDisabled,
+      messages,
+      runFailure,
+      runId,
+      sendMessageSafely,
+      setMessages,
+      workspaceId,
+    ],
+  );
+  const retryLastTurn = useCallback(() => {
+    if (!retryTurn) return;
+    rerunUserMessage(retryTurn.message.id, { source: "failure_retry" });
+  }, [rerunUserMessage, retryTurn]);
+  const submitEditedMessage = useCallback(() => {
+    if (!editingMessageId) return;
+    rerunUserMessage(editingMessageId, {
+      text: editingText,
+      source: "user_edit",
+    });
+  }, [editingMessageId, editingText, rerunUserMessage]);
+  const cancelEditingMessage = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingText("");
+  }, []);
+  const startEditingMessage = useCallback((message: UIMessage) => {
+    if (messageMutationDisabled) return;
+    setEditingMessageId(message.id);
+    setEditingText(messageText(message));
+  }, [messageMutationDisabled]);
 
   // Auto-grow textarea before paint so the empty composer does not flash short.
   useLayoutEffect(() => {
@@ -2875,9 +3885,10 @@ export function AppChat({
         <StickToBottom
           className="relative flex-1 overflow-y-hidden"
           resize="smooth"
+          contextRef={stickToBottomContextRef}
         >
           <StickToBottom.Content className={`mx-auto space-y-6 p-4 pb-48 ${panelMode ? "max-w-full px-3" : "max-w-[720px] sm:p-6 sm:pb-48"}`}>
-            {deferredMessages.map((msg) => {
+            {displayMessages.map((msg, messageIndex) => {
               if (msg.role === "user") {
                 const attachmentsForMessage = messageAttachments(msg);
                 const displayAttachments =
@@ -2891,31 +3902,90 @@ export function AppChat({
                   .filter((p) =>
                     !isAttachmentOnlyPlaceholder(p.text, displayAttachments),
                   );
+                const userText = messageText(msg);
+                if (editingMessageId === msg.id) {
+                  return (
+                    <div key={msg.id} className="flex w-full justify-end">
+                      <UserMessageEditor
+                        value={editingText}
+                        attachments={displayAttachments}
+                        disabled={messageMutationDisabled}
+                        onChange={setEditingText}
+                        onCancel={cancelEditingMessage}
+                        onSubmit={submitEditedMessage}
+                      />
+                    </div>
+                  );
+                }
                 return (
-                  <div key={msg.id} className="flex justify-end">
-                    <div className="flex max-w-[80%] flex-col gap-2 rounded-2xl bg-[#F4F4F4] px-4 py-2.5 text-sm text-foreground dark:bg-[#2A2B2F]">
-                      {textParts.length > 0 ? (
-                        <div>
-                          {textParts.map((p, i) => (
-                          <span key={i} className="whitespace-pre-wrap">
-                            {p.text}
-                          </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      <UserMessageAttachments attachments={displayAttachments} />
+                  <div key={msg.id} className="group flex justify-end">
+                    <div className="flex max-w-[80%] flex-col items-end">
+                      <div className="flex max-w-full flex-col gap-2 rounded-2xl bg-[#F4F4F4] px-4 py-2.5 text-sm text-foreground dark:bg-[#2A2B2F]">
+                        {textParts.length > 0 ? (
+                          <div>
+                            {textParts.map((p, i) => (
+                              <span key={i} className="whitespace-pre-wrap">
+                                {p.text}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        <UserMessageAttachments attachments={displayAttachments} />
+                      </div>
+                      <div className="mt-1 flex h-8 items-center justify-end gap-1 opacity-0 transition-opacity duration-300 ease-out pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                        <MessageActionButton
+                          label="Copy message"
+                          icon={CopyIcon}
+                          active={copiedMessageId === msg.id}
+                          activeIcon={CheckIcon}
+                          onClick={() => void copyMessageText(msg.id, userText)}
+                        />
+                        <MessageActionButton
+                          label="Edit message"
+                          icon={PencilIcon}
+                          disabled={messageMutationDisabled}
+                          onClick={() => startEditingMessage(msg)}
+                        />
+                      </div>
                     </div>
                   </div>
                 );
               }
 
               const seenReasoning = new Set<string>();
+              const assistantText = messageText(msg);
+              const assistantHasContent = assistantHasVisibleContent(msg);
+              const assistantTurnEnded =
+                assistantTurnHasEnded(displayMessages, messageIndex) ||
+                assistantActionsReady;
+              const canShowAssistantActions =
+                assistantActionsReady &&
+                assistantHasContent &&
+                assistantTurnEnded;
+              const retryUserTurn = findUserTurnBeforeMessage(messages, msg.id);
 
               return (
                 <PartErrorBoundary key={msg.id}>
                   <div className="space-y-3.5">
                     {(msg.parts ?? []).map((part, i) => {
                       if (!part || typeof part !== "object") return null;
+                      const partRecord = asRecord(part);
+
+                      if (partRecord?.type === "error") {
+                        const errorText =
+                          typeof partRecord.errorText === "string"
+                            ? partRecord.errorText
+                            : "The run failed. Retry the last message to continue.";
+                        return (
+                          <ChatFailureRow
+                            key={`error-${msg.id}:${i}`}
+                            message={errorText}
+                            retryable={failureRetryable}
+                            retryDisabled={isBusy || !retryText}
+                            onRetry={retryLastTurn}
+                          />
+                        );
+                      }
 
                       if (part.type === "text" && part.text.trim()) {
                         return (
@@ -3015,6 +4085,7 @@ export function AppChat({
                                 isCurrentApproval && suggestions.length > 0 && !isBusy
                               }
                               onSelectSuggestion={(title) => {
+                                onApprovalAction?.("suggestions");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,
@@ -3042,27 +4113,7 @@ export function AppChat({
 
                         // Plan tool → PlanCard
                         if (part.toolName === "mcp__second__present_plan") {
-                          const plan: PlanData = {
-                            overview:
-                              typeof toolInput?.overview === "string"
-                                ? toolInput.overview
-                                : null,
-                            features: Array.isArray(toolInput?.features)
-                              ? (toolInput.features as { name: string; description: string }[])
-                              : null,
-                            dataFlow:
-                              typeof toolInput?.dataFlow === "string"
-                                ? toolInput.dataFlow
-                                : null,
-                            agents:
-                              typeof toolInput?.agents === "string"
-                                ? toolInput.agents
-                                : null,
-                            backend:
-                              typeof toolInput?.backend === "string"
-                                ? toolInput.backend
-                                : null,
-                          };
+                          const plan = planDataFromPresentPlanInput(toolInput);
                           const isCurrentApproval =
                             pendingApproval?.toolCallId === part.toolCallId;
                           return (
@@ -3072,6 +4123,8 @@ export function AppChat({
                               isStreaming={isStreaming}
                               actionsEnabled={isCurrentApproval && !isBusy}
                               onApprove={() => {
+                                scrollChatToBottom();
+                                onApprovalAction?.("plan");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,
@@ -3085,6 +4138,7 @@ export function AppChat({
                                 );
                               }}
                               onRequestChanges={(fb) => {
+                                onApprovalAction?.("plan");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,
@@ -3128,13 +4182,16 @@ export function AppChat({
                                 (agentsJsonApprovalSource === "build_chat_mock" &&
                                   latestAgentsToolCallId === part.toolCallId)
                               }
-                              onApprove={() =>
+                              onApprove={() => {
+                                scrollChatToBottom();
+                                onApprovalAction?.("agents");
                                 void approveAgentsConfiguration(
                                   agentsData,
                                   part.toolCallId,
-                                )
-                              }
+                                );
+                              }}
                               onRequestChanges={(fb) => {
+                                onApprovalAction?.("agents");
                                 captureAnalyticsEvent("approval acted", {
                                   workspace_id: workspaceId,
                                   app_id: appId,
@@ -3270,12 +4327,47 @@ export function AppChat({
 
                       return null;
                     })}
+                    {assistantHasContent ? (
+                      <div
+                        className={cn(
+                          "not-prose -ml-0.5 -mt-2 flex h-8 items-center gap-1 transition-opacity duration-300 ease-out",
+                          canShowAssistantActions
+                            ? "pointer-events-auto opacity-100"
+                            : "pointer-events-none opacity-0",
+                        )}
+                        aria-hidden={!canShowAssistantActions}
+                      >
+                        <MessageActionButton
+                          label="Copy message"
+                          icon={CopyIcon}
+                          disabled={!canShowAssistantActions}
+                          active={copiedMessageId === msg.id}
+                          activeIcon={CheckIcon}
+                          onClick={() => void copyMessageText(msg.id, assistantText)}
+                        />
+                        <MessageActionButton
+                          label="Try again"
+                          icon={RotateCcw}
+                          disabled={
+                            !canShowAssistantActions ||
+                            messageMutationDisabled ||
+                            !retryUserTurn
+                          }
+                          onClick={() => {
+                            if (!retryUserTurn) return;
+                            rerunUserMessage(retryUserTurn.message.id, {
+                              source: "assistant_retry",
+                            });
+                          }}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </PartErrorBoundary>
               );
             })}
 
-            {isBusy && deferredMessages.length > 0 && (() => {
+            {isBusy && displayMessages.length > 0 && (() => {
               // Waiting to join a stream started by another tab.
               if (isSyncLoading && status === "ready") {
                 return (
@@ -3285,7 +4377,7 @@ export function AppChat({
                   </div>
                 );
               }
-              const lastMsg = deferredMessages[deferredMessages.length - 1];
+              const lastMsg = displayMessages[displayMessages.length - 1];
               // Before first assistant response.
               if (lastMsg?.role === "user") {
                 return <WorkingIndicator />;
@@ -3303,12 +4395,15 @@ export function AppChat({
               return <WorkingIndicator />;
             })()}
 
-            {error &&
-              error instanceof TypeError === false && (
-                <div className="text-sm text-destructive px-4 py-2 bg-destructive/10 rounded-lg">
-                  {error.message}
-                </div>
-              )}
+            {showFailureRow && visibleFailureMessage ? (
+              <ChatFailureRow
+                message={visibleFailureMessage}
+                retryable={failureRetryable}
+                retryDisabled={isBusy || !retryText}
+                onRetry={retryLastTurn}
+                tone={isUserStopped ? "neutral" : "danger"}
+              />
+            ) : null}
           </StickToBottom.Content>
         </StickToBottom>
       </div>
@@ -3392,17 +4487,17 @@ export function AppChat({
                   size="icon"
                   className="rounded-full"
                   disabled={
-                    !isBusy &&
-                    (Boolean(pendingApproval) ||
-                      isUploadingAttachments ||
-                      (!input.trim() && readyAttachmentCount === 0) ||
-                      !chatApi)
+                    isStopping ||
+                    (isBusy
+                      ? !canStopActiveRun
+                      : Boolean(pendingApproval) ||
+                        isUploadingAttachments ||
+                        (!input.trim() && readyAttachmentCount === 0) ||
+                        !chatApi)
                   }
                   onClick={() => {
                     if (isBusy) {
-                      chatPostAbortRef.current?.abort();
-                      chatPostAbortRef.current = null;
-                      stop();
+                      void stopBuilderRun();
                     } else {
                       handleSubmit();
                     }

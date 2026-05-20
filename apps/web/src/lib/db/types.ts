@@ -343,6 +343,42 @@ export type AgentRunRecoveryContext = {
   reportedAt: Date;
 };
 
+export type AgentRunFailureCode =
+  | "worker_stream_failed"
+  | "claim_rejected"
+  | "stale_stream_recovered"
+  | "stale_input"
+  | "user_stopped"
+  | "worker_cancel_failed"
+  | "persistence_failed"
+  | "unknown";
+
+export type AgentRunFailurePhase =
+  | "claim"
+  | "attach"
+  | "worker_stream"
+  | "persistence"
+  | "client_stop"
+  | "watchdog";
+
+export type AgentRunFailure = {
+  code: AgentRunFailureCode;
+  phase: AgentRunFailurePhase;
+  message: string;
+  retryable: boolean;
+  occurredAt: Date;
+  reported?: {
+    sentryEventId?: string;
+    auditEventId?: string;
+  };
+};
+
+export type AgentRunStreamLease = {
+  id: string;
+  startedAt: Date;
+  heartbeatAt?: Date | null;
+};
+
 export type AgentRunDocument = {
   _id: string;
   appId: string;
@@ -356,6 +392,8 @@ export type AgentRunDocument = {
   attachments?: BuilderAttachmentReference[];
   pendingAttachments?: BuilderAttachmentReference[];
   activeStreamId: string | null;
+  streamLease?: AgentRunStreamLease | null;
+  failure?: AgentRunFailure | null;
   status: "pending" | "streaming" | "completed" | "failed";
   usage: RunUsage | null;
   /** Optional per-run prompt used to auto-start platform-created builder runs. */

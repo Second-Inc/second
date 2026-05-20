@@ -106,6 +106,87 @@ function hasAssistantResponse(messages: UIMessage[]): boolean {
   );
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const TOOL_FAILURE_REPORT_TOOL_NAME =
+  "mcp__app_tools__report_tool_call_failed";
+
+function isToolFailureReportName(toolName: unknown): boolean {
+  return (
+    toolName === TOOL_FAILURE_REPORT_TOOL_NAME ||
+    toolName === "report_tool_call_failed" ||
+    toolName === "app_tools.report_tool_call_failed"
+  );
+}
+
+function extractMcpText(value: unknown): string | null {
+  const record = isPlainRecord(value) ? value : null;
+  const content = Array.isArray(value) ? value : record?.content;
+  if (!Array.isArray(content)) return null;
+
+  const chunks = content.flatMap((item) => {
+    if (!isPlainRecord(item)) return [];
+    return typeof item.text === "string" ? [item.text] : [];
+  });
+
+  return chunks.length > 0 ? chunks.join("\n") : null;
+}
+
+function parseToolFailureReportOutput(output: unknown): Record<string, unknown> | null {
+  if (!output) return null;
+  const textOutput = extractMcpText(output);
+  if (!textOutput && isPlainRecord(output)) return output;
+  if (!textOutput && typeof output !== "string") return null;
+
+  const outputToParse = textOutput ?? (typeof output === "string" ? output : "");
+  let parsed: unknown = outputToParse.trim();
+  for (let i = 0; i < 2; i += 1) {
+    if (typeof parsed !== "string") break;
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return isPlainRecord(parsed) ? parsed : null;
+}
+
+function toolFailureReportSucceeded(output: unknown): boolean {
+  const outputText =
+    extractMcpText(output) ??
+    (typeof output === "string" ? output : "");
+  const trimmedOutput = outputText.trim();
+  if (
+    trimmedOutput.startsWith("Failed to report the tool call failure") ||
+    trimmedOutput.startsWith("Cannot report the failed tool call")
+  ) {
+    return false;
+  }
+
+  const parsed = parseToolFailureReportOutput(output);
+  if (!parsed) return trimmedOutput === "Completed" || trimmedOutput.length > 0;
+  if (parsed.ok === true) return true;
+  return (
+    parsed.status === "builder_repair_run_created" ||
+    parsed.status === "builder_repair_message_scheduled"
+  );
+}
+
+function hasSuccessfulToolFailureReport(messages: UIMessage[]): boolean {
+  for (const message of messages) {
+    for (const part of message.parts ?? []) {
+      if (!isPlainRecord(part)) continue;
+      if (part.type !== "dynamic-tool") continue;
+      if (!isToolFailureReportName(part.toolName)) continue;
+      if (part.state !== "output-available") continue;
+      if (toolFailureReportSucceeded(part.output)) return true;
+    }
+  }
+  return false;
+}
+
 type AgentCustomToolSpec = {
   type: string;
   name: string;
@@ -546,6 +627,10 @@ function AgentStreamContent({
     transport,
   });
   const hasAssistantMessages = hasAssistantResponse(messages);
+  const completedWithToolFailureReport = useMemo(
+    () => hasSuccessfulToolFailureReport(messages),
+    [messages],
+  );
 
   const deferredMessages = useDeferredValue(messages);
   const statusRef = useRef<string>(status);
@@ -911,12 +996,26 @@ function AgentStreamContent({
 
             {/* Completed indicator */}
             {!isBusy && runStatus === "completed" && (
-              <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs">
-                <CheckIcon className="size-3 text-emerald-600 dark:text-emerald-400" />
-                <span className="font-medium text-emerald-700 dark:text-emerald-300">
-                  Agent completed
-                </span>
-              </div>
+              completedWithToolFailureReport ? (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+                  <AlertTriangleIcon className="mt-0.5 size-3 text-amber-700 dark:text-amber-300" />
+                  <div className="min-w-0">
+                    <div className="font-medium">
+                      Agent completed with a tool error: it is now being fixed.
+                    </div>
+                    <div className="mt-0.5 text-amber-700/80 dark:text-amber-300/80">
+                      The builder agent has already started working on fixing this for you.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs">
+                  <CheckIcon className="size-3 text-emerald-600 dark:text-emerald-400" />
+                  <span className="font-medium text-emerald-700 dark:text-emerald-300">
+                    Agent completed
+                  </span>
+                </div>
+              )
             )}
 
             {!isBusy && runStatus === "failed" && (

@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   AlertTriangleIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   DatabaseIcon,
   GlobeIcon,
   KeyRoundIcon,
   PencilIcon,
   ShieldCheckIcon,
-  SparklesIcon,
   WrenchIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -458,21 +459,22 @@ const AGENT_GRADIENTS = [
   "linear-gradient(to right, #74ebd5 0%, #9face6 100%)",
 ];
 
-function pickAgentGradient(seed: string): string {
+function agentGradientIndex(seed: string): number {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
     hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
   }
-  return AGENT_GRADIENTS[Math.abs(hash) % AGENT_GRADIENTS.length];
+  return Math.abs(hash) % AGENT_GRADIENTS.length;
 }
 
-function AgentAvatar({ seed }: { seed: string }) {
-  return (
-    <div
-      className="size-9 shrink-0 rounded-full ring-1 ring-border/40"
-      style={{ backgroundImage: pickAgentGradient(seed) }}
-    />
-  );
+function pickAgentGradient(seed: string): string {
+  return AGENT_GRADIENTS[agentGradientIndex(seed)];
+}
+
+function pickAgentGradientForIndex(seed: string, index: number): string {
+  return AGENT_GRADIENTS[
+    (agentGradientIndex(seed) + index) % AGENT_GRADIENTS.length
+  ] ?? pickAgentGradient(seed);
 }
 
 // ---------------------------------------------------------------------------
@@ -501,7 +503,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-xs transition-colors",
+        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] transition-colors",
         active
           ? "border-foreground/45 text-foreground"
           : "border-transparent text-muted-foreground hover:text-foreground/85",
@@ -512,7 +514,7 @@ function TabButton({
       <span
         className={cn(
           "truncate max-w-[140px]",
-          tab.mono ? "font-mono text-[11px]" : "font-medium",
+          tab.mono ? "font-mono text-[12px]" : "font-medium",
         )}
       >
         {tab.label}
@@ -537,7 +539,7 @@ function GroupTabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-3 text-xs font-medium transition-colors",
+        "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 text-[13px] font-medium transition-colors",
         active
           ? "-mb-px bg-card text-foreground"
           : "text-muted-foreground hover:text-foreground",
@@ -556,7 +558,7 @@ function GroupTabButton({
 
 function MethodPill({ method }: { method: string }) {
   return (
-    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
+    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
       {method.toUpperCase()}
     </span>
   );
@@ -564,20 +566,22 @@ function MethodPill({ method }: { method: string }) {
 
 function DataDetail({ collection }: { collection: string }) {
   return (
-    <div className="text-xs">
-      <div className="flex items-center gap-2">
-        <DatabaseIcon className="size-3.5 text-muted-foreground" />
-        <span className="font-mono text-[13px] text-foreground">
+    <div className="min-w-0 overflow-hidden text-[13px]">
+      <div className="flex min-w-0 items-center gap-2">
+        <DatabaseIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 break-words font-mono text-[13.5px] text-foreground">
           {collection}
         </span>
-        <Badge variant="outline" className="ml-auto">
+        <Badge variant="outline" className="ml-auto shrink-0">
           Collection
         </Badge>
       </div>
       <p className="mt-2 leading-relaxed text-muted-foreground">
         The agent reads from and writes to{" "}
-        <span className="font-mono text-foreground/80">{collection}</span> at
-        runtime.
+        <span className="break-words font-mono text-foreground/80">
+          {collection}
+        </span>{" "}
+        at runtime.
       </p>
     </div>
   );
@@ -594,8 +598,8 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
       : null);
 
   return (
-    <div className="text-xs">
-      <div className="flex items-center gap-2.5">
+    <div className="min-w-0 overflow-hidden text-[13px]">
+      <div className="flex min-w-0 items-center gap-2.5">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background">
           {isCustom && domain ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -616,12 +620,14 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-1.5 text-[13px] font-medium">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[14px] font-medium">
             <span className="text-muted-foreground">{toolCategory(tool)}</span>
-            <span className="text-foreground">{toolDisplayName(tool)}</span>
+            <span className="min-w-0 break-words text-foreground">
+              {toolDisplayName(tool)}
+            </span>
           </div>
           {!tool.enabled ? (
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
+            <div className="mt-0.5 text-[12px] text-muted-foreground">
               Disabled
             </div>
           ) : null}
@@ -629,49 +635,49 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
       </div>
 
       {isCustom && tool.endpoint?.url ? (
-        <div className="mt-3 flex items-center gap-1.5 overflow-hidden rounded-md border border-border/70 bg-muted/30 px-2.5 py-1.5 text-[11px] font-mono">
+        <div className="mt-3 flex min-w-0 max-w-full items-start gap-1.5 overflow-hidden rounded-md border border-border/70 bg-muted/30 px-2.5 py-1.5 text-[12px] font-mono">
           {tool.endpoint.method ? (
             <MethodPill method={tool.endpoint.method} />
           ) : null}
-          <span className="truncate text-muted-foreground">
+          <span className="min-w-0 flex-1 whitespace-normal break-all leading-relaxed text-muted-foreground">
             {tool.endpoint.url}
           </span>
         </div>
       ) : null}
 
       {description ? (
-        <p className="mt-3 leading-relaxed text-muted-foreground">
+        <p className="mt-3 break-words leading-relaxed text-muted-foreground">
           {description}
         </p>
       ) : null}
 
       {isCustom && tool.integration?.name ? (
-        <div className="mt-3 border-t border-border/70 pt-2.5 text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-1.5">
+        <div className="mt-3 border-t border-border/70 pt-2.5 text-[12px] text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-1.5">
             {isPublicTool ? (
-              <GlobeIcon className="size-3" />
+              <GlobeIcon className="size-3 shrink-0" />
             ) : (
-              <KeyRoundIcon className="size-3" />
+              <KeyRoundIcon className="size-3 shrink-0" />
             )}
             {isPublicTool ? (
-              <span>
+              <span className="min-w-0 break-words">
                 Uses public{" "}
                 <span className="text-foreground/80">{tool.integration.name}</span>{" "}
                 API
               </span>
             ) : (
-              <span>
+              <span className="min-w-0 break-words">
                 Requires{" "}
                 <span className="text-foreground/80">{tool.integration.name}</span>{" "}
                 integration
               </span>
             )}
             {isPublicTool ? (
-              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[10px]">
+              <Badge variant="outline" className="ml-auto h-5 shrink-0 px-1.5 text-[11px]">
                 Public
               </Badge>
             ) : tool.integration.auth?.type === "oauth2" ? (
-              <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[10px]">
+              <Badge variant="outline" className="ml-auto h-5 shrink-0 px-1.5 text-[11px]">
                 OAuth
               </Badge>
             ) : null}
@@ -679,14 +685,14 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
           {tool.integration.auth?.type === "oauth2" ? (
             <div className="mt-2 flex flex-col gap-1.5">
               <div className="flex flex-wrap gap-1.5">
-                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
+                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
                   {tool.integration.auth.providerKey}
                 </span>
-                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
+                <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
                   triggering_user
                 </span>
                 {hostFromUrl(tool.integration.auth.tokenUrl) ? (
-                  <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]">
+                  <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
                     token: {hostFromUrl(tool.integration.auth.tokenUrl)}
                   </span>
                 ) : null}
@@ -696,7 +702,7 @@ function ToolDetail({ tool }: { tool: AgentToolData }) {
                   {tool.integration.auth.scopes.map((scope) => (
                     <span
                       key={scope}
-                      className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px]"
+                      className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]"
                     >
                       {scope}
                     </span>
@@ -748,7 +754,7 @@ function ResourceTabs({
   })();
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card">
       {/* Row 1 — Group tabs (only if both groups exist) */}
       {hasBoth ? (
         <div className="flex items-stretch border-b border-border bg-muted/40">
@@ -806,69 +812,7 @@ function ResourceTabs({
             })}
       </div>
 
-      <div className="p-3">{activePanel}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// System prompt — line-clamped preview with fade-out + click-to-expand
-// ---------------------------------------------------------------------------
-
-function SystemPromptBlock({ prompt }: { prompt?: string }) {
-  const [open, setOpen] = useState(false);
-  const safePrompt = prompt ?? "";
-  const shouldClamp = !open && safePrompt.length > 180;
-  const toggleOpen = () => setOpen((value) => !value);
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-expanded={open}
-      onClick={toggleOpen}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        toggleOpen();
-      }}
-      className="block w-full overflow-hidden rounded-lg border border-border bg-card text-left"
-    >
-      {/* Top bar — single "tab" that merges with the content below */}
-      <div className="flex items-stretch border-b border-border bg-muted/40">
-        <div className="relative inline-flex shrink-0 items-center gap-1.5 -mb-px bg-card px-3.5 py-3 text-xs font-medium">
-          <ShieldCheckIcon className="size-3" />
-          System Prompt
-        </div>
-        <div className="ml-auto flex items-center pr-3 text-muted-foreground">
-          <ChevronDownIcon
-            className={cn(
-              "size-3 transition-transform",
-              open && "rotate-180",
-            )}
-          />
-        </div>
-      </div>
-
-      {/* Content */}
-      <div
-        className={cn(
-          "whitespace-pre-wrap px-3 py-3 text-xs leading-relaxed text-foreground/75",
-          shouldClamp && "max-h-20 overflow-hidden",
-        )}
-        style={
-          shouldClamp
-            ? {
-                maskImage:
-                  "linear-gradient(to bottom, black 55%, transparent 100%)",
-                WebkitMaskImage:
-                  "linear-gradient(to bottom, black 55%, transparent 100%)",
-              }
-            : undefined
-        }
-      >
-        {safePrompt || "System prompt is still streaming."}
-      </div>
+      <div className="min-w-0 overflow-hidden p-3.5">{activePanel}</div>
     </div>
   );
 }
@@ -877,46 +821,103 @@ function SystemPromptBlock({ prompt }: { prompt?: string }) {
 // Agent Node
 // ---------------------------------------------------------------------------
 
-function AgentNode({ agent }: { agent: AgentData }) {
+function AgentNode({
+  agent,
+  index,
+  singleAgent = false,
+}: {
+  agent: AgentData;
+  index: number;
+  singleAgent?: boolean;
+}) {
+  const [promptOpen, setPromptOpen] = useState(false);
   const tools = agent.tools ?? [];
   const dataCollections = agent.dataCollections ?? [];
-  const hasResources = tools.length > 0 || dataCollections.length > 0;
   const displayName = agent.name || agent.id || "Agent";
+  const hasTools = tools.length > 0;
+  const hasData = dataCollections.length > 0;
+  const hasPrompt = Boolean(agent.systemPrompt);
 
   return (
-    <div className="px-5 py-5 sm:px-6">
-      {/* Agent identity */}
-      <div className="flex items-start gap-3">
-        <AgentAvatar seed={agent.id || displayName} />
+    <div
+      className={cn(
+        "flex min-w-0 shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-black/15 bg-[var(--composer-bg)] shadow-none dark:border-border/50",
+        singleAgent ? "w-full" : "w-[calc(100%-4.25rem)]",
+      )}
+    >
+      {/* Header — avatar left-aligned with name + description */}
+      <div className="flex items-start gap-3.5 px-5 pt-5 pb-4 sm:px-6 sm:pt-6">
+        <div
+          className="size-11 shrink-0 rounded-full ring-1 ring-border/20"
+          style={{
+            backgroundImage: singleAgent
+              ? pickAgentGradient(agent.id || displayName)
+              : pickAgentGradientForIndex(agent.id || displayName, index),
+          }}
+        />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-sm font-medium">{displayName}</span>
-            {agent.id ? (
-              <span className="font-mono text-[11px] text-muted-foreground/80">
-                {agent.id}
-              </span>
-            ) : null}
-          </div>
+          <div className="text-[15px] font-semibold">{displayName}</div>
           {agent.description ? (
-            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 line-clamp-2 max-w-[74ch] text-[13px] leading-relaxed text-muted-foreground">
               {agent.description}
             </p>
           ) : null}
         </div>
       </div>
 
-      {/* Indented branch — tree line + tabs + prompt */}
-      <div className="relative mt-3.5 flex gap-3">
-        <div className="relative size-9 shrink-0">
-          <div className="absolute left-[calc(50%-0.5px)] top-0 bottom-0 w-px bg-border/70" />
+      {(hasTools || hasData) && (
+        <div className="grid border-t border-border/25 divide-y divide-border/25">
+          {/* Tools — tabbed view */}
+          {hasTools && (
+            <div className="px-5 py-3.5 sm:px-6">
+              <div className="mb-2 text-[13px] font-semibold text-foreground/70">
+                Tools
+              </div>
+              <ResourceTabs tools={tools} dataCollections={[]} />
+            </div>
+          )}
+
+          {/* Data collections */}
+          {hasData && (
+            <div className="px-5 py-3.5 sm:px-6">
+              <div className="mb-2 text-[13px] font-semibold text-foreground/70">
+                Data
+              </div>
+              <ResourceTabs tools={[]} dataCollections={dataCollections} />
+            </div>
+          )}
         </div>
-        <div className="min-w-0 flex-1 space-y-3.5">
-          {hasResources ? (
-            <ResourceTabs tools={tools} dataCollections={dataCollections} />
-          ) : null}
-          <SystemPromptBlock prompt={agent.systemPrompt} />
+      )}
+
+      {/* System prompt — always visible, truncated with expand */}
+      {hasPrompt && (
+        <div className="border-t border-border/25 px-5 py-3.5 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setPromptOpen((v) => !v)}
+            className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-foreground/70 transition-colors hover:text-foreground"
+          >
+            System Prompt
+            <ChevronDownIcon
+              className={cn(
+                "size-3 transition-transform duration-200",
+                promptOpen && "rotate-180",
+              )}
+            />
+          </button>
+          <div
+            className={cn(
+              "relative overflow-hidden text-[13px] leading-relaxed text-muted-foreground transition-all duration-200",
+              promptOpen ? "max-h-[500px]" : "max-h-[2.7em]",
+            )}
+          >
+            {agent.systemPrompt}
+            {!promptOpen && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-b from-transparent to-[var(--composer-bg)]" />
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -935,6 +936,10 @@ export function AgentsCard({
 }: AgentsCardProps) {
   const [editMode, setEditMode] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
   const agents = Array.isArray(data?.agents)
     ? data.agents.flatMap((agent) => {
         const normalized = normalizeAgent(agent);
@@ -942,169 +947,210 @@ export function AgentsCard({
       })
     : [];
   const hasAgents = agents.length > 0;
-  const toolCount =
-    agents.reduce(
-      (total, agent) => total + (agent.tools?.length ?? 0),
-      0,
-    );
+  const singleAgent = agents.length === 1;
+  const toolCount = agents.reduce(
+    (total, agent) => total + (agent.tools?.length ?? 0),
+    0,
+  );
   const validationIssues = validateAgents(agents);
   const hasValidationIssues = validationIssues.length > 0;
 
-  return (
-    <div className="relative rounded-2xl">
-      {actionsEnabled && (
-        <>
-          <div className="composer-gradient-border-short absolute -inset-[1px] rounded-2xl" />
-          <div className="composer-focus-glow-short absolute -inset-1.5 rounded-2xl" />
-        </>
-      )}
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  }, []);
 
+  const scroll = useCallback((direction: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const cardWidth = el.querySelector(":scope > div")?.clientWidth ?? 350;
+    el.scrollBy({ left: direction === "left" ? -cardWidth - 16 : cardWidth + 16, behavior: "smooth" });
+  }, []);
+
+  // Initialize scroll state after mount/update
+  const scrollRefCallback = useCallback(
+    (node: HTMLDivElement | null) => {
+      (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      if (node) {
+        updateScrollState();
+        node.addEventListener("scroll", updateScrollState, { passive: true });
+      }
+    },
+    [updateScrollState],
+  );
+
+  return (
+    <div className="not-prose space-y-4">
+      {/* Header — floating section */}
       <div
-        className="relative not-prose overflow-hidden rounded-2xl bg-[var(--composer-bg)]"
+        className="rounded-2xl bg-[var(--composer-bg)] px-5 pt-6 pb-4 sm:px-6 sm:pt-7 sm:pb-5"
         style={{ boxShadow: "var(--composer-shadow)" }}
       >
-        <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5 sm:px-6">
-          <span className="text-sm font-medium">Agents</span>
-          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
-            {hasValidationIssues ? (
-              <Badge variant="destructive" className="gap-1">
-                <AlertTriangleIcon className="size-2.5" />
-                Needs Fix
-              </Badge>
-            ) : null}
-            {hasAgents ? (
-              <span>
-                {agents.length} agent
-                {agents.length === 1 ? "" : "s"}
-                {toolCount > 0 ? (
-                  <>
-                    <span className="mx-1.5 text-muted-foreground/50">·</span>
-                    {toolCount} tool{toolCount === 1 ? "" : "s"}
-                  </>
-                ) : null}
-              </span>
-            ) : null}
-            {isStreaming ? (
-              <Badge variant="secondary" className="gap-1">
-                <SparklesIcon className="size-2.5" />
-                Streaming
-              </Badge>
-            ) : null}
+        <div>
+          <div className="text-[11px] font-medium text-muted-foreground/50 mb-2.5">
+            Agents
           </div>
-        </div>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">
+            {hasAgents
+              ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+              : "Agent configuration"}
+          </span>
+          {hasValidationIssues ? (
+            <Badge variant="destructive" className="gap-1 ml-2 align-middle">
+              <AlertTriangleIcon className="size-2.5" />
+              Needs Fix
+            </Badge>
+          ) : null}
 
-        {hasAgents ? (
-          <div className="flex flex-col divide-y divide-border">
-            {agents.map((agent, index) => (
-              <AgentNode key={`${agent.id}-${index}`} agent={agent} />
-            ))}
-          </div>
-        ) : isStreaming ? (
-          <div className="px-5 py-5 sm:px-6">
-            <Skeleton className="h-28 rounded-lg" />
+          {/* Actions */}
+          {!editMode ? (
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            <Button
+              className="rounded-full h-8 px-3.5 text-[13px]"
+              disabled={!actionsEnabled || hasValidationIssues}
+              onClick={onApprove}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-full h-8 !pl-3 pr-3.5 text-[13px]"
+              disabled={!actionsEnabled}
+              onClick={() => setEditMode(true)}
+            >
+              <PencilIcon data-icon="inline-start" />
+              Request Changes
+            </Button>
           </div>
         ) : (
-          <div className="px-5 py-5 text-sm text-muted-foreground sm:px-6">
-            No agents found in the presented configuration.
+          <div className="mt-4 flex flex-col gap-3">
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="What would you like to change about the agent configuration?"
+              rows={3}
+              className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+              autoFocus
+            />
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Button
+                className="rounded-full h-8 px-3.5 text-[13px]"
+                disabled={!feedback.trim()}
+                onClick={() => {
+                  onRequestChanges(feedback.trim());
+                  setEditMode(false);
+                  setFeedback("");
+                }}
+              >
+                Send Feedback
+              </Button>
+              <Button
+                variant="ghost"
+                className="rounded-full h-8 px-3.5 text-[13px]"
+                onClick={() => {
+                  setEditMode(false);
+                  setFeedback("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         )}
-
-        {hasValidationIssues ? (
-          <div className="border-t border-border px-5 py-4 sm:px-6">
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
-              <div className="flex items-center gap-2 font-medium">
-                <AlertTriangleIcon className="size-3.5" />
-                Agent configuration needs changes before approval
-              </div>
-              <div className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed">
-                {validationIssues.map((issue, index) => (
-                  <div key={`${issue.agentName}-${issue.toolName}-${index}`}>
-                    <span className="font-medium">{issue.toolName}</span>
-                    <span className="text-destructive/75">
-                      {" "}
-                      in {issue.agentName}: {issue.message}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {mockApprovalAcknowledged ? (
-          <div className="border-t border-border px-5 py-4 sm:px-6">
-            <Alert>
-              <ShieldCheckIcon />
-              <AlertTitle>Approved for mock-data development</AlertTitle>
-              <AlertDescription>
-                Continue building with these agents, but use mock data for
-                integrations until this app is reviewed by an admin or owner.
-              </AlertDescription>
-            </Alert>
-          </div>
-        ) : null}
-
-        <div className="border-t border-border px-5 py-4 sm:px-6">
-          {!editMode ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                size="lg"
-                className="rounded-full"
-                disabled={!actionsEnabled || hasValidationIssues}
-                onClick={onApprove}
-              >
-                Approve Agents
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="rounded-full"
-                disabled={!actionsEnabled}
-                onClick={() => setEditMode(true)}
-              >
-                <PencilIcon data-icon="inline-start" />
-                Request Changes
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <textarea
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                placeholder="What would you like to change about the agent configuration?"
-                rows={3}
-                className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                autoFocus
-              />
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  size="lg"
-                  className="rounded-full"
-                  disabled={!feedback.trim()}
-                  onClick={() => {
-                    onRequestChanges(feedback.trim());
-                    setEditMode(false);
-                    setFeedback("");
-                  }}
-                >
-                  Send Feedback
-                </Button>
-                <Button
-                  size="lg"
-                  variant="ghost"
-                  className="rounded-full"
-                  onClick={() => {
-                    setEditMode(false);
-                    setFeedback("");
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Agent carousel */}
+      {hasAgents ? (
+        <div className="relative">
+          <div
+            ref={scrollRefCallback}
+            className={cn(
+              "flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory py-1 scrollbar-none",
+              singleAgent && "justify-center snap-none",
+            )}
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {agents.map((agent, index) => (
+              <AgentNode
+                key={`${agent.id}-${index}`}
+                agent={agent}
+                index={index}
+                singleAgent={singleAgent}
+              />
+            ))}
+          </div>
+
+          {/* Left arrow */}
+          {!singleAgent && (
+            <button
+              type="button"
+              onClick={() => scroll("left")}
+              className={cn(
+                "absolute left-1 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full bg-background shadow-md ring-1 ring-border/50 text-foreground/70 transition-all hover:bg-muted",
+                canScrollLeft ? "opacity-100" : "opacity-0 pointer-events-none",
+              )}
+            >
+              <ChevronLeftIcon className="size-4" />
+            </button>
+          )}
+
+          {/* Right arrow */}
+          {!singleAgent && (
+            <button
+              type="button"
+              onClick={() => scroll("right")}
+              className={cn(
+                "absolute right-1 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-full bg-background shadow-md ring-1 ring-border/50 text-foreground/70 transition-all hover:bg-muted",
+                canScrollRight ? "opacity-100" : "opacity-0 pointer-events-none",
+              )}
+            >
+              <ChevronRightIcon className="size-4" />
+            </button>
+          )}
+        </div>
+      ) : isStreaming ? (
+        <Skeleton className="h-28 rounded-2xl" />
+      ) : (
+        <div className="text-sm text-muted-foreground">
+          No agents found in the presented configuration.
+        </div>
+      )}
+
+      {/* Validation issues */}
+      {hasValidationIssues ? (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangleIcon className="size-3.5" />
+            Agent configuration needs changes before approval
+          </div>
+          <div className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed">
+            {validationIssues.map((issue, index) => (
+              <div key={`${issue.agentName}-${issue.toolName}-${index}`}>
+                <span className="font-medium">{issue.toolName}</span>
+                <span className="text-destructive/75">
+                  {" "}
+                  in {issue.agentName}: {issue.message}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Mock approval notice */}
+      {mockApprovalAcknowledged ? (
+        <Alert>
+          <ShieldCheckIcon />
+          <AlertTitle>Approved for mock-data development</AlertTitle>
+          <AlertDescription>
+            Continue building with these agents, but use mock data for
+            integrations until this app is reviewed by an admin or owner.
+          </AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }

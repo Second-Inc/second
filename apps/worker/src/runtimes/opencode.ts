@@ -143,6 +143,7 @@ export const openCodeRuntimeAdapter: RuntimeAdapter = {
         env,
         settings: input.settings,
         sessionState: input.sessionState,
+        signal: input.signal,
       })) {
         yield message;
       }

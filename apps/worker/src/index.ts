@@ -196,6 +196,7 @@ app.post("/sessions/:appId/messages", async (c) => {
     sourceFiles?: Record<string, string>;
     agentConfig?: AgentConfig;
     workspaceId?: string;
+    runId?: string;
     appName?: string;
     requestedByUserId?: string;
     requestedByUserName?: string;
@@ -247,12 +248,21 @@ app.post("/sessions/:appId/messages", async (c) => {
     startDependencyWarmup(resolvedWorkDir);
   }
 
+  const existingSession = sessionManager.get(appId);
+
   // If we have a JSONL session file to restore (cross-container resume),
-  // write it to disk before creating the session
+  // write it to disk before creating the session. When this worker already has
+  // the same live Claude session file, keep that file authoritative so Claude's
+  // native auto-compaction is not rolled back by an older persisted snapshot.
   if (
     body.sessionState?.runtimeId === "claude-code" &&
     body.sessionState.sessionId &&
-    body.sessionState.data
+    body.sessionState.data &&
+    !(
+      existingSession?.sessionState?.runtimeId === "claude-code" &&
+      existingSession.sessionState.sessionId === body.sessionState.sessionId &&
+      readSessionJsonl(resolvedWorkDir, body.sessionState.sessionId) !== null
+    )
   ) {
     restoreSessionJsonl(
       resolvedWorkDir,
@@ -272,6 +282,7 @@ app.post("/sessions/:appId/messages", async (c) => {
     internalApiToken: process.env.INTERNAL_API_TOKEN,
     workspaceId: body.workspaceId,
     appId,
+    runId: body.runId,
     appName: body.appName,
     requestedByUserId: body.requestedByUserId,
     requestedByUserName: body.requestedByUserName,
@@ -294,26 +305,55 @@ app.post("/sessions/:appId/messages", async (c) => {
     );
   });
 
-  const stream = new ReadableStream({
+  let streamClosed = false;
+
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const enqueue = (chunk: Uint8Array): boolean => {
+        if (streamClosed) return false;
+        try {
+          controller.enqueue(chunk);
+          return true;
+        } catch {
+          streamClosed = true;
+          return false;
+        }
+      };
+      const close = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try {
+          controller.close();
+        } catch {
+          // The client may have already disconnected or cancelled the stream.
+        }
+      };
+
       try {
         for await (const msg of session.sendMessage(
           body.prompt,
           runtimeSettings,
           getWorkerBaseUrl(),
         )) {
-          controller.enqueue(encodeMessage(msg));
+          if (!enqueue(encodeMessage(msg))) {
+            session.cancelCurrentRun("stream_closed");
+            return;
+          }
         }
-        controller.enqueue(encodeDone());
+        enqueue(encodeDone());
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
           `[worker] message stream failed appId=${appId} runtime=${runtimeSettings.runtimeId} model=${runtimeSettings.model}: ${message}`,
         );
-        controller.enqueue(encodeError(message));
+        enqueue(encodeError(message));
       } finally {
-        controller.close();
+        close();
       }
+    },
+    cancel() {
+      streamClosed = true;
+      session.cancelCurrentRun("stream_cancelled");
     },
   });
 
@@ -498,6 +538,23 @@ app.delete("/sessions/:appId", (c) => {
   const appId = c.req.param("appId");
   sessionManager.destroy(appId);
   return c.json({ ok: true });
+});
+
+app.post("/sessions/:appId/cancel", async (c) => {
+  const appId = c.req.param("appId");
+  const body = (await c.req.json().catch(() => null)) as {
+    reason?: string;
+    runId?: string;
+  } | null;
+  const cancelled = sessionManager.cancel(
+    appId,
+    typeof body?.reason === "string" ? body.reason : "cancelled",
+  );
+  return c.json({
+    ok: true,
+    cancelled,
+    status: sessionManager.get(appId)?.status ?? "idle",
+  });
 });
 
 app.get("/sessions/:appId/session-file", (c) => {

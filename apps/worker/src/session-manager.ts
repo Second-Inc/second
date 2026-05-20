@@ -19,9 +19,23 @@ export interface Session {
   ttlTimer: ReturnType<typeof setTimeout>;
 
   sendMessage(prompt: string, settings: AgentRuntimeSettings, workerBaseUrl?: string): AsyncGenerator<SDKMessage>;
+  cancelCurrentRun(reason?: string): boolean;
   resetTTL(): void;
   ttlRemainingMs(): number;
   destroy(): void;
+}
+
+function sameProviderSession(
+  current: ProviderSessionState | null,
+  next: ProviderSessionState | null,
+): boolean {
+  return Boolean(
+    current?.runtimeId &&
+      next?.runtimeId &&
+      current.runtimeId === next.runtimeId &&
+      current.sessionId &&
+      current.sessionId === next.sessionId,
+  );
 }
 
 class SessionImpl implements Session {
@@ -34,6 +48,7 @@ class SessionImpl implements Session {
   ttlTimer: ReturnType<typeof setTimeout>;
 
   private onExpiry: () => void;
+  private activeAbortController: AbortController | null = null;
 
   constructor(appId: string, config: SessionConfig, onExpiry: () => void) {
     this.appId = appId;
@@ -54,6 +69,7 @@ class SessionImpl implements Session {
     }
 
     this.status = "busy";
+    this.activeAbortController = new AbortController();
     this.resetTTL();
 
     try {
@@ -63,7 +79,11 @@ class SessionImpl implements Session {
         settings,
         sessionState: this.sessionState,
         workerBaseUrl,
+        signal: this.activeAbortController.signal,
       })) {
+        if (this.activeAbortController.signal.aborted) {
+          throw new Error("Agent run cancelled");
+        }
         if (msg.providerSessionState) {
           this.sessionState = msg.providerSessionState;
         } else if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
@@ -76,10 +96,19 @@ class SessionImpl implements Session {
         yield msg;
       }
     } finally {
+      this.activeAbortController = null;
       this.status = "idle";
       this.lastActiveAt = new Date();
       this.resetTTL();
     }
+  }
+
+  cancelCurrentRun(reason = "cancelled"): boolean {
+    if (this.status !== "busy" || !this.activeAbortController) return false;
+    if (!this.activeAbortController.signal.aborted) {
+      this.activeAbortController.abort(new Error(reason));
+    }
+    return true;
   }
 
   resetTTL(): void {
@@ -94,6 +123,7 @@ class SessionImpl implements Session {
   }
 
   destroy(): void {
+    this.cancelCurrentRun("session_destroyed");
     clearTimeout(this.ttlTimer);
   }
 }
@@ -114,7 +144,12 @@ export class SessionManager {
     if (existing) {
       existing.config = config;
       if (resumeSessionState !== undefined) {
-        existing.sessionState = resumeSessionState;
+        // A live worker session has the provider's latest on-disk/runtime
+        // state. Do not overwrite it with an older app-persisted snapshot for
+        // the same provider session, because that can undo native compaction.
+        if (!sameProviderSession(existing.sessionState, resumeSessionState)) {
+          existing.sessionState = resumeSessionState;
+        }
       }
       return existing;
     }
@@ -133,6 +168,10 @@ export class SessionManager {
       session.destroy();
       this.sessions.delete(appId);
     }
+  }
+
+  cancel(appId: string, reason?: string): boolean {
+    return this.sessions.get(appId)?.cancelCurrentRun(reason) ?? false;
   }
 
   listAll(): { appId: string; status: SessionStatus; sessionState: ProviderSessionState | null }[] {

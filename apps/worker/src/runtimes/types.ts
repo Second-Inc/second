@@ -39,6 +39,7 @@ export type RuntimeRunInput = {
   settings: AgentRuntimeSettings;
   sessionState?: ProviderSessionState | null;
   workerBaseUrl?: string;
+  signal?: AbortSignal;
 };
 
 export type RuntimeRunResultMessage = SDKMessage & {

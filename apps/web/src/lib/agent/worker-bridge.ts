@@ -13,6 +13,7 @@ import type { RuntimeSkillReference } from "@/lib/db";
 export type WorkerBridgeOptions = {
   workerUrl: string;
   appId: string;
+  runId?: string;
   appName?: string;
   requestedByUserId?: string;
   requestedByUserName?: string;
@@ -27,6 +28,7 @@ export type WorkerBridgeOptions = {
   sessionState?: ProviderSessionState;
   /** Source files to restore in the workspace (after container TTL) */
   sourceFiles?: Record<string, string>;
+  signal?: AbortSignal;
   /** Agent config from agents.json — enables custom MCP tools in the worker */
   agentConfig?: {
     id: string;
@@ -650,33 +652,40 @@ export async function streamFromWorker(
   };
   trace("stream.start");
 
-  const response = await workerFetch(`/sessions/${options.appId}/messages`, {
-    workerUrl: options.workerUrl,
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompt: options.prompt,
-      systemPrompt: options.systemPrompt,
-      runtimeId: options.runtimeSettings.runtimeId,
-      runtimeModel: options.runtimeSettings.model,
-      runtimeParams: options.runtimeSettings.params,
-      runtimeMode: options.runtimeMode,
-      selectedSkills: options.selectedSkills,
-      workingDirectory: options.workingDirectory,
-      allowedTools: options.allowedTools,
-      maxTurns: options.maxTurns,
-      sessionState: options.sessionState,
-      sourceFiles: options.sourceFiles,
-      agentConfig: options.agentConfig,
-      workspaceId: options.workspaceId,
-      appName: options.appName,
-      requestedByUserId: options.requestedByUserId,
-      requestedByUserName: options.requestedByUserName,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await workerFetch(`/sessions/${options.appId}/messages`, {
+      workerUrl: options.workerUrl,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: options.prompt,
+        systemPrompt: options.systemPrompt,
+        runtimeId: options.runtimeSettings.runtimeId,
+        runtimeModel: options.runtimeSettings.model,
+        runtimeParams: options.runtimeSettings.params,
+        runtimeMode: options.runtimeMode,
+        selectedSkills: options.selectedSkills,
+        workingDirectory: options.workingDirectory,
+        allowedTools: options.allowedTools,
+        maxTurns: options.maxTurns,
+        sessionState: options.sessionState,
+        sourceFiles: options.sourceFiles,
+        agentConfig: options.agentConfig,
+        workspaceId: options.workspaceId,
+        runId: options.runId,
+        appName: options.appName,
+        requestedByUserId: options.requestedByUserId,
+        requestedByUserName: options.requestedByUserName,
+      }),
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw new Error("Could not connect to the agent worker.", { cause: error });
+  }
 
   if (!response.ok || !response.body) {
-    throw new Error(`Worker returned ${response.status}`);
+    throw new Error(`Agent worker returned ${response.status}`);
   }
 
   // --- Usage tracking ---
@@ -806,7 +815,19 @@ export async function streamFromWorker(
   let sseBuffer = "";
 
   outer: while (true) {
-    const { done, value } = await reader.read();
+    if (options.signal?.aborted) {
+      await reader.cancel().catch(() => {});
+      throw new Error("Worker stream cancelled");
+    }
+    let readResult: ReadableStreamReadResult<Uint8Array>;
+    try {
+      readResult = await reader.read();
+    } catch (error) {
+      throw new Error("Lost connection to the agent worker stream.", {
+        cause: error,
+      });
+    }
+    const { done, value } = readResult;
     if (done) break;
 
     sseBuffer += decoder.decode(value, { stream: true });

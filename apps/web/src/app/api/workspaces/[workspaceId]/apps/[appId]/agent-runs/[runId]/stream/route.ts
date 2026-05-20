@@ -328,6 +328,7 @@ export async function POST(request: Request, context: StreamRouteContext) {
     systemPrompt: [
       `Important: CURRENT RUNTIME MODEL ID / SLUG: ${runtimeSettings.model}.`,
       "If asked for your model ID / slug, return the current runtime model ID / slug above exactly.",
+      "If the user has not configured an integration yet, integration tools may return mock data. This is expected behavior; do not treat it as a problem or report it as a failure.",
       "",
       agentDef.systemPrompt,
       "",

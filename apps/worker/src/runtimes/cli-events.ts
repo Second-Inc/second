@@ -15,6 +15,7 @@ export type CliRuntimeOptions = {
   env: Record<string, string>;
   settings: AgentRuntimeSettings;
   sessionState?: ProviderSessionState | null;
+  signal?: AbortSignal;
 };
 
 function isBlockingApprovalTool(name: string | undefined): boolean {
@@ -61,6 +62,19 @@ export async function* runJsonlCliRuntime(
   let queueResolver: (() => void) | null = null;
   let processDone = false;
   let processError: Error | null = null;
+  let cancelled = false;
+
+  const cancelProcess = () => {
+    cancelled = true;
+    if (!child.killed) child.kill("SIGTERM");
+    processError = new Error("Agent run cancelled");
+    queueResolver?.();
+  };
+  if (options.signal?.aborted) {
+    cancelProcess();
+  } else {
+    options.signal?.addEventListener("abort", cancelProcess, { once: true });
+  }
 
   function push(message: RuntimeRunResultMessage) {
     if (message.providerSessionState?.sessionId) {
@@ -123,7 +137,7 @@ export async function* runJsonlCliRuntime(
 
   child.on("close", (code, signal) => {
     if (stdoutBuffer.trim()) handleJsonLine(stdoutBuffer);
-    if (code) {
+    if (code && !cancelled) {
       processError = new Error(
         `${options.command} exited with ${code}${signal ? ` (${signal})` : ""}${stderr ? `\n\nstderr:\n${stderr}` : ""}`,
       );
@@ -143,6 +157,7 @@ export async function* runJsonlCliRuntime(
     queueResolver = null;
   }
 
+  options.signal?.removeEventListener("abort", cancelProcess);
   if (processError) throw processError;
 
   if (sessionId) {

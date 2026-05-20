@@ -79,6 +79,20 @@ export type ResetIntegrationResult = {
   oauthProviderCleanup?: OAuthProviderCleanupResult;
 };
 
+export type SyncedIntegrationRequirement = {
+  id: string;
+  name: string;
+  domain: string;
+  keySlug: string;
+};
+
+export type SyncIntegrationSetupInstructionsResult = {
+  grants: SyncedIntegrationRequirement[];
+  requestedCount: number;
+  skippedCount: number;
+  deletedStaleCount: number;
+};
+
 export type IntegrationSetupConfig = {
   integrations?: Array<{
     name?: string;
@@ -1113,20 +1127,29 @@ export async function syncIntegrationSetupInstructions(input: {
   workspaceId: string;
   setupConfig: IntegrationSetupConfig;
   requester: IntegrationRequester;
-}): Promise<void> {
+}): Promise<SyncIntegrationSetupInstructionsResult> {
   const setupItems = input.setupConfig?.integrations ?? [];
   const activeGrantIds: string[] = [];
+  const grants: SyncedIntegrationRequirement[] = [];
+  let skippedCount = 0;
 
   for (const item of setupItems) {
-    if (!item?.domain) continue;
+    if (!item?.domain) {
+      skippedCount += 1;
+      continue;
+    }
     const domain = normalizeIntegrationDomain(item.domain);
     const name = item.name?.trim() || domain;
+    const keySlug = normalizeIntegrationKeySlug(item.keySlug);
     const permissionGroups = normalizePermissionGroups(item.permissionGroups);
     const secretRequirements = normalizeSecretRequirements(
       item.secretRequirements ?? item.secrets,
     );
     const auth = normalizeOAuthAuthConfig(item.auth);
-    if (item.auth && !auth) continue;
+    if (item.auth && !auth) {
+      skippedCount += 1;
+      continue;
+    }
     if (auth?.type === "oauth2") {
       await deleteOAuthProviderConfigurationIfUnused({
         workspaceId: input.workspaceId,
@@ -1159,6 +1182,7 @@ export async function syncIntegrationSetupInstructions(input: {
       setupInstructions,
       auth: auth ?? { type: "static_secret" },
     });
+    grants.push({ id: grantId, name, domain, keySlug });
     if (auth?.type === "oauth2") {
       await upsertOAuthProviderConfigShell({
         workspaceId: input.workspaceId,
@@ -1191,6 +1215,13 @@ export async function syncIntegrationSetupInstructions(input: {
       integrationId: staleGrant._id,
     });
   }
+
+  return {
+    grants,
+    requestedCount: setupItems.length,
+    skippedCount,
+    deletedStaleCount: staleGrants.length,
+  };
 }
 
 export async function syncIntegrationSetupInstructionsFromJson(input: {

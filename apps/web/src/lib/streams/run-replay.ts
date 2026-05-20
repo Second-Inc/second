@@ -108,12 +108,14 @@ export async function markRunReplayTerminal(input: {
 export function captureRunReplayStream(input: {
   runId: string;
   stream: ReadableStream<string>;
+  onChunk?: () => void;
 }): ReadableStream<string> {
   return input.stream.pipeThrough(
     new TransformStream<string, string>({
       transform(chunk, controller) {
         controller.enqueue(chunk);
         appendRunReplayChunk({ runId: input.runId, chunk }).catch(() => {});
+        input.onChunk?.();
       },
       flush() {
         // Terminal state is published by the route once final messages are

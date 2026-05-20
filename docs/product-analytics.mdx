@@ -113,6 +113,29 @@ onboarded user and uses the Second user ID as the PostHog `distinct_id`.
 Non-anonymized events may include the user, workspace, app, agent, message, and
 screen properties needed for debugging and product analysis.
 
+## Screen recording
+
+Screen recording is a separate opt-in inside **Usage data settings**. It is off
+by default, and enabling it also turns anonymization off because replay captures
+the actual Second interface for product debugging.
+
+Regular product analytics still use the same-origin `/api/analytics/capture`
+route. Screen recording is the exception: PostHog session replay runs in the
+browser through `posthog-js`, because replay is captured from the browser DOM and
+cannot be produced by the server-side capture endpoint.
+
+When screen recording is enabled, the browser loads the public PostHog project
+token and host from Second's authenticated analytics config route, identifies the
+current onboarded user, and starts PostHog session recording. The SDK is
+configured without PostHog pageview/autocapture product events so it does not
+replace or duplicate Second's sanitized analytics capture path.
+
+When screen recording is disabled, anonymization is re-enabled, telemetry is
+disabled, or the user signs out, Second stops PostHog session recording and
+resets the browser SDK state on that tab. Browser-level password-field masking
+from PostHog/rrweb still applies, but Second does not apply its anonymized
+analytics redaction model to replay after the user explicitly enables recording.
+
 ## Switching modes
 
 Switching from anonymized to non-anonymized affects future events only.

@@ -128,6 +128,7 @@ export default async function AppPage({ params }: AppPageProps) {
         initialMessages={(latestRun?.messages ?? []) as UIMessage[]}
         initialRunAttachments={(latestRun?.attachments ?? []) as AttachmentReference[]}
         runStatus={latestRun?.status ?? null}
+        initialRunFailure={latestRun?.failure ?? null}
         initialToolRecoveryStatus={initialToolRecoveryStatus}
         initialToolRecoveryToolName={
           initialToolRecoveryStatus === "fixing"
