@@ -75,10 +75,15 @@ Second is a single workspace.
 2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
 3. **Your team now works alongside agents-** in the same shared interface.
 
-### Example: "Please build me a competitor tracker":
-<p align="center">
-  <img src="docs/assets/screenshot_competitor_tracker.png" alt="Second — Competitor Research app with agent chat" width="100%">
-</p>
+<table align="center" width="100%" cellpadding="16">
+  <tr>
+    <td align="center">
+      <h4>Example: <strong>competitor tracker app</strong> built on Second</h4>
+      <p><sub>Featuring single-competitor enrichment + a weekly recap presentation across all tracked competitors.</sub></p>
+      <video src="docs/assets/full-demo.mp4" width="600" controls></video>
+    </td>
+  </tr>
+</table>
 
 ## Second VS other solutions
 
