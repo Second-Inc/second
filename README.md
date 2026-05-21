@@ -150,82 +150,7 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 
 <table>
 <tr>
-<td width="50%" valign="top">
-
-<h3>🔍 Competitor Research Dashboard</h3>
-
-<sub>**Flow:** 🤖 Monitor → 👤 Review and flag → 🤖 Compile report → 👤 Share</sub><br>
-<sub>**Tools:** Web Search, Google Alerts, Drive</sub><br>
-<sub>**Agents:** Research Agent, Alert Agent, Report Agent</sub>
-
-```
-┌─────────────────────────────────┐
-│ LIVE FEED             3 new ▼   │
-├─────────────────────────────────┤
-│                                 │
-│ 🤖 Acme raised prices 12%     │
-│    Source: pricing page crawl   │
-│    → 👤 [Flag]  [Archive]     │
-│                                 │
-│ 🤖 RivalCo blog: "Q3 Roadmap" │
-│    Source: RSS monitor          │
-│    → 👤 [Read]  [Dismiss]     │
-│                                 │
-│ 👤 You flagged: Acme Series B  │
-│ 🤖 → Added to weekly report   │
-│                                 │
-├─────────────────────────────────┤
-│ 💬 Report Agent:               │
-│ "Weekly digest ready. 3 price   │
-│  alerts, 2 product launches,    │
-│  1 funding round flagged."      │
-│                                 │
-│ 👤 [Download PDF] [Share]      │
-└─────────────────────────────────┘
-```
-
-</td>
-<td width="50%" valign="top">
-
-<h3>📹 Content Curation Pipeline</h3>
-
-<sub>**Flow:** 🤖 Fetch videos → 👤 Select clips → 🤖 Cut and upload → 👤 Approve</sub><br>
-<sub>**Tools:** YouTube API, Clipping Service, Google Drive</sub><br>
-<sub>**Agents:** Curator Agent, Clip Agent</sub>
-
-```
-┌─────────────────────────────────┐
-│ VIDEOS THIS WEEK       12 ▼    │
-├────────┬────────┬───────────────┤
-│ Title  │ Source │ Status        │
-├────────┼────────┼───────────────┤
-│ "AI    │ YT     │ ✅ Clipped   │
-│ Agents │        │    → Drive    │
-│ 2025"  │        │               │
-├────────┼────────┼───────────────┤
-│ "Build │ YT     │ 👤 Review    │
-│ Your   │        │   [Select]    │
-│ Agent" │        │   [Skip]      │
-├────────┼────────┼───────────────┤
-│ "Agent │ YT     │ 🤖 Fetched   │
-│ Ops at │        │    Pending    │
-│ Scale" │        │               │
-├────────┴────────┴───────────────┤
-│ 💬 Clip Agent:                 │
-│ "Clipped first 2 min. Uploaded  │
-│  to /Content/May-2025."         │
-│                                 │
-│ 👤 [Approve] [Re-clip] [Next] │
-└─────────────────────────────────┘
-```
-
-</td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td width="50%" valign="top">
+<td width="100%" valign="top">
 
 <h3>🎯 Lead Enrichment Pipeline</h3>
 
@@ -233,32 +158,39 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 <sub>**Tools:** HubSpot, LinkedIn, Web Search</sub><br>
 <sub>**Agents:** Scraper Agent, Enrichment Agent, Scoring Agent</sub>
 
-```
-┌─────────────────────────────────┐
-│ PIPELINE            47 leads ▼  │
-├────────┬───────┬────────────────┤
-│ Lead   │ Score │ Status         │
-├────────┼───────┼────────────────┤
-│ Acme   │ 92/100│ ✅ Ready      │
-│ Corp   │       │ 👤 [Call]     │
-├────────┼───────┼────────────────┤
-│ Nova   │ 78/100│ 🤖 Enriching  │
-│ Labs   │       │ 🤖 Score next │
-├────────┼───────┼────────────────┤
-│ Peak   │  --   │ 🤖 Scraping.. │
-│ Inc    │       │    3 sources   │
-├────────┴───────┴────────────────┤
-│ 💬 Scoring Agent:              │
-│ "Acme Corp: 200 employees,      │
-│  Series A, hiring 3 engineers.  │
-│  Score: 92. Ready for review."  │
-│                                 │
-│ 👤 [Accept] [Edit] [Skip]     │
-└─────────────────────────────────┘
-```
+<table width="100%">
+  <tr>
+    <td colspan="3"><strong>PIPELINE</strong> <span align="right">47 leads ▼</span></td>
+  </tr>
+  <tr>
+    <td><sub>Lead</sub></td>
+    <td><sub>Score</sub></td>
+    <td><sub>Status</sub></td>
+  </tr>
+  <tr>
+    <td><strong>Acme Corp</strong></td>
+    <td>92/100</td>
+    <td>✅ Ready<br>👤 <code>[Call]</code></td>
+  </tr>
+  <tr>
+    <td><strong>Nova Labs</strong></td>
+    <td>78/100</td>
+    <td>🤖 Enriching<br>🤖 Score next</td>
+  </tr>
+  <tr>
+    <td><strong>Peak Inc</strong></td>
+    <td>--</td>
+    <td>🤖 Scraping...<br><sub>3 sources</sub></td>
+  </tr>
+  <tr>
+    <td colspan="3">💬 <strong>Scoring Agent</strong><br>"Acme Corp: 200 employees, Series A, hiring 3 engineers. Score: 92. Ready for review."<br><br>👤 <code>[Accept]</code> <code>[Edit]</code> <code>[Skip]</code></td>
+  </tr>
+</table>
 
 </td>
-<td width="50%" valign="top">
+</tr>
+<tr>
+<td width="100%" valign="top">
 
 <h3>📊 GTM War Room</h3>
 
@@ -266,33 +198,28 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 <sub>**Tools:** HubSpot, Slack, Google Docs, Analytics</sub><br>
 <sub>**Agents:** Metrics Agent, Battlecard Agent</sub>
 
-```
-┌─────────────────────────────────┐
-│ GTM WAR ROOM       Week 21 ▼   │
-├─────────────────────────────────┤
-│                                 │
-│ 📈 THIS WEEK                   │
-│ Pipeline: $320k (+14%)          │
-│ Win rate: 38% (up from 31%)     │
-│ Lost to competitor: 3 deals     │
-│                                 │
-│ 👤 PMM added positioning note: │
-│ "Emphasize self-hosted angle    │
-│  vs. Acme's cloud-only offer"   │
-│                                 │
-│ 👤 Sales added field note:     │
-│ "Acme offering 40% discounts    │
-│  to win back churned accounts"  │
-│                                 │
-├─────────────────────────────────┤
-│ 💬 Battlecard Agent:           │
-│ "Updated battlecard with new    │
-│  field intel. 2 new objection   │
-│  handlers added."               │
-│                                 │
-│ 👤 [Review card] [Push to Docs]│
-└─────────────────────────────────┘
-```
+<table width="100%">
+  <tr>
+    <td colspan="2"><strong>GTM WAR ROOM</strong></td>
+    <td align="right"><sub>Week 21 ▼</sub></td>
+  </tr>
+  <tr>
+    <td width="36" align="center">📈</td>
+    <td colspan="2"><strong>THIS WEEK</strong><br>Pipeline: $320k (+14%)<br>Win rate: 38% (up from 31%)<br>Lost to competitor: 3 deals</td>
+  </tr>
+  <tr>
+    <td width="36" align="center">👤</td>
+    <td colspan="2"><strong>PMM added positioning note</strong><br>"Emphasize self-hosted angle vs. Acme's cloud-only offer"</td>
+  </tr>
+  <tr>
+    <td width="36" align="center">👤</td>
+    <td colspan="2"><strong>Sales added field note</strong><br>"Acme offering 40% discounts to win back churned accounts"</td>
+  </tr>
+  <tr>
+    <td width="36" align="center">💬</td>
+    <td colspan="2"><strong>Battlecard Agent</strong><br>"Updated battlecard with new field intel. 2 new objection handlers added."<br><br>👤 <code>[Review card]</code> <code>[Push to Docs]</code></td>
+  </tr>
+</table>
 
 </td>
 </tr>
@@ -302,6 +229,8 @@ And many more:
 
 | Use Case | What It Does | Tools | Agents |
 |:---|:---|:---|:---|
+| **Competitor Research Dashboard** | Monitor competitor changes, review and flag important updates, compile reports, and share research | Web Search, Google Alerts, Drive | Research Agent, Alert Agent, Report Agent |
+| **Content Curation Pipeline** | Fetch videos, select clips, cut and upload assets, and route finished content for approval | YouTube API, Clipping Service, Google Drive | Curator Agent, Clip Agent |
 | **Social Media Ops** | Draft posts, schedule across platforms, track engagement, repurpose top performers | Twitter/X, LinkedIn, Buffer | Content Agent, Scheduling Agent, Analytics Agent |
 | **Recruiting Pipeline** | Source candidates, screen resumes, schedule interviews, track pipeline | LinkedIn, ATS, Google Calendar, Gmail | Sourcing Agent, Screening Agent, Scheduling Agent |
 | **Customer Success** | Pull data from CRMs and support tools, surface churn risk, draft outreach | HubSpot, Intercom, Slack | Insights Agent, Churn Agent, Outreach Agent |
