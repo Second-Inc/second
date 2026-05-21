@@ -323,8 +323,6 @@ And many more:
 - **`agents.json`: governed policy as code.** Each app has an `agents.json`. Changes require admin approval via hash verification.
 - **Draft and published are fully separated.** Builders iterate freely with mock data. Published apps only run the last approved config.
 
-`<<INSERT VIDEO OF SELF-BUILDING INTEGRATION HERE>>`
-
 On top of that, Second handles the hard parts:
 
 | Capability | &nbsp; |
