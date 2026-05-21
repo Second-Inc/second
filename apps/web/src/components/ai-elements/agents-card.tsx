@@ -74,7 +74,8 @@ type AgentData = {
 };
 
 export type AgentsCardData = {
-  agents: AgentData[];
+  agents?: AgentData[];
+  appTools?: AgentToolData[];
 };
 
 type AgentsCardProps = {
@@ -946,13 +947,34 @@ export function AgentsCard({
         return normalized ? [normalized] : [];
       })
     : [];
+  const appTools = Array.isArray(data?.appTools)
+    ? data.appTools.flatMap((tool) => {
+        const normalized = normalizeTool(tool);
+        return normalized ? [normalized] : [];
+      })
+    : [];
   const hasAgents = agents.length > 0;
+  const hasAppTools = appTools.length > 0;
   const singleAgent = agents.length === 1;
   const toolCount = agents.reduce(
     (total, agent) => total + (agent.tools?.length ?? 0),
     0,
   );
-  const validationIssues = validateAgents(agents);
+  const appToolValidationIssues = hasAppTools
+    ? validateAgents([
+        {
+          id: "app-tools",
+          name: "App actions",
+          description: "",
+          systemPrompt: "",
+          tools: appTools,
+        },
+      ])
+    : [];
+  const validationIssues = [
+    ...validateAgents(agents),
+    ...appToolValidationIssues,
+  ];
   const hasValidationIssues = validationIssues.length > 0;
 
   const updateScrollState = useCallback(() => {
@@ -993,8 +1015,15 @@ export function AgentsCard({
             Agents
           </div>
           <span className="text-[15px] font-semibold tracking-[-0.01em]">
-            {hasAgents
-              ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+            {hasAgents || hasAppTools
+              ? [
+                  hasAgents
+                    ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+                    : null,
+                  hasAppTools
+                    ? `${appTools.length} app action${appTools.length === 1 ? "" : "s"}`
+                    : null,
+                ].filter(Boolean).join(" and ")
               : "Agent configuration"}
           </span>
           {hasValidationIssues ? (
@@ -1062,6 +1091,23 @@ export function AgentsCard({
         </div>
       </div>
 
+      {hasAppTools ? (
+        <div className="rounded-2xl border border-black/15 bg-[var(--composer-bg)] px-5 py-4 shadow-none dark:border-border/50 sm:px-6">
+          <div className="mb-3 flex min-w-0 items-start gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+              <WrenchIcon className="size-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[15px] font-semibold">App actions</div>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                Callable from app code through the Second SDK.
+              </p>
+            </div>
+          </div>
+          <ResourceTabs tools={appTools} dataCollections={[]} />
+        </div>
+      ) : null}
+
       {/* Agent carousel */}
       {hasAgents ? (
         <div className="relative">
@@ -1113,9 +1159,9 @@ export function AgentsCard({
         </div>
       ) : isStreaming ? (
         <Skeleton className="h-28 rounded-2xl" />
-      ) : (
+      ) : hasAppTools ? null : (
         <div className="text-sm text-muted-foreground">
-          No agents found in the presented configuration.
+          No agents or app actions found in the presented configuration.
         </div>
       )}
 

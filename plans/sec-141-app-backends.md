@@ -181,8 +181,11 @@ Integration credentials are already app-scoped. The current secure execution pat
 - [x] 2026-05-20 20:20 IDT: Read relevant docs: `docs/integrations.mdx`, `docs/app-agents.mdx`, `docs/agent-system.mdx`, `docs/architecture.mdx`, `docs/guard-and-tenancy.mdx`, `docs/app-preview.mdx`, `docs/worker.mdx`, `docs/streaming.mdx`, `docs/app-data.mdx`, and OAuth/self-hosting sections in `docs/self-hosting.mdx`.
 - [x] 2026-05-20 20:20 IDT: Read key code paths for integration grants, `agents.json` approval, tool execution, builder tools, generated SDK, iframe bridges, app access, and source snapshots.
 - [x] 2026-05-20 20:20 IDT: Created this plan file.
-- [ ] Implementation has not started.
-- [ ] Automated validation has not run.
+- [x] 2026-05-20 22:08 IDT: Implemented governed top-level `appTools` support in `agents.json` validation, presentation, approval card rendering, and app-agent compatibility paths.
+- [x] 2026-05-20 22:08 IDT: Extracted the hardened custom HTTP action executor into a shared web library and moved `/api/internal/tool-execute` onto it.
+- [x] 2026-05-20 22:08 IDT: Added browser-authenticated app action route, iframe parent bridge, and generated SDK `callIntegrationTool` / `useIntegrationTool`.
+- [x] 2026-05-20 22:08 IDT: Updated builder prompt, integration skill guidance, and docs for deterministic app-callable integration actions.
+- [x] 2026-05-20 22:08 IDT: Ran `npm run typecheck` successfully.
 - [ ] Browser QA has not run.
 
 
@@ -862,18 +865,32 @@ Important note:
 ## Outcomes & Retrospective
 
 
-Not yet implemented. Update this section after implementation and validation with:
+Implemented the v1 architecture described in this plan:
 
-- What shipped.
-- Any deviations from the plan.
-- Validation results.
-- Known limitations, especially response-size/pagination and OAuth identity semantics.
+- `agents.json` now accepts a non-empty top-level `appTools` array, including appTools-only apps with no agents.
+- `present_agents` validates and returns app actions alongside agents, and the approval card renders app actions compactly.
+- App code can call `callIntegrationTool<TInput, TData>(toolName, input)` or `useIntegrationTool` from the generated SDK.
+- `AppIntegrationBridge` validates iframe origin by window identity and calls the new browser-authenticated app action route.
+- The new app action route resolves the canonical approved `appTools[]` spec server-side; the iframe sends only `toolName` and input.
+- `/api/internal/tool-execute` and the app action route share `apps/web/src/lib/integrations/execute-http-action.ts` for secret injection, OAuth token injection, mock fallback, domain locking, private-IP blocking, timeout, response-size enforcement, and audit result metadata.
+- OAuth app actions use the current authenticated app viewer as the OAuth user while existing agent tools continue resolving the triggering user from the app-agent run.
+
+Validation:
+
+- `npm run typecheck` completed successfully for `apps/web` and `apps/worker`.
+
+Known limitations:
+
+- Browser QA was not run because this implementation request did not explicitly request browser QA or dev-server startup.
+- The feature still executes one bounded HTTP request per SDK call. Bulk provider reads should page through app actions and aggregate in app code.
+- `integration-setup.json` remains setup metadata only; approved runtime policy lives in `agents.json`.
 
 
 ## Change Notes
 
 
 - 2026-05-20, Codex: Initial plan created from SEC-141, repository docs, and source inspection.
+- 2026-05-20, Codex: Implemented app-callable integration actions with shared HTTP execution, SDK bridge, approval card support, builder guidance, docs, and successful typecheck.
 
 
 ## Captured User Intent (Verbatim)

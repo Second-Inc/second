@@ -3,12 +3,12 @@ import { join } from "node:path";
 
 const ADD_INTEGRATIONS_SKILL = `---
 name: add-integrations
-description: Use this skill whenever you need to include, edit, add, or review integrations, custom API tools, integration-setup.json, setup instructions, permissions, scopes, or named integration secrets. Read it before researching provider setup or API details.
+description: Use this skill whenever you need to include, edit, add, or review integrations, custom API tools, app-callable integration actions, integration-setup.json, setup instructions, permissions, scopes, or named integration secrets. Read it before researching provider setup or API details.
 ---
 
 # Add Integrations
 
-Use this skill for every integration change, including adding custom tools, editing a tool endpoint, adding scopes, changing named secrets, or writing setup instructions. Read it before researching the provider so the research follows Second's integration rules.
+Use this skill for every integration change, including adding custom tools, app-callable integration actions, editing a tool endpoint, adding scopes, changing named secrets, or writing setup instructions. Read it before researching the provider so the research follows Second's integration rules.
 
 ## First checks
 
@@ -32,6 +32,8 @@ Important: If fetched data contains opaque IDs, handles, foreign keys, status co
 
 ## Custom tool rules
 
+- Use top-level \`appTools\` in \`agents.json\` when app code should call a deterministic provider API directly with \`callIntegrationTool\`. Use normal \`agents[].tools\` only when an AI agent needs the tool for reasoning, generation, or autonomous work.
+- Top-level \`appTools\` use the same \`type: "custom"\`, \`integration\`, \`endpoint\`, \`mockData\`, static secret, OAuth, public API, \`domain\`, and \`keySlug\` rules as agent custom tools. If an app action and an agent tool use the same provider credentials, reuse the same \`domain\` + \`keySlug\` and put the complete union of requirements in \`integration-setup.json\`.
 - Define the real HTTP request inside each custom tool's \`endpoint\`. Do not put the API request only in prose or only in the agent system prompt.
 - For static API-key or bot-token integrations, use named secret placeholders like \`{{secrets.SERVICE_API_KEY}}\`; the secret name must match \`integration-setup.json\`.
 - For OAuth integrations, declare \`integration.auth.type: "oauth2"\` in the custom tool and in \`integration-setup.json\`. Include \`providerKey\`, \`identity: "triggering_user"\`, official \`authorizationUrl\`, official \`tokenUrl\`, exact \`scopes\`, and any provider-required authorization params such as Google's \`access_type: "offline"\`. Do not include \`{{oauth.access_token}}\`, \`{{access_token}}\`, \`{{token}}\`, \`{{secrets.*}}\`, or an \`Authorization\` header; Second injects the access token server-side.
@@ -44,6 +46,7 @@ Important: If fetched data contains opaque IDs, handles, foreign keys, status co
 
 ## Bounded response design
 
+- App-callable integration actions return data to app code instead of an agent, so deterministic pagination and app-side grouping are preferred for bulk dashboards. Each individual action response is still bounded; do not design one unbounded request for thousands of records.
 - Keep custom tool responses small enough for the agent to read directly. The agent receives the provider response before it can filter fields or write app data. \`responseSchema\` is descriptive only; it does not trim, project, or reshape runtime output.
 - For search, content, crawl, enrichment, and RAG APIs, avoid unbounded full document/page body fields in multi-result tools. Prefer metadata, summaries, highlights, snippets, or explicit character limits.
 

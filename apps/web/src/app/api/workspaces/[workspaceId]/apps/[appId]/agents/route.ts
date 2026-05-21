@@ -104,8 +104,10 @@ export async function PATCH(request: Request, context: AgentsRouteContext) {
   }
   const body = await request.json();
 
-  // Validate it has the agents array
-  if (!body || !Array.isArray(body.agents)) {
+  const nextAgentsSnapshot = tryReadAgentsJsonSnapshot({
+    "agents.json": JSON.stringify(body),
+  });
+  if (!nextAgentsSnapshot) {
     return NextResponse.json({ error: "invalid_agents_json" }, { status: 400 });
   }
 
@@ -121,11 +123,9 @@ export async function PATCH(request: Request, context: AgentsRouteContext) {
     "agents.json": JSON.stringify(body, null, 2),
   };
   const previousAgentsApprovalHash = access.app.agentsJsonApprovalHash ?? null;
-  const nextAgentsSnapshot = tryReadAgentsJsonSnapshot(updatedSourceFiles);
   const agentsApprovalBecameStale = Boolean(
     previousAgentsApprovalHash &&
-      (!nextAgentsSnapshot ||
-        nextAgentsSnapshot.hash !== previousAgentsApprovalHash),
+      nextAgentsSnapshot.hash !== previousAgentsApprovalHash,
   );
 
   const draftEditResult = await supersedePendingReview({

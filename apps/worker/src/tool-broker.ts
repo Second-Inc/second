@@ -202,7 +202,7 @@ const secondTools: McpTool[] = [
   {
     name: "present_agents",
     description:
-      "Present agents.json to the user for approval, then stop and wait for approval in a later user message.",
+      "Present agents.json agents and appTools to the user for approval, then stop and wait for approval in a later user message.",
     inputSchema: {
       type: "object",
       properties: {},

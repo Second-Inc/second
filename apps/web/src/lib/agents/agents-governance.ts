@@ -42,8 +42,18 @@ export function stableJsonStringify(value: unknown): string {
 }
 
 function validateAgentsJsonPayload(value: unknown): void {
-  if (!isRecord(value) || !Array.isArray(value.agents) || value.agents.length === 0) {
-    throw new InvalidAgentsJsonError("agents.json must contain a non-empty agents array");
+  if (!isRecord(value)) {
+    throw new InvalidAgentsJsonError(
+      "agents.json must contain a non-empty agents or appTools array",
+    );
+  }
+
+  const hasAgents = Array.isArray(value.agents) && value.agents.length > 0;
+  const hasAppTools = Array.isArray(value.appTools) && value.appTools.length > 0;
+  if (!hasAgents && !hasAppTools) {
+    throw new InvalidAgentsJsonError(
+      "agents.json must contain a non-empty agents or appTools array",
+    );
   }
 }
 

@@ -1737,11 +1737,15 @@ export async function executePresentAgentsTool(
 
   let agentsConfig: unknown;
   let fileAgents: unknown[];
+  let fileAppTools: unknown[];
   try {
     agentsConfig = JSON.parse(readFileSync(agentsPath, "utf-8")) as unknown;
     const agentsRecord = asRecord(agentsConfig);
     fileAgents = Array.isArray(agentsRecord?.agents)
       ? agentsRecord.agents
+      : [];
+    fileAppTools = Array.isArray(agentsRecord?.appTools)
+      ? agentsRecord.appTools
       : [];
   } catch (err) {
     return {
@@ -1752,16 +1756,26 @@ export async function executePresentAgentsTool(
     };
   }
 
-  if (fileAgents.length === 0) {
+  if (fileAgents.length === 0 && fileAppTools.length === 0) {
     return {
       content: [{
         type: "text",
-        text: "Agent configuration was not accepted because agents.json does not contain an agents array. Fix agents.json and call present_agents again.",
+        text: "Agent configuration was not accepted because agents.json does not contain any agents or appTools. Fix agents.json and call present_agents again.",
       }],
     };
   }
 
-  const validationIssues = customToolValidationIssues(fileAgents).map(
+  const validationSubjects = fileAppTools.length > 0
+    ? [
+        ...fileAgents,
+        {
+          id: "app-tools",
+          name: "App actions",
+          tools: fileAppTools,
+        },
+      ]
+    : fileAgents;
+  const validationIssues = customToolValidationIssues(validationSubjects).map(
     (issue) => `agents.json: ${issue}`,
   );
   if (validationIssues.length > 0) {
@@ -1773,6 +1787,7 @@ export async function executePresentAgentsTool(
           status: "changes_required",
           source: "agents.json",
           agents: fileAgents,
+          appTools: fileAppTools,
           validationIssues,
           message:
             "Agent configuration needs changes before approval. Fix agents.json and call present_agents again. For static custom integrations, saved secrets must use named placeholders like {{secrets.SLACK_BOT_TOKEN}}. For OAuth custom integrations, declare integration.auth and do not include token placeholders; Second injects the access token server-side. Public unauthenticated APIs may omit secrets and auth metadata.",
@@ -1789,8 +1804,9 @@ export async function executePresentAgentsTool(
         status: "presented",
         source: "agents.json",
         agents: fileAgents,
+        appTools: fileAppTools,
         message:
-          `${fileAgents.length} agent(s) presented to the user. Stop here and wait for the user's approval or requested changes before implementing app code or presenting integration setup.`,
+          `${fileAgents.length} agent(s) and ${fileAppTools.length} app action(s) presented to the user. Stop here and wait for the user's approval or requested changes before implementing app code or presenting integration setup.`,
       }),
     }],
   };
@@ -1799,7 +1815,7 @@ export async function executePresentAgentsTool(
 function createPresentAgentsTool(config: SessionConfig) {
   return tool(
     "present_agents",
-    "Present agents.json to the user for approval. Call this after writing or updating agents.json. The tool reads and validates agents.json as the source of truth. After this tool returns, stop and wait for the user to approve or request changes from the agents card.",
+    "Present agents.json to the user for approval. Call this after writing or updating agents.json with agents and/or appTools. The tool reads and validates agents.json as the source of truth. After this tool returns, stop and wait for the user to approve or request changes from the agents card.",
     {},
     async () => executePresentAgentsTool(config),
   );

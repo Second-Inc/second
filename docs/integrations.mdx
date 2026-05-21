@@ -1,11 +1,11 @@
 ---
 title: "Integrations"
-description: "How Second keeps static secrets and OAuth tokens under server control while app agents use approved custom HTTP tools."
+description: "How Second keeps static secrets and OAuth tokens under server control while app agents and app code use approved custom HTTP actions."
 ---
 
-Integrations connect app agents to external services such as Linear, HubSpot,
+Integrations connect app agents and generated app code to external services such as Linear, HubSpot,
 Slack, Gmail, Calendar, and other APIs without exposing credentials to the
-agent runtime. Second supports two credential shapes:
+agent runtime or sandboxed iframe. Second supports these credential shapes:
 
 - an **integration grant** records what one app asked to use, including
   provider domain, key slug, auth mode, permission groups, setup steps, app, and
@@ -23,8 +23,10 @@ write access, those are separate grants and separate setup decisions even
 though both use `linear.app`.
 
 OAuth adds a second boundary: a provider client configured by an admin does not
-grant access to any user's data by itself. Each user connects their own account,
-and runtime resolves the account from the server-created app-agent run record.
+grant access to any user's data by itself. Each user connects their own account.
+Agent tools resolve the account from the server-created app-agent run record;
+app-callable integration actions resolve the account from the current
+authenticated app viewer.
 
 ## How it works
 
@@ -68,6 +70,28 @@ Agent calls OAuth custom tool
       → Execute HTTP request to external API
       → Return bounded response to agent
 ```
+
+App-callable integration actions use the same approved `agents.json` boundary
+and the same hardened HTTP executor, but they are called by app code through the
+iframe bridge:
+
+```
+App code calls callIntegrationTool(toolName, input)
+  → App iframe posts second:integration:execute
+    → AppIntegrationBridge validates iframe source
+      → POST /api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute
+        → Authenticate browser workspace context
+        → Resolve app access and draft/published version
+        → Resolve canonical approved appTools[] spec server-side
+        → Resolve grant by workspaceId + appId + domain + keySlug
+        → Inject static secrets or current viewer OAuth access token
+        → Validate hostname, protocol, and resolved IPs
+        → Execute bounded HTTP request to external API
+        → Return response to app code
+```
+
+The iframe sends only `toolName` and input. It never sends endpoint URLs,
+secret placeholders, OAuth metadata, credential IDs, or provider tokens.
 
 There is no separate OAuth refresh service, cron, sidecar, or Kubernetes job.
 Refresh happens synchronously inside the existing Next.js API path when a tool
@@ -341,6 +365,46 @@ no credentials. Draft and published runtime calls then verify the requested tool
 still appears in the approved `agents.json` payload before credentials are
 injected or, for public tools, before the bounded public request is executed.
 
+Top-level `appTools` use the same custom HTTP shape, auth metadata, mock-data
+behavior, domain lock, and app-scoped integration grant lookup. They are for
+deterministic app code, not AI agent reasoning:
+
+```json
+{
+  "appTools": [
+    {
+      "type": "custom",
+      "name": "posthog_events_page",
+      "displayName": "Fetch PostHog events page",
+      "integration": {
+        "name": "PostHog",
+        "domain": "posthog.com",
+        "keySlug": "default"
+      },
+      "endpoint": {
+        "method": "GET",
+        "url": "https://app.posthog.com/api/projects/{{projectId}}/events/",
+        "headers": {
+          "Authorization": "Bearer {{secrets.POSTHOG_PERSONAL_API_KEY}}"
+        },
+        "queryParams": {
+          "after": "{{after}}",
+          "before": "{{before}}",
+          "limit": "{{limit}}"
+        }
+      },
+      "mockData": [{ "results": [], "next": null }]
+    }
+  ],
+  "agents": []
+}
+```
+
+When an app action and an agent tool use the same provider credential, they
+share the same grant by using the same `domain` and `keySlug`. The builder must
+write `integration-setup.json` with the complete union of permissions, scopes,
+and named secrets required by both.
+
 OAuth custom tools are still custom HTTP tools. They declare `integration.auth`
 and omit `Authorization` headers:
 
@@ -380,7 +444,8 @@ and omit `Authorization` headers:
 
 OAuth tools must not include `{{oauth.access_token}}`, `{{access_token}}`,
 `{{token}}`, `{{secrets.*}}`, or an explicit `Authorization` header. The broker
-injects the bearer token after resolving the triggering user from `runId`.
+injects the bearer token after resolving the triggering user from `runId` for
+agent tools, or the current app viewer for app-callable actions.
 
 ## Setup state
 
@@ -424,9 +489,12 @@ accidentally turning a lookup into a broad static API call.
 - HTTPS only, except `localhost` during development
 - final URL hostname must match `integration.domain` or one of its subdomains
 - requested tool must be present in the approved app `agents.json` payload
+- app-callable actions must be present in top-level approved `appTools[]`; the
+  browser cannot provide endpoint specs or credential metadata
 - runtime grant lookup includes `workspaceId`, `appId`, `domain`, and `keySlug`
 - OAuth runtime additionally requires `runId`, loads the run by `workspaceId +
   appId + runId`, and resolves the triggering user from that server-created row
+  for agent tools; app actions use the current authenticated app viewer
 - OAuth provider config and connected account lookups include `workspaceId`,
   and connected account lookup also includes `userId`
 - OAuth authorization and token URLs must be HTTPS and resolve outside private
@@ -449,6 +517,7 @@ accidentally turning a lookup into a broad static API call.
 | `POST` | `/api/internal/integration-requirements` | Sync app-scoped grant requirements from `integration-setup.json` |
 | `POST` | `/api/internal/workspace-integrations` | Return current app grant metadata to the builder, without secret values |
 | `POST` | `/api/internal/tool-execute` | Execute a custom HTTP tool with app-grant credential resolution |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute` | Execute an approved app-callable integration action for the current app viewer |
 | `PATCH` | `/api/workspaces/[wId]/oauth-provider-configs/[providerConfigId]` | Configure or rotate a workspace OAuth client |
 | `GET` | `/api/workspaces/[wId]/oauth/[providerConfigId]/start` | Start current-user OAuth consent for one app grant |
 | `GET` | `/api/oauth/callback` | Generic OAuth callback that exchanges code, stores tokens, and redirects back |
@@ -469,10 +538,14 @@ never secrets, prompts, source files, headers, cookies, or full documents.
 | `apps/web/src/lib/oauth/secret-store.ts` | WorkOS/local encrypted OAuth secret references |
 | `apps/web/src/lib/oauth/token-exchange.ts` | Code exchange and refresh-token request helper |
 | `apps/web/src/lib/oauth/token-broker.ts` | On-demand access-token cache/refresh broker |
-| `apps/web/src/app/api/internal/tool-execute/route.ts` | Runtime secret injection, approval check, domain/IP guards |
+| `apps/web/src/lib/integrations/execute-http-action.ts` | Shared runtime secret/OAuth injection, mock fallback, response bounds, and domain/IP guards |
+| `apps/web/src/app/api/internal/tool-execute/route.ts` | Internal app-agent tool approval check and audit wrapper |
+| `apps/web/src/app/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute/route.ts` | Browser-authenticated app action route |
+| `apps/web/src/components/app-integration-bridge.tsx` | Iframe parent bridge for `callIntegrationTool` |
 | `apps/web/src/app/api/internal/integration-requirements/route.ts` | Worker-to-web setup sync |
 | `apps/web/src/app/api/workspaces/[wId]/integrations/[id]/route.ts` | Configure, reset, and delete one app grant |
 | `apps/web/src/app/api/workspaces/[wId]/oauth/[providerConfigId]/start/route.ts` | OAuth consent start |
 | `apps/web/src/app/api/oauth/callback/route.ts` | OAuth callback |
 | `apps/web/src/app/w/[wId]/settings/integrations/integrations-client.tsx` | App/key settings UI |
-| `apps/worker/src/runner.ts` | Builder integration tools and custom app tool bridge |
+| `apps/worker/src/runner.ts` | Builder integration tools, `present_agents`, and custom app tool bridge |
+| `apps/worker/src/workspace-template.ts` | Generated app SDK, including `callIntegrationTool` |

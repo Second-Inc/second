@@ -731,18 +731,41 @@ function parseToolTextOutput(output: unknown): unknown {
   return output;
 }
 
-function agentsFromPresentAgentsOutput(output: unknown): AgentsCardData["agents"] {
+function agentsFromPresentAgentsOutput(
+  output: unknown,
+): NonNullable<AgentsCardData["agents"]> {
   const parsed = parseToolTextOutput(output);
   const record = asRecord(parsed);
   return Array.isArray(record?.agents)
-    ? (record.agents as AgentsCardData["agents"])
+    ? (record.agents as NonNullable<AgentsCardData["agents"]>)
     : [];
 }
 
-function agentsFromPresentAgentsInput(input: unknown): AgentsCardData["agents"] {
+function agentsFromPresentAgentsInput(
+  input: unknown,
+): NonNullable<AgentsCardData["agents"]> {
   const record = asRecord(input);
   return Array.isArray(record?.agents)
-    ? (record.agents as AgentsCardData["agents"])
+    ? (record.agents as NonNullable<AgentsCardData["agents"]>)
+    : [];
+}
+
+function appToolsFromPresentAgentsOutput(
+  output: unknown,
+): NonNullable<AgentsCardData["appTools"]> {
+  const parsed = parseToolTextOutput(output);
+  const record = asRecord(parsed);
+  return Array.isArray(record?.appTools)
+    ? (record.appTools as NonNullable<AgentsCardData["appTools"]>)
+    : [];
+}
+
+function appToolsFromPresentAgentsInput(
+  input: unknown,
+): NonNullable<AgentsCardData["appTools"]> {
+  const record = asRecord(input);
+  return Array.isArray(record?.appTools)
+    ? (record.appTools as NonNullable<AgentsCardData["appTools"]>)
     : [];
 }
 
@@ -878,8 +901,9 @@ function planDataFromPresentPlanInput(input: unknown): PlanData {
 }
 
 const MAX_APPROVAL_ANALYTICS_ITEMS = 10;
+type AgentsCardAgent = NonNullable<AgentsCardData["agents"]>[number];
 
-function agentAuthKind(agent: AgentsCardData["agents"][number]): string {
+function agentAuthKind(agent: AgentsCardAgent): string {
   const tools = Array.isArray(agent.tools) ? agent.tools : [];
   const hasOAuth = tools.some((tool) => tool.integration?.auth?.type === "oauth2");
   const hasStaticSecret = tools.some((tool) =>
@@ -899,7 +923,11 @@ function agentsApprovalAnalytics(
   const inputAgents = agentsFromPresentAgentsInput(input);
   const outputAgents = agentsFromPresentAgentsOutput(output);
   const agents = inputAgents.length > 0 ? inputAgents : outputAgents;
+  const inputAppTools = appToolsFromPresentAgentsInput(input);
+  const outputAppTools = appToolsFromPresentAgentsOutput(output);
+  const appTools = inputAppTools.length > 0 ? inputAppTools : outputAppTools;
   const visibleAgents = agents.slice(0, MAX_APPROVAL_ANALYTICS_ITEMS);
+  const visibleAppTools = appTools.slice(0, MAX_APPROVAL_ANALYTICS_ITEMS);
   const toolCounts = agents.reduce(
     (totals, agent) => {
       const tools = Array.isArray(agent.tools) ? agent.tools : [];
@@ -923,7 +951,9 @@ function agentsApprovalAnalytics(
 
   return {
     agent_count: agents.length,
+    app_tool_count: appTools.length,
     agent_detail_count: visibleAgents.length,
+    app_tool_detail_count: visibleAppTools.length,
     agent_ids: visibleAgents.map((agent) => agent.id),
     agent_names: visibleAgents.map((agent) => agent.name),
     agent_descriptions: visibleAgents.map((agent) => agent.description),
@@ -959,6 +989,16 @@ function agentsApprovalAnalytics(
     agent_data_collection_names: visibleAgents.flatMap((agent) =>
       agent.dataCollections ?? []
     ),
+    app_tool_names: visibleAppTools.map((tool) => tool.name),
+    app_tool_display_names: visibleAppTools
+      .map((tool) => tool.displayName)
+      .filter((name): name is string => Boolean(name)),
+    app_tool_integration_names: visibleAppTools
+      .map((tool) => tool.integration?.name)
+      .filter((name): name is string => Boolean(name)),
+    app_tool_integration_domains: visibleAppTools
+      .map((tool) => tool.integration?.domain)
+      .filter((domain): domain is string => Boolean(domain)),
     agents: visibleAgents.map((agent) => {
       const tools = Array.isArray(agent.tools) ? agent.tools : [];
       return {
@@ -3481,6 +3521,12 @@ export function AppChat({
         json?.mockOnly || agentConfigApprovalMode === "mock"
           ? "mock"
           : "live";
+      const approvedAgents = Array.isArray(agentsJson.agents)
+        ? agentsJson.agents
+        : [];
+      const approvedAppTools = Array.isArray(agentsJson.appTools)
+        ? agentsJson.appTools
+        : [];
       captureAnalyticsEvent("approval acted", {
         workspace_id: workspaceId,
         app_id: appId,
@@ -3489,7 +3535,8 @@ export function AppChat({
         approval_type: "agents",
         action: "approved",
         approval_mode: approvalMode,
-        agent_count: agentsJson.agents.length,
+        agent_count: approvedAgents.length,
+        app_tool_count: approvedAppTools.length,
       });
       captureAnalyticsEvent("agents approved", {
         workspace_id: workspaceId,
@@ -3497,10 +3544,11 @@ export function AppChat({
         run_id: runId,
         tool_call_id: toolCallId,
         approval_mode: approvalMode,
-        agent_count: agentsJson.agents.length,
-        agent_ids: agentsJson.agents.map((agent) => agent.id),
-        agent_names: agentsJson.agents.map((agent) => agent.name),
-        agents: agentsJson.agents.map((agent) => ({
+        agent_count: approvedAgents.length,
+        app_tool_count: approvedAppTools.length,
+        agent_ids: approvedAgents.map((agent) => agent.id),
+        agent_names: approvedAgents.map((agent) => agent.name),
+        agents: approvedAgents.map((agent) => ({
           id: agent.id,
           name: agent.name,
           tool_count: agent.tools.length,
@@ -4164,18 +4212,29 @@ export function AppChat({
                           const outputAgents = agentsFromPresentAgentsOutput(
                             part.output,
                           );
+                          const inputAppTools = appToolsFromPresentAgentsInput(
+                            toolInput,
+                          );
+                          const outputAppTools = appToolsFromPresentAgentsOutput(
+                            part.output,
+                          );
                           const agentsData: AgentsCardData = {
                             agents: inputAgents.length > 0
                               ? inputAgents
                               : outputAgents,
+                            appTools: inputAppTools.length > 0
+                              ? inputAppTools
+                              : outputAppTools,
                           };
+                          const agentCount = agentsData.agents?.length ?? 0;
+                          const appToolCount = agentsData.appTools?.length ?? 0;
                           const isCurrentApproval =
                             pendingApproval?.toolCallId === part.toolCallId;
                           return (
                             <AgentsCard
                               key={`tool-${toolPartKey}`}
                               data={agentsData}
-                              isStreaming={isStreaming || (agentsData.agents.length === 0 && !isDone)}
+                              isStreaming={isStreaming || (agentCount === 0 && appToolCount === 0 && !isDone)}
                               actionsEnabled={isCurrentApproval && !isBusy}
                               mockApprovalAcknowledged={
                                 mockApprovedToolCallIds.has(part.toolCallId) ||
@@ -4200,10 +4259,11 @@ export function AppChat({
                                   approval_type: "agents",
                                   action: "requested_changes",
                                   feedback_length: fb.trim().length,
-                                  agent_count: agentsData.agents.length,
+                                  agent_count: agentCount,
+                                  app_tool_count: appToolCount,
                                 });
                                 sendMessageSafely(
-                                  `Please revise agents.json with this feedback and present the agents again:\n\n${fb}`,
+                                  `Please revise agents.json with this feedback and present it again:\n\n${fb}`,
                                 );
                               }}
                             />

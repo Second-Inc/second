@@ -3,7 +3,7 @@ title: "App Agents"
 description: "How apps trigger approved AI agents with scoped tools, streaming, and background execution."
 ---
 
-Apps built on Second can trigger AI agents defined in an `agents.json` file. Each agent has its own system prompt, scoped tools (built-in or custom HTTP), and optional write access to the app's data. Live runtime uses the approved agent configuration for that app version, so draft changes cannot quietly expand what an agent can call.
+Apps built on Second can trigger AI agents defined in an `agents.json` file. Each agent has its own system prompt, scoped tools (built-in or custom HTTP), and optional write access to the app's data. The same governed file can also define top-level `appTools`: custom HTTP actions callable directly from app code through the SDK for deterministic fetch/process/display workflows. Live runtime uses the approved configuration for that app version, so draft changes cannot quietly expand what an agent or app action can call.
 
 ## How it works
 
@@ -24,12 +24,53 @@ The app triggers an agent via the SDK. The platform creates a run record and sta
 
 App-agent routes are scoped by the full `{workspaceId, appId, runId}` tuple. A run from one app cannot be loaded or streamed through another app route, even inside the same workspace.
 
+App-callable integration actions use the same iframe bridge shape, but they do not create an app-agent run:
+
+```
+App iframe (callIntegrationTool)
+  → postMessage("second:integration:execute")
+    → AppIntegrationBridge (parent window)
+      → POST /api/.../app-tools/{toolName}/execute
+        → Verify approved agents.json appTools policy
+        → Resolve app-scoped integration grant
+        → Inject static secrets or current viewer OAuth token server-side
+        → Execute bounded HTTP request
+        → Return response to app code
+```
+
+Use app actions when the work is deterministic and the app can page, group, filter, or aggregate the provider response itself. Use agents when the task needs reasoning, generation, autonomous decisions, or natural-language workflows.
+
 ## agents.json
 
 Agents are defined in a JSON file in the app workspace, persisted alongside source files in MongoDB. The builder agent creates this file during the build flow and presents it via the `present_agents` tool for approval.
 
 ```json
 {
+  "appTools": [
+    {
+      "type": "custom",
+      "name": "posthog_events_page",
+      "displayName": "Fetch PostHog events page",
+      "description": "Fetches one bounded page of PostHog events for app-side grouping.",
+      "enabled": true,
+      "integration": {
+        "name": "PostHog",
+        "domain": "posthog.com",
+        "keySlug": "default"
+      },
+      "endpoint": {
+        "method": "GET",
+        "url": "https://app.posthog.com/api/projects/{{projectId}}/events/",
+        "headers": { "Authorization": "Bearer {{secrets.POSTHOG_PERSONAL_API_KEY}}" },
+        "queryParams": { "after": "{{after}}", "before": "{{before}}", "limit": "{{limit}}" }
+      },
+      "mockData": [
+        { "results": [{ "distinct_id": "user_123", "event": "$pageview" }], "next": null },
+        { "results": [{ "distinct_id": "user_456", "event": "signup" }], "next": null },
+        { "results": [], "next": null }
+      ]
+    }
+  ],
   "agents": [
     {
       "id": "lead-enricher",
@@ -78,6 +119,8 @@ Agents are defined in a JSON file in the app workspace, persisted alongside sour
 }
 ```
 
+`agents` may be empty when an app only needs app actions. `appTools` use the same custom HTTP shape and integration rules as `agents[].tools`, but the caller is app code rather than an AI agent.
+
 ### Key fields
 
 | Field | Purpose |
@@ -92,10 +135,11 @@ Agents are defined in a JSON file in the app workspace, persisted alongside sour
 | `tools[].integration.auth` | Optional auth metadata. Missing means either a static-secret tool when the endpoint uses `{{secrets.NAME}}`, or a public unauthenticated tool when the official API requires no credentials; `type: "oauth2"` means the broker resolves the triggering user's connected account |
 | `tools[].mockData` | Sample responses used when the integration is not configured. Must contain 3+ entries for variety |
 | `dataCollections` | Collections this agent can read/write via `update_app_data` and `read_app_data` tools. See [App Data](/app-data#agent-data-access) |
+| `appTools[]` | Optional top-level custom HTTP actions callable from generated app code with `callIntegrationTool` |
 
 Endpoint specs can also use placeholders from the tool input, such as `{{symbol}}`, `{{query}}`, or `{{company.ticker}}`, in the URL, headers, query params, and body. The agent must pass a JSON string with those fields when calling the custom tool. Missing placeholders fail clearly instead of calling broad static endpoints.
 
-`present_agents` validates every custom tool before approval. Custom tools must include `integration.name`, `integration.domain`, `endpoint.method`, and `endpoint.url`. Static tools must include a named secret placeholder such as `{{secrets.SLACK_BOT_TOKEN}}` where the saved integration secret is injected. OAuth tools must include `integration.auth.type = "oauth2"`, `providerKey`, `identity: "triggering_user"`, authorization URL, token URL, and exact scopes; they must not include `{{oauth.access_token}}`, `{{access_token}}`, `{{token}}`, `{{secrets.*}}`, or an explicit `Authorization` header. Public unauthenticated tools may omit secrets and auth metadata when the official API requires no API key, OAuth client, or token. Custom tools that need setup should include `integration.keySlug` and use the same slug in `integration-setup.json`; Second normalizes missing slugs to `"default"`. If a model omits the endpoint or uses unsafe placeholders, the agents card is marked as needing changes and cannot be approved until the builder fixes `agents.json` and calls `present_agents` again.
+`present_agents` validates every custom tool and app action before approval. Custom tools must include `integration.name`, `integration.domain`, `endpoint.method`, and `endpoint.url`. Static tools must include a named secret placeholder such as `{{secrets.SLACK_BOT_TOKEN}}` where the saved integration secret is injected. OAuth tools must include `integration.auth.type = "oauth2"`, `providerKey`, `identity: "triggering_user"`, authorization URL, token URL, and exact scopes; they must not include `{{oauth.access_token}}`, `{{access_token}}`, `{{token}}`, `{{secrets.*}}`, or an explicit `Authorization` header. Public unauthenticated tools may omit secrets and auth metadata when the official API requires no API key, OAuth client, or token. Custom tools that need setup should include `integration.keySlug` and use the same slug in `integration-setup.json`; Second normalizes missing slugs to `"default"`. If a model omits the endpoint or uses unsafe placeholders, the agents card is marked as needing changes and cannot be approved until the builder fixes `agents.json` and calls `present_agents` again.
 
 If an agent passes tool input to a custom tool whose endpoint does not reference any input placeholders, execution fails rather than calling a static bulk endpoint. This protects integrations from returning broad datasets when the intended request was a lookup.
 
@@ -120,8 +164,8 @@ as a governed artifact:
 4. The platform stores the canonical JSON hash, the approved payload, the
    approver, and the approval time.
 5. Draft app-agent runtime can start from the draft file, but live custom
-   tools and app-data tools are usable only while the current `agents.json`
-   hash matches that approval.
+   tools, app-callable actions, and app-data tools are usable only while the
+   current `agents.json` hash matches that approval.
 
 Creating `agents.json` or showing the Agents card does not send the app to
 review. It only pauses the builder until an admin/owner approves or someone
@@ -135,12 +179,12 @@ review is approved or an admin/owner publishes directly, the approved payload
 is promoted with the published source snapshot.
 
 This prevents a draft from quietly adding a new integration domain, endpoint,
-secret placeholder, permission, or data collection after IT has reviewed a
-different config.
+secret placeholder, app action, permission, or data collection after IT has
+reviewed a different config.
 
 ## integration-setup.json
 
-When custom tools require an external service, the builder may also create `integration-setup.json` at the app workspace root. This file is separate from agents.json. agents.json defines what the agent can call; `integration-setup.json` explains what a human needs to configure in the provider.
+When custom tools or app actions require an external service, the builder may also create `integration-setup.json` at the app workspace root. This file is separate from agents.json. agents.json defines what the agent or app code can call; `integration-setup.json` explains what a human needs to configure in the provider.
 
 The builder creates this file only when setup is needed:
 
@@ -190,7 +234,7 @@ The builder creates this file only when setup is needed:
 }
 ```
 
-Before writing the file, the builder calls `list_app_integration_keys` to check the current app's grant state without receiving secret values. Another app's credential does not satisfy this app. After the agent configuration is approved, the builder writes `integration-setup.json` and calls `present_integration_setup` before app implementation continues. The chat UI shows a compact "Instructions on how to set up ..." card, and the worker syncs the setup metadata into the integrations settings page immediately. If requirements change later, the builder updates `integration-setup.json` with the complete current requirements and calls `present_integration_setup` again, which replaces this app's grant set and re-syncs the integrations page. If the file is missing or invalid JSON, the platform does not register the integration. The file should use simple human language and verified links, not developer-only notes.
+Before writing the file, the builder calls `list_app_integration_keys` to check the current app's grant state without receiving secret values. Another app's credential does not satisfy this app. After the runtime policy is approved, the builder writes `integration-setup.json` and calls `present_integration_setup` before app implementation continues. The chat UI shows a compact "Instructions on how to set up ..." card, and the worker syncs the setup metadata into the integrations settings page immediately. If requirements change later, the builder updates `integration-setup.json` with the complete current requirements and calls `present_integration_setup` again, which replaces this app's grant set and re-syncs the integrations page. If the file is missing or invalid JSON, the platform does not register the integration. The file should use simple human language and verified links, not developer-only notes.
 
 ### Security policy
 
@@ -238,21 +282,52 @@ const { agents } = useAgentList();
 // agents: Array<{ id: string; name: string; description: string }>
 ```
 
+### `callIntegrationTool(toolName, input)`
+
+Calls a top-level `appTools[]` action from app code and returns the provider response to the iframe without exposing secrets or OAuth tokens.
+
+```typescript
+import { callIntegrationTool } from '@/lib/second-sdk';
+
+type EventsPage = {
+  results: Array<{ distinct_id?: string; event?: string }>;
+  next?: string | null;
+};
+
+const result = await callIntegrationTool<
+  { projectId: string; after?: string; before?: string; limit: number },
+  EventsPage
+>('posthog_events_page', {
+  projectId: '123',
+  after: '2026-05-01',
+  before: '2026-05-20',
+  limit: 100,
+});
+
+if (!result.success) {
+  throw new Error(result.error ?? 'PostHog request failed');
+}
+```
+
+The route resolves the approved app action server-side from `agents.json`; the iframe sends only `toolName` and `input`. Static secrets are read from the app-scoped integration grant. OAuth app actions use the current app viewer as the `triggering_user` identity.
+
 ### PostMessage protocol
 
 ```
 // App → Platform
 second:agent:trigger      { agentId, prompt }
 second:agents:list-request  {}
+second:integration:execute  { toolName, input }
 
 // Platform → App
 second:agent:update       { agentId, runId, status, result?, error? }
 second:agents:list-response { agents: [...] }
+second:integration:execute-response { success, data?, mock, mockReason?, statusCode?, error? }
 ```
 
 ## present_agents tool
 
-The builder agent calls `present_agents` after writing `agents.json`. This renders an interactive card in the chat showing each agent with its tools, integration requirements, and recommended labels. It is an approval stop: the tool returns the card payload, the runtime adapter stops the active turn, and the chat composer stays blocked until an admin/owner approves or someone requests changes from the agents card.
+The builder agent calls `present_agents` after writing `agents.json`. This renders an interactive card in the chat showing each agent and each top-level app action with its tools, integration requirements, and recommended labels. It is an approval stop: the tool returns the card payload, the runtime adapter stops the active turn, and the chat composer stays blocked until an admin/owner approves or someone requests changes from the agents card.
 
 The tool is registered as `mcp__second__present_agents` in the worker's `second` MCP server alongside `present_plan`, `list_app_integration_keys`, `present_integration_setup`, and `done_building`.
 
@@ -268,7 +343,7 @@ const presentAgents = tool(
 );
 ```
 
-`present_agents` validates the `agents.json` file on disk as the source of truth, including custom integration tool shape, and returns a fix-it message if the file is missing, invalid JSON, empty, or uses invalid custom-tool placeholders.
+`present_agents` validates the `agents.json` file on disk as the source of truth, including custom integration tool and app action shape, and returns a fix-it message if the file is missing, invalid JSON, empty, or uses invalid custom-tool placeholders. A file with no agents is valid when it has a non-empty top-level `appTools` array.
 
 When an admin or owner approves, `AppChat` first records the governed approval for the exact Agents card payload, then sends the follow-up user message that continues the build. On requested changes, it sends the feedback as the next user message and the builder must update `agents.json` and call `present_agents` again.
 
@@ -388,6 +463,12 @@ SSE stream of raw SDK messages from a running (or recently completed) agent. Yie
 | `PATCH` | `/api/workspaces/[wId]/apps/[aId]/agents` | Admin/owner/app creator: update draft agents.json in the draft source snapshot |
 | `POST` | `/api/workspaces/[wId]/apps/[aId]/agents/approval` | Admin/owner: approve the exact draft agents.json payload |
 
+### App integration actions
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute` | Browser-authenticated app action execution through the parent bridge |
+
 ### Internal (worker → web)
 
 | Method | Path | Purpose |
@@ -402,9 +483,9 @@ Internal endpoints bypass the browser auth proxy and authenticate via `INTERNAL_
 
 ## Custom tool execution
 
-Custom tools (type `"custom"` in agents.json) are HTTP requests to external APIs. The agent never sees API secrets, OAuth client secrets, refresh tokens, or access tokens. Tool execution is proxied through the web server's `/api/internal/tool-execute` endpoint, which verifies that the requested tool is present in the approved `agents.json` payload for the calling agent.
+Custom tools and app actions (type `"custom"` in agents.json) are HTTP requests to external APIs. The agent and iframe never see API secrets, OAuth client secrets, refresh tokens, or access tokens. Agent tool execution is proxied through the web server's `/api/internal/tool-execute` endpoint, which verifies that the requested tool is present in the approved `agents.json` payload for the calling agent. App action execution uses `/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute`, which resolves the canonical approved top-level `appTools[]` item server-side.
 
-For static tools, `tool-execute` injects named secrets and non-secret tool input placeholders at call time. For OAuth tools, it loads the app-agent run by `{ workspaceId, appId, runId }`, resolves `triggeredByUserId` from that server-created row, checks the user's connected account and scopes, refreshes the access token on demand if needed, injects `Authorization: Bearer <token>` server-side, and calls the provider API. See [Integrations](/integrations) for the full flow.
+For static tools, the shared executor injects named secrets and non-secret tool input placeholders at call time. For OAuth agent tools, it loads the app-agent run by `{ workspaceId, appId, runId }`, resolves `triggeredByUserId` from that server-created row, checks the user's connected account and scopes, refreshes the access token on demand if needed, injects `Authorization: Bearer <token>` server-side, and calls the provider API. For OAuth app actions, it uses the current authenticated app viewer as the OAuth user. See [Integrations](/integrations) for the full flow.
 
 When an integration is not configured, the tool returns a random entry from `mockData` so development can continue without real API credentials. This includes OAuth missing-account, revoked-account, missing-scope, or provider-config failures.
 
@@ -418,10 +499,13 @@ When a custom tool fails after execution begins, the app agent may call `mcp__ap
 | `apps/worker/src/agent-run-manager.ts` | Background agent execution with event buffering |
 | `apps/worker/src/index.ts` | `/sessions/:appId/agent-run` and events endpoints |
 | `apps/web/src/components/app-agent-bridge.tsx` | postMessage bridge — triggers agents, listens for status events |
+| `apps/web/src/components/app-integration-bridge.tsx` | postMessage bridge — executes app-callable integration actions |
 | `apps/web/src/app/api/.../agent-runs/route.ts` | Create run |
 | `apps/web/src/app/api/.../agent-runs/[rId]/stream/route.ts` | Start agent + SSE stream |
 | `apps/web/src/app/api/internal/agent-run-complete/route.ts` | Worker completion callback |
-| `apps/web/src/app/api/internal/tool-execute/route.ts` | Custom tool execution with secret injection |
+| `apps/web/src/app/api/internal/tool-execute/route.ts` | Internal app-agent custom tool approval enforcement |
+| `apps/web/src/app/api/.../app-tools/[toolName]/execute/route.ts` | Browser-authenticated app integration action execution |
+| `apps/web/src/lib/integrations/execute-http-action.ts` | Shared HTTP action executor with secret/OAuth injection, domain/IP guards, size limits, and mock fallback |
 | `apps/web/src/app/api/internal/tool-failure-report/route.ts` | App-agent tool failure recovery bridge to the builder |
 | `apps/web/src/app/api/internal/integration-requirements/route.ts` | Integration requirement sync from builder tools |
-| `apps/worker/src/workspace-template.ts` | SDK with `useAgent`, `useAgentList` hooks |
+| `apps/worker/src/workspace-template.ts` | SDK with `useAgent`, `useAgentList`, `callIntegrationTool`, and `useIntegrationTool` |
