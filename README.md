@@ -67,13 +67,6 @@ Second is a local / on-prem Lovable for building internal software (e.g. competi
 
 <!-- Teams love Second because it makes multiplayer AI simple, loved and finally- easy. -->
 
-### Second VS other platforms
-
-Most platforms weren't built for deep, multiplayer, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
-**Generally, multiplayer human-agent work is where coordination gets hard and things start to break, fast.**
-
-Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom interfaces to work with agents, tailored to what your team needs right now!
-
 ### How it Works
 
 Second is a single workspace.
@@ -82,7 +75,16 @@ Second is a single workspace.
 2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
 3. **Your team now works alongside agents-** in the same shared interface.
 
-`<<INSERT VIDEO/GIF OF APP GENERATION FLOW HERE>>`
+<p align="center">
+  <img src="docs/assets/screenshot_competitor_tracker.png" alt="Second — Competitor Research app with agent chat" width="100%">
+</p>
+
+## Second VS other solutions
+
+Most platforms weren't built for multiplayer, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
+**Generally, multiplayer human-agent work is where coordination gets hard and things start to break, fast.**
+
+Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom interfaces to work with agents, tailored to what your team needs right now.
 
 ---
 
