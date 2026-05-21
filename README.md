@@ -152,13 +152,17 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 <tr>
 <td width="100%" valign="top">
 
+<div align="center">
+
 <h3>🎯 Lead Enrichment Pipeline</h3>
 
 <sub>**Flow:** 🤖 Scrape leads → 🤖 Enrich from LinkedIn + web → 🤖 Score and rank → 👤 Team reviews top leads</sub><br>
 <sub>**Tools:** HubSpot, LinkedIn, Web Search</sub><br>
 <sub>**Agents:** Scraper Agent, Enrichment Agent, Scoring Agent</sub>
 
-<table width="100%">
+</div>
+
+<table align="center" width="90%" cellpadding="10">
   <tr>
     <td colspan="3"><strong>PIPELINE</strong> <span align="right">47 leads ▼</span></td>
   </tr>
@@ -192,13 +196,17 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 <tr>
 <td width="100%" valign="top">
 
+<div align="center">
+
 <h3>📊 GTM War Room</h3>
 
 <sub>**Flow:** 🤖 Agent pulls weekly metrics → 👤 PMM reviews positioning → 👤 Sales adds field notes → 🤖 Agent generates battlecard</sub><br>
 <sub>**Tools:** HubSpot, Slack, Google Docs, Analytics</sub><br>
 <sub>**Agents:** Metrics Agent, Battlecard Agent</sub>
 
-<table width="100%">
+</div>
+
+<table align="center" width="90%" cellpadding="10">
   <tr>
     <td colspan="2"><strong>GTM WAR ROOM</strong></td>
     <td align="right"><sub>Week 21 ▼</sub></td>
@@ -216,7 +224,7 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
     <td colspan="2"><strong>Sales added field note</strong><br>"Acme offering 40% discounts to win back churned accounts"</td>
   </tr>
   <tr>
-    <td width="36" align="center">💬</td>
+    <td width="36" align="center">🤖</td>
     <td colspan="2"><strong>Battlecard Agent</strong><br>"Updated battlecard with new field intel. 2 new objection handlers added."<br><br>👤 <code>[Review card]</code> <code>[Push to Docs]</code></td>
   </tr>
 </table>
