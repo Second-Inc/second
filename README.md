@@ -119,6 +119,11 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
   </tr>
 </table>
 
+> [!TIP]
+> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise).
+>
+> Need help with security, SSO, deployment, cost management, runtime setup, and SLA support? Contact [sales@second.so](mailto:sales@second.so).
+
 ---
 
 ## Features
