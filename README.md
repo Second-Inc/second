@@ -304,11 +304,8 @@ And many more:
 | **Product Feedback Loop** | Collect feedback from support tickets, reviews, and calls, cluster themes, surface to PM | Intercom, G2, Gong, Slack | Collection Agent, Clustering Agent, Summary Agent |
 | **Vendor & Contract Management** | Track renewal dates, compare pricing, flag expiring contracts, draft RFPs | Gmail, Google Drive, Slack | Tracker Agent, Comparison Agent, Draft Agent |
 | **SEO Content Pipeline** | Research keywords, generate briefs, draft articles, track rankings | Ahrefs, Web Search, Google Docs, Analytics | Research Agent, Brief Agent, Writer Agent |
-| **Event & Webinar Ops** | Manage registrations, send reminders, collect feedback, generate post-event reports | Google Calendar, Gmail, Typeform, Slack | Registration Agent, Comms Agent, Report Agent |
 | **Security Alert Triage** | Ingest alerts from multiple tools, deduplicate, prioritize, assign to on-call | PagerDuty, Slack, Jira, SIEM API | Ingestion Agent, Triage Agent, Assignment Agent |
-| **Competitive Deal Intel** | Track competitor mentions in lost deals, aggregate win/loss patterns, update battlecards | HubSpot, Gong, Slack, Google Docs | Tracker Agent, Pattern Agent, Battlecard Agent |
 | **Meeting Follow-ups** | Record action items from meetings, assign owners, send follow-up emails, track completion | Google Calendar, Gong, Gmail, Slack | Notes Agent, Follow-up Agent, Tracker Agent |
-| **Social Coverage** | Monitor brand and keyword mentions across platforms, analyze trends, surface opportunities | Twitter/X, Reddit, LinkedIn, Web Search | Listener Agent, Trend Agent, Alert Agent |
 
 Your team sees everything in one collaborative interface. Agents write to the same database your team reads from. No export, no copy-paste, no context switching.
 
