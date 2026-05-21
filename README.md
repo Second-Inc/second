@@ -84,7 +84,7 @@ Second is a single workspace.
 Most platforms weren't built for multiplayer, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
 **Generally, multiplayer human-agent work is where coordination gets hard and things start to break.**
 
-Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom interfaces to work with agents, tailored to what your team needs right now.
+Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom interfaces to work with agents, tailored to what your team needs right now!
 
 ---
 
@@ -309,7 +309,7 @@ And many more:
 | **Security Alert Triage** | Ingest alerts from multiple tools, deduplicate, prioritize, assign to on-call | PagerDuty, Slack, Jira, SIEM API | Ingestion Agent, Triage Agent, Assignment Agent |
 | **Meeting Follow-ups** | Record action items from meetings, assign owners, send follow-up emails, track completion | Google Calendar, Gong, Gmail, Notion | Notes Agent, Follow-up Agent, Tracker Agent |
 
-Your team sees everything in one collaborative interface. Agents write to the same database your team reads from. No export, no copy-paste, no context switching.
+<!-- Your team sees everything in one collaborative workspace. Agents write to the same database your team reads from. No export, no copy-paste, no context switching. -->
 
 ---
 
