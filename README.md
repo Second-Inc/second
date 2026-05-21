@@ -293,13 +293,22 @@ And many more:
 
 | Use Case | What It Does | Tools | Agents |
 |:---|:---|:---|:---|
-| **Social Media Ops** | Draft posts, schedule across platforms, track engagement, repurpose top performers | Twitter/X, LinkedIn, Buffer | Content Agent, Analytics Agent |
-| **Recruiting Pipeline** | Source candidates, screen resumes, schedule interviews, track pipeline | LinkedIn, ATS, Google Calendar, Gmail | Sourcing Agent, Screening Agent |
-| **Customer Success** | Pull data from CRMs and support tools, surface churn risk, draft outreach | HubSpot, Intercom, Slack | Insights Agent, Outreach Agent |
-| **Invoice & Expense Tracking** | Collect invoices from email, extract data, match to POs, flag discrepancies | Gmail, Google Drive, Accounting API | Extraction Agent, Matching Agent |
-| **Compliance Monitoring** | Scan for policy violations, flag issues, route to approvers | Internal APIs, Slack, Jira | Compliance Agent, Routing Agent |
-| **Internal Knowledge Base** | Continuously index docs, summarize updates, answer team questions | Notion, Confluence, Slack | Indexing Agent, Q&A Agent |
-| **Founder's Daily Brief** | Aggregate metrics, news, emails, and calendar into one morning summary | Gmail, Google Calendar, Analytics, Web Search | Brief Agent |
+| **Social Media Ops** | Draft posts, schedule across platforms, track engagement, repurpose top performers | Twitter/X, LinkedIn, Buffer | Content Agent, Scheduling Agent, Analytics Agent |
+| **Recruiting Pipeline** | Source candidates, screen resumes, schedule interviews, track pipeline | LinkedIn, ATS, Google Calendar, Gmail | Sourcing Agent, Screening Agent, Scheduling Agent |
+| **Customer Success** | Pull data from CRMs and support tools, surface churn risk, draft outreach | HubSpot, Intercom, Slack | Insights Agent, Churn Agent, Outreach Agent |
+| **Invoice & Expense Tracking** | Collect invoices from email, extract data, match to POs, flag discrepancies | Gmail, Google Drive, Accounting API | Extraction Agent, Matching Agent, Approval Agent |
+| **Compliance Monitoring** | Scan for policy violations, flag issues, route to approvers | Internal APIs, Slack, Jira | Compliance Agent, Triage Agent, Routing Agent |
+| **Internal Knowledge Base** | Continuously index docs, summarize updates, answer team questions | Notion, Confluence, Slack | Indexing Agent, Summary Agent, Q&A Agent |
+| **Founder's Daily Brief** | Aggregate metrics, news, emails, and calendar into one morning summary | Gmail, Google Calendar, Analytics, Web Search | Metrics Agent, News Agent, Brief Agent |
+| **PR & Media Monitoring** | Track brand mentions, analyze sentiment, draft responses, alert on crises | Web Search, Twitter/X, Slack, Google Docs | Monitor Agent, Sentiment Agent, Response Agent |
+| **Product Feedback Loop** | Collect feedback from support tickets, reviews, and calls, cluster themes, surface to PM | Intercom, G2, Gong, Slack | Collection Agent, Clustering Agent, Summary Agent |
+| **Vendor & Contract Management** | Track renewal dates, compare pricing, flag expiring contracts, draft RFPs | Gmail, Google Drive, Slack | Tracker Agent, Comparison Agent, Draft Agent |
+| **SEO Content Pipeline** | Research keywords, generate briefs, draft articles, track rankings | Ahrefs, Web Search, Google Docs, Analytics | Research Agent, Brief Agent, Writer Agent |
+| **Event & Webinar Ops** | Manage registrations, send reminders, collect feedback, generate post-event reports | Google Calendar, Gmail, Typeform, Slack | Registration Agent, Comms Agent, Report Agent |
+| **Security Alert Triage** | Ingest alerts from multiple tools, deduplicate, prioritize, assign to on-call | PagerDuty, Slack, Jira, SIEM API | Ingestion Agent, Triage Agent, Assignment Agent |
+| **Competitive Deal Intel** | Track competitor mentions in lost deals, aggregate win/loss patterns, update battlecards | HubSpot, Gong, Slack, Google Docs | Tracker Agent, Pattern Agent, Battlecard Agent |
+| **Meeting Follow-ups** | Record action items from meetings, assign owners, send follow-up emails, track completion | Google Calendar, Gong, Gmail, Slack | Notes Agent, Follow-up Agent, Tracker Agent |
+| **Social Coverage** | Monitor brand and keyword mentions across platforms, analyze trends, surface opportunities | Twitter/X, Reddit, LinkedIn, Web Search | Listener Agent, Trend Agent, Alert Agent |
 
 Your team sees everything in one collaborative interface. Agents write to the same database your team reads from. No export, no copy-paste, no context switching.
 
