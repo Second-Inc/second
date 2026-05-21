@@ -302,10 +302,10 @@ And many more:
 | **Founder's Daily Brief** | Aggregate metrics, news, emails, and calendar into one morning summary | Gmail, Google Calendar, Analytics, Web Search | Metrics Agent, News Agent, Brief Agent |
 | **PR & Media Monitoring** | Track brand mentions, analyze sentiment, draft responses, alert on crises | Web Search, Twitter/X, Slack, Google Docs | Monitor Agent, Sentiment Agent, Response Agent |
 | **Product Feedback Loop** | Collect feedback from support tickets, reviews, and calls, cluster themes, surface to PM | Intercom, G2, Gong, Slack | Collection Agent, Clustering Agent, Summary Agent |
-| **Vendor & Contract Management** | Track renewal dates, compare pricing, flag expiring contracts, draft RFPs | Gmail, Google Drive, Slack | Tracker Agent, Comparison Agent, Draft Agent |
-| **SEO Content Pipeline** | Research keywords, generate briefs, draft articles, track rankings | Ahrefs, Web Search, Google Docs, Analytics | Research Agent, Brief Agent, Writer Agent |
+| **Vendor & Contract Management** | Track renewal dates, compare pricing, flag expiring contracts, draft RFPs | Gmail, Notion, Slack | Tracker Agent, Comparison Agent, Draft Agent |
+| **SEO Content Pipeline** | Research keywords, generate briefs, draft articles, track rankings | Ahrefs, Web Search, Notion, Analytics | Research Agent, Brief Agent, Writer Agent |
 | **Security Alert Triage** | Ingest alerts from multiple tools, deduplicate, prioritize, assign to on-call | PagerDuty, Slack, Jira, SIEM API | Ingestion Agent, Triage Agent, Assignment Agent |
-| **Meeting Follow-ups** | Record action items from meetings, assign owners, send follow-up emails, track completion | Google Calendar, Gong, Gmail, Slack | Notes Agent, Follow-up Agent, Tracker Agent |
+| **Meeting Follow-ups** | Record action items from meetings, assign owners, send follow-up emails, track completion | Google Calendar, Gong, Gmail, Notion | Notes Agent, Follow-up Agent, Tracker Agent |
 
 Your team sees everything in one collaborative interface. Agents write to the same database your team reads from. No export, no copy-paste, no context switching.
 
