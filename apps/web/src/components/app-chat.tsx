@@ -1131,7 +1131,8 @@ function pendingBlockingApprovalFromMessages(
             : planApprovalAnalytics(record.input);
         if (
           kind === "agents" &&
-          analytics.agent_count === 0
+          analytics.agent_count === 0 &&
+          analytics.app_tool_count === 0
         ) {
           continue;
         }
@@ -3527,6 +3528,11 @@ export function AppChat({
       const approvedAppTools = Array.isArray(agentsJson.appTools)
         ? agentsJson.appTools
         : [];
+      const approvalSubject = approvedAgents.length === 0 && approvedAppTools.length > 0
+        ? "Backend"
+        : approvedAgents.length > 0 && approvedAppTools.length > 0
+          ? "Agents and backend"
+          : "Agents";
       captureAnalyticsEvent("approval acted", {
         workspace_id: workspaceId,
         app_id: appId,
@@ -3558,21 +3564,21 @@ export function AppChat({
 
       if (approvalMode === "mock") {
         setMockApprovedToolCallIds((current) => new Set(current).add(toolCallId));
-        toast.success("Agents approved for mock-data development.", {
+        toast.success(`${approvalSubject} approved for mock-data development.`, {
           description:
             "Real data from integrations still requires review by a workspace admin or owner.",
         });
         sendMessageSafely(
-          "Agents approved for mock-data development. Continue building, but use mock data for integrations until live credentials are approved.",
+          `${approvalSubject} approved for mock-data development. Continue building, but use mock data for integrations until live credentials are approved.`,
         );
         return;
       }
 
-      toast.success("Agent config approved.", {
+      toast.success(`${approvalSubject} approved.`, {
         description: "This exact agents.json revision can use live runtime tools.",
       });
       sendMessageSafely(
-        "Agents approved. Continue with integration setup and implementation.",
+        `${approvalSubject} approved. Continue with integration setup and implementation.`,
       );
     } catch {
       toast.error("Could not approve agent config.", {
@@ -3751,13 +3757,27 @@ export function AppChat({
   const readyAttachmentCount = attachments.filter(
     (attachment) => attachment.status === "uploaded",
   ).length;
+  const pendingApprovalAgentCount =
+    typeof pendingApproval?.analytics.agent_count === "number"
+      ? pendingApproval.analytics.agent_count
+      : 0;
+  const pendingApprovalAppToolCount =
+    typeof pendingApproval?.analytics.app_tool_count === "number"
+      ? pendingApproval.analytics.app_tool_count
+      : 0;
+  const pendingApprovalIsBackendOnly =
+    pendingApproval?.kind === "agents" &&
+    pendingApprovalAgentCount === 0 &&
+    pendingApprovalAppToolCount > 0;
   const pendingApprovalPlaceholder =
     pendingApproval?.kind === "plan"
       ? "Approve or request changes to the plan to continue..."
       : pendingApproval?.kind === "suggestions"
         ? "Choose a suggestion to continue..."
       : pendingApproval?.kind === "agents"
-        ? "Approve or request changes to the agents to continue..."
+        ? pendingApprovalIsBackendOnly
+          ? "Approve or request changes to the backend to continue..."
+          : "Approve or request changes to the agents to continue..."
         : "Send a message...";
   const firstUserMessageId = useMemo(
     () => messages.find((message) => message.role === "user")?.id ?? null,
@@ -4263,7 +4283,9 @@ export function AppChat({
                                   app_tool_count: appToolCount,
                                 });
                                 sendMessageSafely(
-                                  `Please revise agents.json with this feedback and present it again:\n\n${fb}`,
+                                  agentCount === 0 && appToolCount > 0
+                                    ? `Please revise the backend functions in agents.json with this feedback and present it again:\n\n${fb}`
+                                    : `Please revise agents.json with this feedback and present it again:\n\n${fb}`,
                                 );
                               }}
                             />

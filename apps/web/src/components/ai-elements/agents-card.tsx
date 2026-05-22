@@ -964,7 +964,7 @@ export function AgentsCard({
     ? validateAgents([
         {
           id: "app-tools",
-          name: "App actions",
+          name: "Backend functions",
           description: "",
           systemPrompt: "",
           tools: appTools,
@@ -976,6 +976,25 @@ export function AgentsCard({
     ...appToolValidationIssues,
   ];
   const hasValidationIssues = validationIssues.length > 0;
+  const isBackendOnly = !hasAgents && hasAppTools;
+  const eyebrowLabel = isBackendOnly ? "Backend" : "Agents";
+  const approvalParts = [
+    hasAgents
+      ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+      : null,
+    hasAppTools
+      ? `${appTools.length} backend function${appTools.length === 1 ? "" : "s"}`
+      : null,
+  ].filter(Boolean);
+  const approvalRequiresPlural =
+    approvalParts.length > 1 || agents.length > 1 || appTools.length > 1;
+  const approvalSummary =
+    approvalParts.length > 0
+      ? `${approvalParts.join(" and ")} ${approvalRequiresPlural ? "require" : "requires"} approval`
+      : "Agent configuration requires approval";
+  const feedbackPlaceholder = isBackendOnly
+    ? "What would you like to change about the backend functions?"
+    : "What would you like to change about the agent configuration?";
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -1012,19 +1031,10 @@ export function AgentsCard({
       >
         <div>
           <div className="text-[11px] font-medium text-muted-foreground/50 mb-2.5">
-            Agents
+            {eyebrowLabel}
           </div>
           <span className="text-[15px] font-semibold tracking-[-0.01em]">
-            {hasAgents || hasAppTools
-              ? [
-                  hasAgents
-                    ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
-                    : null,
-                  hasAppTools
-                    ? `${appTools.length} app action${appTools.length === 1 ? "" : "s"}`
-                    : null,
-                ].filter(Boolean).join(" and ")
-              : "Agent configuration"}
+            {approvalSummary}
           </span>
           {hasValidationIssues ? (
             <Badge variant="destructive" className="gap-1 ml-2 align-middle">
@@ -1058,7 +1068,7 @@ export function AgentsCard({
             <textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              placeholder="What would you like to change about the agent configuration?"
+              placeholder={feedbackPlaceholder}
               rows={3}
               className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               autoFocus
@@ -1098,9 +1108,9 @@ export function AgentsCard({
               <WrenchIcon className="size-4 text-muted-foreground" />
             </div>
             <div className="min-w-0">
-              <div className="text-[15px] font-semibold">App actions</div>
+              <div className="text-[15px] font-semibold">Backend functions</div>
               <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-                Callable from app code through the Second SDK.
+                Server-side integration calls available to app code.
               </p>
             </div>
           </div>
@@ -1161,7 +1171,7 @@ export function AgentsCard({
         <Skeleton className="h-28 rounded-2xl" />
       ) : hasAppTools ? null : (
         <div className="text-sm text-muted-foreground">
-          No agents or app actions found in the presented configuration.
+          No agents or backend functions found in the presented configuration.
         </div>
       )}
 
@@ -1170,7 +1180,9 @@ export function AgentsCard({
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
           <div className="flex items-center gap-2 font-medium">
             <AlertTriangleIcon className="size-3.5" />
-            Agent configuration needs changes before approval
+            {isBackendOnly
+              ? "Backend configuration needs changes before approval"
+              : "Agent configuration needs changes before approval"}
           </div>
           <div className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed">
             {validationIssues.map((issue, index) => (
@@ -1192,8 +1204,9 @@ export function AgentsCard({
           <ShieldCheckIcon />
           <AlertTitle>Approved for mock-data development</AlertTitle>
           <AlertDescription>
-            Continue building with these agents, but use mock data for
-            integrations until this app is reviewed by an admin or owner.
+            {isBackendOnly
+              ? "Continue building with these backend functions, but use mock data for integrations until this app is reviewed by an admin or owner."
+              : "Continue building with these agents, but use mock data for integrations until this app is reviewed by an admin or owner."}
           </AlertDescription>
         </Alert>
       ) : null}

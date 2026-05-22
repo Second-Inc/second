@@ -186,7 +186,7 @@ Integration credentials are already app-scoped. The current secure execution pat
 - [x] 2026-05-20 22:08 IDT: Added browser-authenticated app action route, iframe parent bridge, and generated SDK `callIntegrationTool` / `useIntegrationTool`.
 - [x] 2026-05-20 22:08 IDT: Updated builder prompt, integration skill guidance, and docs for deterministic app-callable integration actions.
 - [x] 2026-05-20 22:08 IDT: Ran `npm run typecheck` successfully.
-- [ ] Browser QA has not run.
+- [x] 2026-05-21 IDT: Ran Chrome browser QA with a PostHog appTools-only mock dashboard; fixed and re-tested the appTools-only approval-state bug found during QA.
 
 
 ## Surprises & Discoveries
@@ -878,10 +878,10 @@ Implemented the v1 architecture described in this plan:
 Validation:
 
 - `npm run typecheck` completed successfully for `apps/web` and `apps/worker`.
+- Chrome QA built a PostHog appTools-only dashboard in mock mode. The generated app showed 50 mock events, four user groups, and `HTTP 200`; the app iframe route returned 200 and audit logs recorded `tool.custom.mocked` with `source: app_iframe`.
 
 Known limitations:
 
-- Browser QA was not run because this implementation request did not explicitly request browser QA or dev-server startup.
 - The feature still executes one bounded HTTP request per SDK call. Bulk provider reads should page through app actions and aggregate in app code.
 - `integration-setup.json` remains setup metadata only; approved runtime policy lives in `agents.json`.
 
@@ -891,6 +891,7 @@ Known limitations:
 
 - 2026-05-20, Codex: Initial plan created from SEC-141, repository docs, and source inspection.
 - 2026-05-20, Codex: Implemented app-callable integration actions with shared HTTP execution, SDK bridge, approval card support, builder guidance, docs, and successful typecheck.
+- 2026-05-21, Codex: Browser QA found appTools-only `present_agents` cards were rendered but not treated as active approvals because the pending approval detector only checked `agent_count`. Fixed the detector to allow approval when `app_tool_count` is non-zero, then re-tested the mock PostHog app end to end.
 
 
 ## Captured User Intent (Verbatim)
