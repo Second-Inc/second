@@ -21,6 +21,31 @@ import { isVaultConfigured, readSecret } from "@/lib/vault";
 
 const TOOL_EXECUTE_TIMEOUT = 30_000; // 30 seconds
 const MAX_RESPONSE_SIZE = 1_024 * 1_024; // 1MB
+const MAX_ERROR_DETAIL_CHARS = 2_000;
+
+export type IntegrationActionErrorCategory =
+  | "configuration"
+  | "credential"
+  | "permission"
+  | "input"
+  | "provider"
+  | "rate_limit"
+  | "network"
+  | "timeout"
+  | "response_limit"
+  | "secret"
+  | "oauth"
+  | "policy"
+  | "unknown";
+
+type IntegrationActionErrorFields = {
+  errorCode: string;
+  errorCategory: IntegrationActionErrorCategory;
+  resolution: string;
+  retryable: boolean;
+  canRequestBuilderRepair: boolean;
+  details?: Record<string, unknown>;
+};
 
 export type ToolEndpoint = {
   method: string;
@@ -54,6 +79,12 @@ export type IntegrationActionResponseBody = {
   mock: boolean;
   mockReason?: string;
   statusCode?: number;
+  errorCode?: string;
+  errorCategory?: IntegrationActionErrorCategory;
+  resolution?: string;
+  retryable?: boolean;
+  canRequestBuilderRepair?: boolean;
+  details?: Record<string, unknown>;
 };
 
 export type IntegrationActionAudit = {
@@ -90,6 +121,55 @@ export type OAuthTokenRefreshAuditInput = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const SENSITIVE_ERROR_KEY_PATTERN =
+  /password|token|secret|api[-_]?key|authorization|cookie|set-cookie|session|private[-_]?key/i;
+
+function truncateDiagnosticString(value: string, maxLength = MAX_ERROR_DETAIL_CHARS) {
+  const normalized = value.replace(/\u0000/g, "").trim();
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}...`
+    : normalized;
+}
+
+function sanitizeDiagnosticValue(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") return truncateDiagnosticString(value);
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 4) return "[Max depth reached]";
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((item) => sanitizeDiagnosticValue(item, depth + 1));
+  }
+  if (isRecord(value)) {
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value).slice(0, 40)) {
+      output[key] = SENSITIVE_ERROR_KEY_PATTERN.test(key)
+        ? "[REDACTED]"
+        : sanitizeDiagnosticValue(entry, depth + 1);
+    }
+    return output;
+  }
+  return truncateDiagnosticString(String(value));
+}
+
+function diagnosticDetails(
+  details: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!details) return undefined;
+  const sanitized = sanitizeDiagnosticValue(details);
+  return isRecord(sanitized) ? sanitized : undefined;
+}
+
+function errorFields(input: IntegrationActionErrorFields) {
+  return {
+    errorCode: input.errorCode,
+    errorCategory: input.errorCategory,
+    resolution: input.resolution,
+    retryable: input.retryable,
+    canRequestBuilderRepair: input.canRequestBuilderRepair,
+    ...(input.details ? { details: diagnosticDetails(input.details) } : {}),
+  };
 }
 
 export function normalizeToolIntegration(value: unknown): {
@@ -265,10 +345,32 @@ export function createIntegrationActionDeniedResult(input: {
   error: string;
   status: number;
   metadata?: Record<string, unknown>;
+  errorCode?: string;
+  errorCategory?: IntegrationActionErrorCategory;
+  resolution?: string;
+  retryable?: boolean;
+  canRequestBuilderRepair?: boolean;
+  details?: Record<string, unknown>;
 }): IntegrationActionExecutionResult {
+  const code = input.errorCode ??
+    (typeof input.metadata?.reason === "string" ? input.metadata.reason : "tool_denied");
+  const diagnostics = errorFields({
+    errorCode: code,
+    errorCategory: input.errorCategory ?? "policy",
+    resolution: input.resolution ?? "Review the approved backend function policy and try again.",
+    retryable: input.retryable ?? false,
+    canRequestBuilderRepair: input.canRequestBuilderRepair ?? false,
+    details: input.details,
+  });
+
   return {
     status: input.status,
-    body: { success: false, error: input.error, mock: false },
+    body: {
+      success: false,
+      error: input.error,
+      mock: false,
+      ...diagnostics,
+    },
     audit: {
       eventName: "tool.custom.denied",
       outcome: "denied",
@@ -277,6 +379,7 @@ export function createIntegrationActionDeniedResult(input: {
       metadata: {
         error: input.error,
         httpStatus: input.status,
+        ...diagnostics,
         ...(input.metadata ?? {}),
       },
     },
@@ -289,10 +392,32 @@ function createFailureResult(input: {
   status: number;
   metadata?: Record<string, unknown>;
   integration?: IntegrationGrantWithCredential | null;
+  errorCode?: string;
+  errorCategory?: IntegrationActionErrorCategory;
+  resolution?: string;
+  retryable?: boolean;
+  canRequestBuilderRepair?: boolean;
+  details?: Record<string, unknown>;
 }): IntegrationActionExecutionResult {
+  const code = input.errorCode ??
+    (typeof input.metadata?.reason === "string" ? input.metadata.reason : "tool_failed");
+  const diagnostics = errorFields({
+    errorCode: code,
+    errorCategory: input.errorCategory ?? "unknown",
+    resolution: input.resolution ?? "Try again. If the problem repeats, ask the builder to inspect the backend function.",
+    retryable: input.retryable ?? false,
+    canRequestBuilderRepair: input.canRequestBuilderRepair ?? false,
+    details: input.details,
+  });
+
   return {
     status: input.status,
-    body: { success: false, error: input.error, mock: false },
+    body: {
+      success: false,
+      error: input.error,
+      mock: false,
+      ...diagnostics,
+    },
     audit: {
       integration: input.integration,
       eventName: "tool.custom.failed",
@@ -302,6 +427,7 @@ function createFailureResult(input: {
       metadata: {
         error: input.error,
         httpStatus: input.status,
+        ...diagnostics,
         ...(input.metadata ?? {}),
       },
     },
@@ -316,6 +442,10 @@ function missingInputResult(input: {
     toolName: input.toolName,
     error: `Missing tool input value(s): ${[...input.missingPlaceholders].join(", ")}`,
     status: 400,
+    errorCode: "missing_input_placeholders",
+    errorCategory: "input",
+    resolution: `Pass values for: ${[...input.missingPlaceholders].join(", ")}.`,
+    canRequestBuilderRepair: true,
     metadata: {
       reason: "missing_input_placeholders",
       missingPlaceholders: [...input.missingPlaceholders],
@@ -330,6 +460,216 @@ function normalizeDomain(domain: string): string {
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
     .replace(/^www\./, "");
+}
+
+function providerDisplayName(toolSpec: CustomHttpActionSpec): string {
+  const configuredName = toolSpec.integration.name?.trim();
+  if (configuredName) return configuredName;
+  const domain = toolSpec.integration.domain?.trim();
+  return domain ? normalizeDomain(domain) : "Provider";
+}
+
+function extractProviderMessage(value: unknown, depth = 0): string | null {
+  if (value === null || value === undefined || depth > 4) return null;
+  if (typeof value === "string") {
+    const trimmed = truncateDiagnosticString(value, 500);
+    return trimmed || null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const messages = value
+      .slice(0, 4)
+      .map((item) => extractProviderMessage(item, depth + 1))
+      .filter((item): item is string => Boolean(item));
+    return messages.length > 0 ? messages.join("; ") : null;
+  }
+  if (!isRecord(value)) return null;
+
+  const preferredKeys = [
+    "detail",
+    "message",
+    "error_description",
+    "error",
+    "title",
+    "description",
+    "reason",
+    "code",
+    "errors",
+  ];
+  for (const key of preferredKeys) {
+    if (key in value && !SENSITIVE_ERROR_KEY_PATTERN.test(key)) {
+      const message = extractProviderMessage(value[key], depth + 1);
+      if (message) return message;
+    }
+  }
+
+  for (const [key, entry] of Object.entries(value).slice(0, 8)) {
+    if (SENSITIVE_ERROR_KEY_PATTERN.test(key)) continue;
+    const message = extractProviderMessage(entry, depth + 1);
+    if (message) return message;
+  }
+  return null;
+}
+
+function providerFailureFields(input: {
+  toolSpec: CustomHttpActionSpec;
+  status: number;
+  statusText: string;
+  data: unknown;
+  method: string;
+  hostname: string;
+}): { error: string } & IntegrationActionErrorFields {
+  const providerName = providerDisplayName(input.toolSpec);
+  const statusText = input.statusText.trim();
+  const statusLabel = statusText
+    ? `${input.status} ${statusText}`
+    : String(input.status);
+  const providerMessage = extractProviderMessage(input.data);
+  const baseDetails = {
+    provider: providerName,
+    providerStatus: input.status,
+    providerStatusText: statusText || undefined,
+    providerMessage: providerMessage ?? undefined,
+    method: input.method,
+    hostname: input.hostname,
+  };
+
+  if (input.status === 401) {
+    return {
+      error: providerMessage
+        ? `${providerName} rejected the configured credential with HTTP ${statusLabel}: ${providerMessage}`
+        : `${providerName} rejected the configured credential with HTTP ${statusLabel}.`,
+      errorCode: "provider_unauthorized",
+      errorCategory: "credential",
+      resolution: `Check or rotate the configured ${providerName} API key or token for this app.`,
+      retryable: false,
+      canRequestBuilderRepair: false,
+      details: baseDetails,
+    };
+  }
+
+  if (input.status === 403) {
+    return {
+      error: providerMessage
+        ? `${providerName} denied the request with HTTP ${statusLabel}: ${providerMessage}`
+        : `${providerName} denied the request with HTTP ${statusLabel}.`,
+      errorCode: "provider_forbidden",
+      errorCategory: "permission",
+      resolution: `Check that the configured ${providerName} credential has the required scopes, permissions, and organization access.`,
+      retryable: false,
+      canRequestBuilderRepair: false,
+      details: baseDetails,
+    };
+  }
+
+  if (input.status === 404) {
+    return {
+      error: providerMessage
+        ? `${providerName} returned HTTP ${statusLabel}: ${providerMessage}`
+        : `${providerName} returned HTTP ${statusLabel}.`,
+      errorCode: "provider_not_found",
+      errorCategory: "input",
+      resolution: "Check the app input values, such as organization slug, project ID, resource ID, or the approved endpoint path.",
+      retryable: false,
+      canRequestBuilderRepair: true,
+      details: baseDetails,
+    };
+  }
+
+  if (input.status === 408 || input.status === 425 || input.status === 429) {
+    return {
+      error: providerMessage
+        ? `${providerName} asked the app to retry later with HTTP ${statusLabel}: ${providerMessage}`
+        : `${providerName} asked the app to retry later with HTTP ${statusLabel}.`,
+      errorCode: input.status === 429 ? "provider_rate_limited" : "provider_retry_later",
+      errorCategory: "rate_limit",
+      resolution: "Wait briefly, then retry the request. If this happens often, reduce request frequency or page size.",
+      retryable: true,
+      canRequestBuilderRepair: false,
+      details: baseDetails,
+    };
+  }
+
+  if (input.status >= 500) {
+    return {
+      error: providerMessage
+        ? `${providerName} returned HTTP ${statusLabel}: ${providerMessage}`
+        : `${providerName} returned HTTP ${statusLabel}.`,
+      errorCode: "provider_server_error",
+      errorCategory: "provider",
+      resolution: `Retry later. ${providerName} returned a server-side error.`,
+      retryable: true,
+      canRequestBuilderRepair: false,
+      details: baseDetails,
+    };
+  }
+
+  if (input.status >= 300 && input.status < 400) {
+    return {
+      error: `${providerName} returned HTTP ${statusLabel} instead of the expected JSON response.`,
+      errorCode: "provider_redirect",
+      errorCategory: "configuration",
+      resolution: "Update the approved backend function endpoint to the provider's final HTTPS API URL.",
+      retryable: false,
+      canRequestBuilderRepair: true,
+      details: baseDetails,
+    };
+  }
+
+  return {
+    error: providerMessage
+      ? `${providerName} returned HTTP ${statusLabel}: ${providerMessage}`
+      : `${providerName} returned HTTP ${statusLabel}.`,
+    errorCode: input.status === 400 || input.status === 422
+      ? "provider_rejected_request"
+      : "provider_http_error",
+    errorCategory: input.status === 400 || input.status === 422
+      ? "input"
+      : "provider",
+    resolution: "Check the app input values and the approved backend function endpoint, query parameters, and request body.",
+    retryable: false,
+    canRequestBuilderRepair: true,
+    details: baseDetails,
+  };
+}
+
+function networkFailureFields(input: {
+  toolSpec: CustomHttpActionSpec;
+  error: unknown;
+  method: string;
+  hostname: string;
+}): { error: string } & IntegrationActionErrorFields {
+  const providerName = providerDisplayName(input.toolSpec);
+  const message = input.error instanceof Error
+    ? input.error.message
+    : String(input.error);
+  const name = input.error instanceof Error ? input.error.name : "";
+  const isTimeout =
+    name === "TimeoutError" ||
+    name === "AbortError" ||
+    /timed?\s*out|timeout/i.test(message);
+
+  return {
+    error: isTimeout
+      ? `${providerName} request timed out after ${TOOL_EXECUTE_TIMEOUT / 1000} seconds.`
+      : `${providerName} request failed before a response was received: ${truncateDiagnosticString(message, 500)}`,
+    errorCode: isTimeout ? "provider_request_timeout" : "provider_network_error",
+    errorCategory: isTimeout ? "timeout" : "network",
+    resolution: isTimeout
+      ? "Retry with a narrower query or smaller page size. If it repeats, inspect the backend function endpoint."
+      : "Check provider availability and the approved backend function hostname, then retry.",
+    retryable: true,
+    canRequestBuilderRepair: !isTimeout,
+    details: {
+      provider: providerName,
+      method: input.method,
+      hostname: input.hostname,
+      errorName: name || undefined,
+      message,
+    },
+  };
 }
 
 function readToolInputValue(
@@ -650,6 +990,8 @@ async function resolveOAuthUserId(input: {
         toolName: input.toolName,
         error: "OAuth custom tools require a server-created app-agent run ID.",
         status: 400,
+        errorCategory: "oauth",
+        resolution: "Run this OAuth tool through a trusted app-agent run or app runtime viewer.",
         metadata: { reason: "missing_run_id" },
       }),
     };
@@ -667,6 +1009,8 @@ async function resolveOAuthUserId(input: {
         toolName: input.toolName,
         error: "OAuth custom tools require a run with a triggering user.",
         status: 403,
+        errorCategory: "oauth",
+        resolution: "Start the app-agent run from an authenticated user before calling this OAuth tool.",
         metadata: { reason: "missing_triggering_user" },
       }),
     };
@@ -692,6 +1036,9 @@ export async function executeIntegrationHttpAction(input: {
       toolName,
       error: "Custom tools require endpoint and integration.domain",
       status: 400,
+      errorCategory: "configuration",
+      resolution: "Fix agents.json so this backend function includes endpoint and integration.domain, then present it for approval again.",
+      canRequestBuilderRepair: true,
       metadata: { reason: "invalid_tool_spec" },
     });
   }
@@ -700,6 +1047,9 @@ export async function executeIntegrationHttpAction(input: {
       toolName,
       error: "Custom tools require endpoint.method and endpoint.url",
       status: 400,
+      errorCategory: "configuration",
+      resolution: "Fix agents.json so this backend function includes endpoint.method and endpoint.url, then present it for approval again.",
+      canRequestBuilderRepair: true,
       metadata: { reason: "invalid_tool_endpoint" },
     });
   }
@@ -734,6 +1084,9 @@ export async function executeIntegrationHttpAction(input: {
       toolName,
       error: "Tool auth metadata does not match this app's integration grant.",
       status: 403,
+      errorCategory: "configuration",
+      resolution: "Update agents.json or integration-setup.json so the approved auth metadata matches the app's configured integration.",
+      canRequestBuilderRepair: true,
       metadata: { reason: "integration_auth_mismatch", authType: requestedAuth.type },
     });
   }
@@ -824,6 +1177,11 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: message,
         status: 502,
+        errorCode: "oauth_token_broker_failed",
+        errorCategory: "oauth",
+        resolution: "Reconnect the OAuth account or check the workspace OAuth provider configuration.",
+        retryable: false,
+        canRequestBuilderRepair: false,
         metadata: {
           reason: "oauth_token_broker_failed",
           authType: "oauth2",
@@ -839,6 +1197,10 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "Static custom tools require an app-scoped integration grant.",
         status: 403,
+        errorCode: "integration_missing",
+        errorCategory: "configuration",
+        resolution: "Add integration-setup.json instructions for this backend function and present the setup card again.",
+        canRequestBuilderRepair: true,
         metadata: { reason: "integration_missing" },
       });
     }
@@ -866,6 +1228,11 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "Failed to read secret",
         status: 500,
+        errorCode: "secret_read_failed",
+        errorCategory: "secret",
+        resolution: "Rotate the integration secret or check the server secret store configuration.",
+        retryable: false,
+        canRequestBuilderRepair: false,
         integration,
       });
     }
@@ -888,6 +1255,9 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "OAuth custom tools must not include token or secret placeholders. The broker injects the access token server-side.",
         status: 400,
+        errorCategory: "configuration",
+        resolution: "Remove token and secret placeholders from this OAuth backend function. Second injects OAuth access tokens server-side.",
+        canRequestBuilderRepair: true,
         metadata: {
           reason: "oauth_token_placeholder_rejected",
           secretPlaceholders,
@@ -903,6 +1273,9 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "OAuth custom tools must not declare their own Authorization header.",
         status: 400,
+        errorCategory: "configuration",
+        resolution: "Remove the Authorization header from this OAuth backend function. Second injects the bearer token server-side.",
+        canRequestBuilderRepair: true,
         metadata: { reason: "oauth_authorization_header_rejected" },
       });
     }
@@ -919,6 +1292,9 @@ export async function executeIntegrationHttpAction(input: {
       toolName,
       error: "Tool input was provided, but this endpoint does not use any input placeholders. Add placeholders like {{symbol}} or {{query}} to the endpoint spec to avoid static bulk API calls.",
       status: 400,
+      errorCategory: "configuration",
+      resolution: "Add explicit input placeholders to the backend function endpoint or stop passing unused input.",
+      canRequestBuilderRepair: true,
       metadata: { reason: "static_bulk_endpoint_guard" },
     });
   }
@@ -953,6 +1329,10 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "Invalid URL",
         status: 400,
+        errorCode: "invalid_url",
+        errorCategory: "configuration",
+        resolution: "Fix the backend function URL template in agents.json.",
+        canRequestBuilderRepair: true,
         metadata: { reason: "invalid_url" },
       });
     }
@@ -992,6 +1372,10 @@ export async function executeIntegrationHttpAction(input: {
       toolName,
       error: "Invalid URL",
       status: 400,
+      errorCode: "invalid_url",
+      errorCategory: "configuration",
+      resolution: "Fix the backend function URL template in agents.json.",
+      canRequestBuilderRepair: true,
       metadata: { reason: "invalid_url" },
     });
   }
@@ -1010,6 +1394,9 @@ export async function executeIntegrationHttpAction(input: {
       toolName,
       error: `URL hostname "${parsedUrl.hostname}" does not match integration domain "${toolSpec.integration.domain}"`,
       status: 400,
+      errorCategory: "configuration",
+      resolution: "Use an endpoint host that exactly matches the approved integration domain or one of its subdomains.",
+      canRequestBuilderRepair: true,
       metadata: {
         reason: "domain_lock_failed",
         hostname: parsedUrl.hostname,
@@ -1024,6 +1411,9 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "Only HTTPS URLs are allowed in production",
         status: 400,
+        errorCategory: "configuration",
+        resolution: "Change the backend function endpoint to an HTTPS URL.",
+        canRequestBuilderRepair: true,
         metadata: { reason: "https_required", protocol: parsedUrl.protocol },
       });
     }
@@ -1035,6 +1425,9 @@ export async function executeIntegrationHttpAction(input: {
       toolName,
       error: "Only HTTPS or localhost HTTP URLs are allowed",
       status: 400,
+      errorCategory: "configuration",
+      resolution: "Change the backend function endpoint to HTTPS, or localhost HTTP for local development only.",
+      canRequestBuilderRepair: true,
       metadata: {
         reason: "https_or_localhost_required",
         protocol: parsedUrl.protocol,
@@ -1050,6 +1443,9 @@ export async function executeIntegrationHttpAction(input: {
           toolName,
           error: "Requests to private/internal IPs are not allowed",
           status: 400,
+          errorCategory: "policy",
+          resolution: "Use a public provider API endpoint. Private and internal network targets are blocked.",
+          canRequestBuilderRepair: true,
           metadata: { reason: "private_ip_blocked", hostname: parsedUrl.hostname },
         });
       }
@@ -1074,6 +1470,11 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "OAuth token broker did not return an access token.",
         status: 502,
+        errorCode: "oauth_missing_access_token",
+        errorCategory: "oauth",
+        resolution: "Reconnect the OAuth account or check the workspace OAuth provider configuration.",
+        retryable: false,
+        canRequestBuilderRepair: false,
         metadata: { reason: "oauth_missing_access_token" },
         integration,
       });
@@ -1137,6 +1538,17 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "Response too large",
         status: 502,
+        errorCode: "response_too_large",
+        errorCategory: "response_limit",
+        resolution: "Reduce the backend function page size, add filters, or paginate through smaller provider responses.",
+        retryable: false,
+        canRequestBuilderRepair: true,
+        details: {
+          provider: providerDisplayName(toolSpec),
+          method: endpoint.method.toUpperCase(),
+          hostname: parsedUrl.hostname,
+          providerStatus: response.status,
+        },
         metadata: {
           statusCode: response.status,
           responseSizeExceeded: true,
@@ -1151,6 +1563,17 @@ export async function executeIntegrationHttpAction(input: {
         toolName,
         error: "Response too large",
         status: 502,
+        errorCode: "response_too_large",
+        errorCategory: "response_limit",
+        resolution: "Reduce the backend function page size, add filters, or paginate through smaller provider responses.",
+        retryable: false,
+        canRequestBuilderRepair: true,
+        details: {
+          provider: providerDisplayName(toolSpec),
+          method: endpoint.method.toUpperCase(),
+          hostname: parsedUrl.hostname,
+          providerStatus: response.status,
+        },
         metadata: {
           statusCode: response.status,
           responseSizeExceeded: true,
@@ -1166,22 +1589,61 @@ export async function executeIntegrationHttpAction(input: {
       data = text;
     }
 
+    if (!response.ok) {
+      const providerFailure = providerFailureFields({
+        toolSpec,
+        status: response.status,
+        statusText: response.statusText,
+        data,
+        method: endpoint.method.toUpperCase(),
+        hostname: parsedUrl.hostname,
+      });
+      const diagnostics = errorFields(providerFailure);
+      return {
+        status: 200,
+        body: {
+          success: false,
+          data: sanitizeDiagnosticValue(data),
+          mock: false,
+          statusCode: response.status,
+          error: providerFailure.error,
+          ...diagnostics,
+        },
+        audit: {
+          integration,
+          eventName: "tool.custom.failed",
+          outcome: "failure",
+          severity: "warning",
+          summary: `Custom tool ${toolName} returned HTTP ${response.status}.`,
+          metadata: {
+            method: endpoint.method.toUpperCase(),
+            hostname: parsedUrl.hostname,
+            statusCode: response.status,
+            mock: false,
+            authType: isPublicUnauthenticated ? "none" : grantAuth.type,
+            ...diagnostics,
+            ...(grantAuth.type === "oauth2"
+              ? { providerKey: grantAuth.providerKey }
+              : {}),
+          },
+        },
+      };
+    }
+
     return {
       status: 200,
       body: {
-        success: response.ok,
+        success: true,
         data,
         mock: false,
         statusCode: response.status,
       },
       audit: {
         integration,
-        eventName: response.ok ? "tool.custom.executed" : "tool.custom.failed",
-        outcome: response.ok ? "success" : "failure",
-        severity: response.ok ? "info" : "warning",
-        summary: response.ok
-          ? `Executed custom tool ${toolName}.`
-          : `Custom tool ${toolName} returned HTTP ${response.status}.`,
+        eventName: "tool.custom.executed",
+        outcome: "success",
+        severity: "info",
+        summary: `Executed custom tool ${toolName}.`,
         metadata: {
           method: endpoint.method.toUpperCase(),
           hostname: parsedUrl.hostname,
@@ -1195,11 +1657,22 @@ export async function executeIntegrationHttpAction(input: {
       },
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Request failed";
+    const networkFailure = networkFailureFields({
+      toolSpec,
+      error: err,
+      method: endpoint.method.toUpperCase(),
+      hostname: parsedUrl.hostname,
+    });
     return createFailureResult({
       toolName,
-      error: message,
+      error: networkFailure.error,
       status: 502,
+      errorCode: networkFailure.errorCode,
+      errorCategory: networkFailure.errorCategory,
+      resolution: networkFailure.resolution,
+      retryable: networkFailure.retryable,
+      canRequestBuilderRepair: networkFailure.canRequestBuilderRepair,
+      details: networkFailure.details,
       metadata: {
         method: endpoint.method.toUpperCase(),
         hostname: parsedUrl.hostname,

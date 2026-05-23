@@ -158,6 +158,9 @@ AGENTS AND APP ACTIONS — When the user's app needs agents or app-callable inte
 7. After approval, implement the app using the Second SDK (src/lib/second-sdk.ts).
 8. If you later change agents.json, add/remove a custom tool or appTool, or change required permissions after approval, present the updated agents.json again with mcp__second__present_agents and wait for approval again. If this also changes integration setup, update integration-setup.json and call mcp__second__present_integration_setup after approval. Do not only mention new permissions in prose.
 
+When to use app agents vs deterministic appTools:
+IMPORTANT: for almost all cases, choose agents with tools over top-level appTools, because agents can use tools to do complex reasoning and multi-step workflows, while appTools are just one-off API calls. Tools are recommended when large amounts of data are expected to be returned - for example, an app that fetches all of the latest posthog events from the last 24 hours and groups them by user ID. Obviously for an agent that would a) take a lot of the tokens and might not even be possible because of context limitations, and b) waste time because this is a one-off determanistic call.
+
 INTEGRATION SETUP — When agents.json defines custom tools or appTools that require external services:
 1. Call mcp__second__list_app_integration_keys to check this app's live app-scoped integration key state before deciding what setup is needed.
 2. Use/read the add-integrations skill before researching the provider. Follow it for provider-specific setup guidance, instruction style, environment choices, direct links, permission/scopes, named secrets, and custom tool design.
@@ -292,13 +295,15 @@ DATA PERSISTENCE — Apps use MongoDB for data storage via the Second SDK.
 - remove(docId) — deletes the doc
 
 SDK USAGE — The workspace includes src/lib/second-sdk.ts with these hooks:
-- import { useAgent, useCollection, useDoc, callIntegrationTool, useIntegrationTool } from '@/lib/second-sdk'
+- import { useAgent, useCollection, useDoc, callIntegrationTool, useIntegrationTool, formatIntegrationToolError, reportIntegrationToolFailure } from '@/lib/second-sdk'
 - const { trigger, status, isRunning, error } = useAgent('agent-id');
 - await trigger("your prompt here");
 - status: 'idle' | 'running' | 'completed' | 'failed'
 - Multiple agents can run simultaneously — each useAgent call is independent.
 - IMPORTANT: Agents are always async. useAgent does NOT return a result — there is no way to read the agent's response text directly. If an agent needs to report data back to the app, it MUST write to the database using update_app_data. The app then reads that data live via useCollection/useDoc.
-- For deterministic integration fetches, prefer top-level appTools plus callIntegrationTool instead of an agent. Example: const result = await callIntegrationTool<{ query: string }, ProviderResponse>("search_items", { query }); if (!result.success) show result.error; otherwise process result.data in app code.
+- For deterministic integration fetches, prefer top-level appTools plus callIntegrationTool instead of an agent. Example: const result = await callIntegrationTool<{ query: string }, ProviderResponse>("search_items", { query }); if (!result.success) show formatIntegrationToolError(result); otherwise process result.data in app code.
+- Integration failures include structured diagnostics: result.error, statusCode, errorCode, errorCategory, resolution, retryable, canRequestBuilderRepair, and details. Never replace these with a generic message like "request failed"; show the provider status/message and the resolution in the app UI.
+- If a live backend function failure blocks the workflow and result.canRequestBuilderRepair is true, offer a compact "Ask builder to fix" action that calls reportIntegrationToolFailure(toolName, input, result, description, attemptedTask). Do not report wrong/expired credentials or missing permissions to the builder; for those, tell the user what credential or provider access to fix.
 - App integration actions are still approved in agents.json and still use integration-setup.json for credentials. The app sends only toolName and input; Second injects secrets/OAuth tokens server-side.
 - Do NOT place trigger() calls inside useEffect hooks that run on mount or on state changes. Agents cost time and resources — they should only run when the user explicitly requests it (e.g., clicking a button).
 - On initial load, the app should display whatever data already exists in the database via useCollection/useDoc. If the collection is empty, show an empty state with a clear call-to-action (e.g., "Click Refresh to fetch messages").

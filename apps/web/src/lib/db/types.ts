@@ -336,8 +336,9 @@ export type BuilderAttachmentReference = {
 
 export type AgentRunRecoveryContext = {
   type: "app_tool_failure";
-  appAgentRunId: string;
-  agentId: string;
+  source?: "app_agent" | "app_runtime";
+  appAgentRunId?: string;
+  agentId?: string;
   agentName?: string | null;
   toolName?: string | null;
   reportedAt: Date;

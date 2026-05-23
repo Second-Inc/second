@@ -187,6 +187,7 @@ Integration credentials are already app-scoped. The current secure execution pat
 - [x] 2026-05-20 22:08 IDT: Updated builder prompt, integration skill guidance, and docs for deterministic app-callable integration actions.
 - [x] 2026-05-20 22:08 IDT: Ran `npm run typecheck` successfully.
 - [x] 2026-05-21 IDT: Ran Chrome browser QA with a PostHog appTools-only mock dashboard; fixed and re-tested the appTools-only approval-state bug found during QA.
+- [x] 2026-05-22 IDT: Added structured live backend function error diagnostics, SDK formatting/reporting helpers, and a draft-only report-to-builder recovery route for repairable app runtime integration failures.
 
 
 ## Surprises & Discoveries
@@ -198,6 +199,7 @@ Integration credentials are already app-scoped. The current secure execution pat
 - OAuth custom tools currently require an app-agent `runId` so the web route can resolve `triggeredByUserId`. Direct app calls need a different trusted user source: the authenticated `requireWorkspaceContext` user on the browser route.
 - Existing generated app SDK calls all use postMessage. Because the preview iframe is sandboxed without `allow-same-origin`, app integration calls should follow the same parent bridge pattern instead of trying to call Next.js APIs directly from the iframe.
 - There is no dedicated test script besides TypeScript typechecking in the root package. Current validation should rely on `npm run typecheck`, targeted manual route checks, and browser QA when allowed.
+- Returning only `success: false` and `statusCode` from live provider failures makes generated apps fall back to generic copy. The SDK and route need an explicit error string, provider status/message, resolution, and repairability metadata so both users and builder repair runs get useful context.
 
 
 ## Decision Log

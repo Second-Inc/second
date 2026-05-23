@@ -2398,6 +2398,12 @@ type ToolExecuteResponse = {
   mockReason?: string;
   error?: string;
   statusCode?: number;
+  errorCode?: string;
+  errorCategory?: string;
+  resolution?: string;
+  retryable?: boolean;
+  canRequestBuilderRepair?: boolean;
+  details?: Record<string, unknown>;
 };
 
 function normalizeAppToolFailureName(toolName?: string | null): string | null {
@@ -2555,6 +2561,12 @@ export async function executeCustomAppTool(
     const responseDetail = data.data === undefined
       ? ""
       : `\n\nResponse:\n${formatToolData(data.data)}`;
+    const resolutionDetail = data.resolution
+      ? `\n\nSuggested next step: ${data.resolution}`
+      : "";
+    const diagnosticDetail = data.details === undefined
+      ? ""
+      : `\n\nDiagnostics:\n${formatToolData(data.details)}`;
     recordToolCallFailure(config, {
       toolName: toolSpec.name,
       toolDisplayName: toolSpec.displayName,
@@ -2570,6 +2582,14 @@ export async function executeCustomAppTool(
         toolExecuteHttpStatus: response.status,
         error: errorDetail,
         ...(typeof data.statusCode === "number" ? { statusCode: data.statusCode } : {}),
+        ...(typeof data.errorCode === "string" ? { errorCode: data.errorCode } : {}),
+        ...(typeof data.errorCategory === "string" ? { errorCategory: data.errorCategory } : {}),
+        ...(typeof data.resolution === "string" ? { resolution: data.resolution } : {}),
+        ...(typeof data.retryable === "boolean" ? { retryable: data.retryable } : {}),
+        ...(typeof data.canRequestBuilderRepair === "boolean"
+          ? { canRequestBuilderRepair: data.canRequestBuilderRepair }
+          : {}),
+        ...(data.details !== undefined ? { details: data.details } : {}),
         ...(data.data !== undefined ? { response: data.data } : {}),
       },
     });
@@ -2578,6 +2598,8 @@ export async function executeCustomAppTool(
         type: "text",
         text: [
           `Tool execution failed: ${errorDetail}${responseDetail}`,
+          resolutionDetail,
+          diagnosticDetail,
           "",
           "If this failure blocks the user's task, do not write placeholder failure data into app data. Complete any unaffected work, then call report_tool_call_failed with a concise description of what failed.",
         ].join("\n"),

@@ -240,6 +240,7 @@ export async function POST(request: Request) {
   const failedToolName = capturedFailureToolName(capturedFailure) ?? requestedToolName;
   const recoveryContext: AgentRunRecoveryContext = {
     type: "app_tool_failure",
+    source: "app_agent",
     appAgentRunId: runId,
     agentId,
     agentName,

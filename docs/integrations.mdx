@@ -504,6 +504,9 @@ accidentally turning a lookup into a broad static API call.
 - 1MB response limit
 - mock data is returned for missing or unconfigured integrations, including
   OAuth missing-account, revoked-account, missing-scope, or provider-config cases
+- live failures return structured, redacted diagnostics such as provider status,
+  provider message, `errorCategory`, `resolution`, `retryable`, and whether the
+  failure is reasonable for the builder to repair
 
 ## API routes
 
@@ -518,6 +521,7 @@ accidentally turning a lookup into a broad static API call.
 | `POST` | `/api/internal/workspace-integrations` | Return current app grant metadata to the builder, without secret values |
 | `POST` | `/api/internal/tool-execute` | Execute a custom HTTP tool with app-grant credential resolution |
 | `POST` | `/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute` | Execute an approved app-callable integration action for the current app viewer |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/report-failure` | Report a repairable draft app backend function failure to the builder |
 | `PATCH` | `/api/workspaces/[wId]/oauth-provider-configs/[providerConfigId]` | Configure or rotate a workspace OAuth client |
 | `GET` | `/api/workspaces/[wId]/oauth/[providerConfigId]/start` | Start current-user OAuth consent for one app grant |
 | `GET` | `/api/oauth/callback` | Generic OAuth callback that exchanges code, stores tokens, and redirects back |
@@ -541,6 +545,7 @@ never secrets, prompts, source files, headers, cookies, or full documents.
 | `apps/web/src/lib/integrations/execute-http-action.ts` | Shared runtime secret/OAuth injection, mock fallback, response bounds, and domain/IP guards |
 | `apps/web/src/app/api/internal/tool-execute/route.ts` | Internal app-agent tool approval check and audit wrapper |
 | `apps/web/src/app/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute/route.ts` | Browser-authenticated app action route |
+| `apps/web/src/app/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/report-failure/route.ts` | Draft-only builder recovery reports from generated app code |
 | `apps/web/src/components/app-integration-bridge.tsx` | Iframe parent bridge for `callIntegrationTool` |
 | `apps/web/src/app/api/internal/integration-requirements/route.ts` | Worker-to-web setup sync |
 | `apps/web/src/app/api/workspaces/[wId]/integrations/[id]/route.ts` | Configure, reset, and delete one app grant |

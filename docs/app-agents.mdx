@@ -311,6 +311,14 @@ if (!result.success) {
 
 The route resolves the approved app action server-side from `agents.json`; the iframe sends only `toolName` and `input`. Static secrets are read from the app-scoped integration grant. OAuth app actions use the current app viewer as the `triggering_user` identity.
 
+Live failures return actionable diagnostics, not only a boolean failure. The result can include `error`, `statusCode`, `errorCode`, `errorCategory`, `resolution`, `retryable`, `canRequestBuilderRepair`, and bounded redacted `details`. Generated apps should render `error` plus `resolution` directly. Credential and permission failures should point the user back to integration setup; repairable endpoint/input/spec failures can offer an "Ask builder to fix" action that calls `reportIntegrationToolFailure`.
+
+### `reportIntegrationToolFailure(toolName, input, result, description)`
+
+Reports a blocking, repairable app-callable backend function failure from the iframe to the normal builder run. The browser route re-authenticates the current viewer, requires editable draft access, resolves the approved tool spec server-side, redacts and bounds the failure payload, then schedules a builder recovery run.
+
+Do not use this for wrong or expired API keys, missing scopes, or provider access problems that only the integration owner can fix. Use it when app code, typed wrappers, `agents.json`, or setup instructions likely need repair.
+
 ### PostMessage protocol
 
 ```
@@ -318,11 +326,13 @@ The route resolves the approved app action server-side from `agents.json`; the i
 second:agent:trigger      { agentId, prompt }
 second:agents:list-request  {}
 second:integration:execute  { toolName, input }
+second:integration:report-failure { toolName, input, result, description, attemptedTask? }
 
 // Platform → App
 second:agent:update       { agentId, runId, status, result?, error? }
 second:agents:list-response { agents: [...] }
-second:integration:execute-response { success, data?, mock, mockReason?, statusCode?, error? }
+second:integration:execute-response { success, data?, mock, mockReason?, statusCode?, error?, errorCode?, errorCategory?, resolution?, retryable?, canRequestBuilderRepair?, details? }
+second:integration:report-failure-response { ok, status?, builderRunId?, error? }
 ```
 
 ## present_agents tool
@@ -468,6 +478,7 @@ SSE stream of raw SDK messages from a running (or recently completed) agent. Yie
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/execute` | Browser-authenticated app action execution through the parent bridge |
+| `POST` | `/api/workspaces/[wId]/apps/[aId]/app-tools/[toolName]/report-failure` | Browser-authenticated draft-only builder repair report for app-callable backend functions |
 
 ### Internal (worker → web)
 
@@ -489,7 +500,7 @@ For static tools, the shared executor injects named secrets and non-secret tool 
 
 When an integration is not configured, the tool returns a random entry from `mockData` so development can continue without real API credentials. This includes OAuth missing-account, revoked-account, missing-scope, or provider-config failures.
 
-When a custom tool fails after execution begins, the app agent may call `mcp__app_tools__report_tool_call_failed`. The report route is internal-token protected and creates a normal builder run, so repair uses the same chat streaming, source persistence, `present_agents`, `present_integration_setup`, and `done_building` controls as any other build change.
+When a custom tool fails after execution begins, the app agent may call `mcp__app_tools__report_tool_call_failed`. Generated app code may call `reportIntegrationToolFailure` for repairable app-callable backend function failures while testing the editable draft. Both report paths create a normal builder run, so repair uses the same chat streaming, source persistence, `present_agents`, `present_integration_setup`, and `done_building` controls as any other build change.
 
 ## Key files
 
@@ -505,6 +516,7 @@ When a custom tool fails after execution begins, the app agent may call `mcp__ap
 | `apps/web/src/app/api/internal/agent-run-complete/route.ts` | Worker completion callback |
 | `apps/web/src/app/api/internal/tool-execute/route.ts` | Internal app-agent custom tool approval enforcement |
 | `apps/web/src/app/api/.../app-tools/[toolName]/execute/route.ts` | Browser-authenticated app integration action execution |
+| `apps/web/src/app/api/.../app-tools/[toolName]/report-failure/route.ts` | Draft-only builder recovery reports from generated app code |
 | `apps/web/src/lib/integrations/execute-http-action.ts` | Shared HTTP action executor with secret/OAuth injection, domain/IP guards, size limits, and mock fallback |
 | `apps/web/src/app/api/internal/tool-failure-report/route.ts` | App-agent tool failure recovery bridge to the builder |
 | `apps/web/src/app/api/internal/integration-requirements/route.ts` | Integration requirement sync from builder tools |
