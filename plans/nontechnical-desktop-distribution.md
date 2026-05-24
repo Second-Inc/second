@@ -28,11 +28,11 @@ The work is complete when all of these are true:
 1. There is a desktop application package source in the monorepo, tentatively `apps/desktop`, with a small native shell around the existing Second local runtime.
 2. The desktop app does not require the user to install Node.js, npm, Docker, MongoDB, Redis, Homebrew, WSL manually, or any CLI runtime before the app can open.
 3. macOS installers are signed and notarized, with one universal app or two architecture-specific builds for Apple Silicon and Intel Macs.
-4. Windows installers are signed and work for nontechnical Windows users. The first production path may use a Second-managed WSL2 runtime behind the scenes, but the user should interact only with the Windows installer and the Second app.
+4. Windows installers are signed and work for nontechnical Windows users through exactly one v1 runtime path: a Second-managed WSL2 runtime hidden behind the Windows app.
 5. Linux packages are built for the same Linux runtime targets used by the CLI, with desktop integration where practical.
 6. The existing CLI remains useful for developers and power users, but it is no longer the only local-install path.
 7. The desktop app and CLI share one core local supervisor implementation so process management, runtime setup, ports, stop/reset, update status, telemetry flags, secrets, and logs do not fork into two independent systems.
-8. MongoDB and Redis/Redis-compatible runtime behavior is validated on every platform, including Windows.
+8. MongoDB and Redis runtime behavior is validated on macOS, Linux, and the Windows-managed WSL2 runtime.
 9. Agent provider detection and onboarding work from the desktop app. A user can choose Claude Code, Codex, OpenCode, or API-key based providers according to what the local runtime can actually access.
 10. CI builds release artifacts for macOS, Windows, and Linux, signs them where required, and publishes artifacts in a repeatable release workflow.
 11. QA guides and release checklists exist for clean-machine tests on all supported OSes.
@@ -45,7 +45,7 @@ The current product promise is that Second is local and easy to try. The current
 
 The requested product outcome is an app install experience: download, install, open. The user should not need to understand the implementation detail that Second runs a local Next.js web server, a worker process, MongoDB, Redis, and agent CLIs. The app should hide that complexity while preserving the security model already present in the web and worker architecture.
 
-This is especially important for Windows. A WSL2 setup guide is not enough for nontechnical users. If WSL2 is used, it must be managed by the app installer and treated as an internal runtime implementation detail. If native Windows becomes viable, the Windows app should switch to a native runtime without changing the user-facing app.
+This is especially important for Windows. A WSL2 setup guide is not enough for nontechnical users. For this plan, Windows has one product architecture: the signed Windows app manages WSL2 internally and treats it as an implementation detail.
 
 
 ## State Before
@@ -119,12 +119,11 @@ The target user flows are:
 1. User downloads `SecondSetup.exe` or `Second.msi`.
 2. User runs the signed installer.
 3. User opens Second from Start menu or desktop.
-4. The app chooses the best Windows runtime strategy:
-   - preferred long-term: native Windows runtime with native MongoDB and a validated Redis-compatible service;
-   - first shippable bridge if native Redis is not ready: app-managed WSL2 runtime imported and controlled by Second.
-5. If WSL2 is required but not available, the app explains the requirement in plain language, triggers the Windows-supported install/elevation flow, and resumes after reboot when possible.
-6. The user does not type WSL commands or install Ubuntu manually.
-7. The app window displays the Second UI.
+4. The app checks for a Second-managed WSL2 runtime.
+5. If WSL2 is missing or disabled, the app explains the requirement in plain language, triggers the Windows-supported install/elevation flow, and resumes after reboot when possible.
+6. The app imports or repairs only Second's own managed Linux runtime.
+7. The user does not type WSL commands, open Ubuntu, install Node, or run `npx`.
+8. The app window displays the Second UI.
 
 ### Linux
 
@@ -154,8 +153,8 @@ Important plain-language terms:
 - **Desktop shell**: the installed app window and native menus. It can be Electron, Tauri, or another desktop framework.
 - **Local supervisor**: the backend process manager that starts MongoDB, Redis, web, and worker, checks health, and stops them safely.
 - **Payload**: packaged app files and runtime binaries needed to run Second locally.
-- **WSL2**: Windows Subsystem for Linux 2. It lets Windows run Linux programs. It can be useful for Second because Linux Redis and MongoDB packaging is easier than native Windows Redis packaging. For nontechnical users, WSL2 should be hidden behind the installer if used.
-- **Native Windows runtime**: a Windows implementation that runs directly from Windows without WSL2. This is cleaner for users but requires solving the Redis-compatible runtime question.
+- **WSL2**: Windows Subsystem for Linux 2. It lets Windows run Linux programs. For this plan, WSL2 is the only Windows v1 runtime path and must be hidden behind the installer and app.
+- **Native Windows runtime**: a future possible implementation that would run directly from Windows without WSL2. It is not part of this plan because adding it now creates an extra architecture branch and a Redis-compatible Windows runtime decision.
 - **Managed WSL distro**: a custom Linux filesystem imported and controlled by Second, not a user-managed Ubuntu terminal.
 
 
@@ -173,7 +172,7 @@ Important plain-language terms:
 
 - `apps/web/src/lib/redis.ts`
   - Creates the Redis client used by replay buffers and workspace events.
-  - Any native Windows Redis-compatible substitute must support the Redis commands used by this code and adjacent streaming code.
+  - The managed WSL2 Redis runtime must support the commands used by this code and adjacent streaming code.
 
 - `apps/web/src/lib/streams/run-replay.ts`
   - Uses Redis `INCR`, `RPUSH`, `LTRIM`, `PUBLISH`, `SUBSCRIBE`, `LRANGE`, `GET`, `SET EX`, `EXPIRE`, and `DEL`.
@@ -181,7 +180,7 @@ Important plain-language terms:
 
 - `apps/web/src/lib/events/workspace-events.ts`
   - Publishes workspace invalidation events through Redis pub/sub.
-  - A Redis-compatible Windows substitute must preserve pub/sub behavior.
+  - The managed WSL2 Redis runtime must preserve pub/sub behavior.
 
 - `packages/cli/bin/second.js`
   - Tiny `npx` launcher.
@@ -227,7 +226,7 @@ Important plain-language terms:
   - Should be used by both `packages/cli-local-*` and `apps/desktop` so the CLI and desktop app do not drift.
 
 - New: `packages/local-runtime`
-  - Proposed runtime manifest/schema and helper code for resolving packaged MongoDB, Redis-compatible binaries, web server, worker bundle, logs, data directories, and platform-specific paths.
+  - Proposed runtime manifest/schema and helper code for resolving packaged MongoDB, Redis binaries, web server, worker bundle, logs, data directories, and platform-specific paths.
 
 
 ## Assumptions and Constraints
@@ -235,21 +234,20 @@ Important plain-language terms:
 
 - The user asked for a plan only. Do not implement desktop packaging as part of this planning step.
 - The final experience must be suitable for nontechnical users.
-- The CLI must remain supported for technical users and release automation.
+- The CLI must remain supported for technical users and release automation. On macOS, `npx --yes @second-inc/cli` can remain a valid technical path, but the nontechnical product path is still a downloadable app.
 - The desktop app should not weaken tenant isolation, workspace guards, internal token boundaries, app-data scoping, audit logging, or agent tool security.
 - The desktop renderer must not receive internal API tokens, MongoDB URIs, Redis URLs, local control tokens, cookies from other contexts, integration secrets, or raw process environment.
 - The desktop app should use loopback-only services by default.
 - The local runtime should keep generated secrets in a user-local app data directory with restrictive file permissions where the OS supports them.
-- Windows support has two possible implementation paths:
-  - Managed WSL2 bridge: faster, likely shippable first, but can require Windows features, admin elevation, restart, and virtualization support.
-  - Native Windows runtime: cleaner user experience, but requires a validated Redis-compatible Windows runtime.
+- Windows support has one v1 implementation path: managed WSL2 behind the signed Windows app.
+- Native Windows runtime support is explicitly out of scope for this plan. It can be revisited in a separate future plan after the desktop app is working and Windows v1 has clean-machine coverage.
 - The Windows app must not silently run privileged system changes. If WSL installation or Windows features require elevation, the app must explain why and use a normal Windows elevation flow.
 - Corporate-managed Windows machines may block WSL2, virtualization, or unsigned executables. The app must detect this and provide a useful blocked state.
 - Mac distribution requires code signing and notarization for a normal nontechnical install experience.
 - Windows distribution requires Authenticode signing for a normal nontechnical install experience and fewer SmartScreen warnings over time.
 - Linux packaging varies by distro. AppImage is the broadest first artifact, while `.deb` and `.rpm` improve native install feel.
 - Official docs confirm that WSL can be installed with `wsl --install`, that WSL can import custom distributions from tar files, and that WSL is available on Windows 10 build 19041+ or Windows 11. This plan restates those facts so a future reader does not need to chase links.
-- Official Redis documentation does not provide a simple normal native Windows Redis Open Source packaging path equivalent to macOS/Linux. Native Windows therefore needs a Redis-compatible substitute or an explicit Windows Redis strategy.
+- Official Redis documentation does not provide a simple normal native Windows Redis Open Source packaging path equivalent to macOS/Linux. This is one reason native Windows is not part of this v1 plan.
 - Electron is the default recommendation because Second is already a web app and Electron gives a proven cross-platform webview, process control, packaging ecosystem, and auto-update ecosystem. Tauri can be reevaluated later if app size becomes more important than integration speed.
 
 
@@ -264,7 +262,7 @@ Important plain-language terms:
 - [ ] Implement shared local supervisor extraction.
 - [ ] Implement macOS desktop installer.
 - [ ] Implement Linux desktop installer.
-- [ ] Implement Windows managed WSL2 installer or native Windows runtime, depending on feasibility results.
+- [ ] Implement Windows managed WSL2 installer.
 - [ ] Run clean-machine QA and publish desktop artifacts.
 
 
@@ -272,7 +270,7 @@ Important plain-language terms:
 
 
 - `packages/cli-local-darwin-arm64/bin/second-local.js` is already close to a desktop backend supervisor. It should be extracted and reused rather than replaced.
-- `packages/cli/scripts/prepare-runtime.mjs` already knows how to fetch MongoDB for `win32` because it chooses `mongod.exe`, but it rejects Windows before Redis preparation. Redis-compatible runtime choice is the main native Windows runtime gap.
+- `packages/cli/scripts/prepare-runtime.mjs` already knows how to fetch MongoDB for `win32` because it chooses `mongod.exe`, but it rejects Windows before Redis preparation. This confirms native Windows should stay out of the v1 desktop architecture.
 - The worker provider detection runs on the backend host. If the Windows desktop app uses WSL2, `claude`, `codex`, and `opencode` must be installed and authenticated inside the managed Linux environment or bridged from Windows intentionally.
 - Linux Claude Code support has a `bubblewrap` requirement when subprocess environment scrubbing is enabled. A managed WSL/Linux runtime must include `bubblewrap` or the app must explain that Claude Code is unavailable until the dependency is present. Disabling env scrubbing is not acceptable as the default for nontechnical users.
 - The desktop app must be careful not to expose local control tokens to the renderer. The current CLI already treats `SECOND_LOCAL_CLI_TOKEN` as server-side only.
@@ -285,9 +283,9 @@ Important plain-language terms:
 - 2026-05-24, Codex: Use a desktop app installer as the primary nontechnical distribution path. Rationale: `npx` and WSL instructions are not appropriate for nontechnical users.
 - 2026-05-24, Codex: Prefer Electron for the first desktop implementation. Rationale: Second is already a web app, Electron can host the existing UI with minimal product rewrite, and its ecosystem supports macOS, Windows, and Linux packaging.
 - 2026-05-24, Codex: Extract the local supervisor from `second-local.js` before building desktop-specific process management. Rationale: forking process startup logic would create drift in security, logs, ports, update, and cleanup behavior.
-- 2026-05-24, Codex: Treat Windows as two tracks: managed WSL2 bridge first if needed, native Windows runtime after Redis compatibility is proven. Rationale: WSL2 is more realistic short-term, but native Windows is the cleanest long-term user experience.
+- 2026-05-24, Codex: Treat Windows v1 as exactly one path: a signed Windows app that manages WSL2 internally. Rationale: one Windows architecture is easier to build, test, explain, and support; native Windows can be a future project after the app path is proven.
 - 2026-05-24, Codex: Do not expose privileged WSL installation as a silent side effect. Rationale: Windows feature installation can require admin elevation and restart; the user must understand and approve OS-level changes.
-- 2026-05-24, Codex: Do not declare native Windows support until PowerShell-launched native runtime smoke tests pass. Rationale: a Windows installer that depends on WSL2 is useful, but it is not native Windows runtime support.
+- 2026-05-24, Codex: Do not present native Windows as a parallel option in this plan. Rationale: multiple Windows runtime choices create unnecessary architecture branches and more places for the product to fail.
 - 2026-05-24, Codex: Keep the CLI as a separate supported path. Rationale: it remains useful for developers, CI, and debugging, and can share the same supervisor module.
 
 
@@ -342,35 +340,11 @@ Linux deliverables:
 
 ### Windows Runtime Strategy
 
-Windows needs explicit feasibility decisions before final implementation.
+Windows v1 has one architecture: the signed Windows app manages WSL2 behind the scenes.
 
-There are two candidate paths:
+The user must not choose between native Windows and WSL2. The user should see only the Second installer and the Second app. WSL2 is an internal runtime detail, similar to how MongoDB and Redis are internal runtime details.
 
-#### Path A: Native Windows Runtime
-
-The app runs directly on Windows:
-
-- Windows Electron app;
-- native `mongod.exe`;
-- Redis-compatible Windows service/process;
-- packaged web server and worker;
-- worker launches Windows-side agent runtimes.
-
-This is the best user experience. The open question is Redis compatibility. Redis itself is not a simple official native Windows packaging dependency. The implementation must test a Redis-compatible alternative, such as Garnet or another runtime, against the actual Redis commands Second uses.
-
-Promotion criteria for native Windows:
-
-- `apps/web/src/lib/streams/run-replay.ts` behavior works under the substitute;
-- pub/sub workspace events work;
-- OAuth state and short locks work;
-- run stream replay survives reload and reconnect;
-- app starts/stops/resets cleanly from Windows;
-- no WSL requirement;
-- no admin requirement just to run Second after install.
-
-#### Path B: Managed WSL2 Runtime
-
-The Windows app uses WSL2 behind the scenes:
+The Windows app flow is:
 
 - Windows Electron app is installed normally.
 - On first launch, it checks for WSL2 availability.
@@ -380,7 +354,7 @@ The Windows app uses WSL2 behind the scenes:
 - The Windows app starts the Linux supervisor through `wsl.exe -d Second`.
 - The Electron window loads the web UI through `localhost`.
 
-This is likely faster to ship than native Windows, but it is more fragile:
+This path has known limitations:
 
 - some machines do not allow WSL;
 - first install can require admin and restart;
@@ -393,6 +367,8 @@ Managed WSL2 can still satisfy the nontechnical user goal if the installer/app o
 - “Setting up Second runtime” instead of “installing WSL” jargon;
 - “Windows needs to enable a built-in Linux runtime. This may require administrator approval and a restart.”;
 - “Your organization blocks the required Windows runtime. Contact IT or use cloud/on-prem deployment.”
+
+Native Windows is intentionally not part of this plan. A future native Windows plan may be useful later, but it should not be implemented in parallel with Windows v1.
 
 ### Desktop App UX
 
@@ -454,7 +430,7 @@ Recommended artifacts:
 | Platform | Artifact | Notes |
 | --- | --- | --- |
 | macOS arm64/x64 | `.dmg` plus optional `.zip` for auto-update | signed and notarized |
-| Windows x64 | `.exe` installer or `.msi` | signed; managed WSL2 or native runtime |
+| Windows x64 | `.exe` installer or `.msi` | signed; manages WSL2 internally |
 | Linux x64 | `.AppImage` first, `.deb` and `.rpm` later | signing/checksums required |
 | Linux arm64 | later phase | depends on runtime validation |
 
@@ -480,27 +456,24 @@ Implementation scope:
 
 - Test macOS packaged runtime as currently done by CLI.
 - Test Linux packaged runtime on clean Linux x64.
-- Test Windows native MongoDB packaging.
-- Test Redis-compatible Windows candidates against the exact Redis command set Second uses.
 - Test managed WSL2 import using a small custom rootfs named `SecondDevRuntime`.
 - Test Windows-to-WSL localhost access to the local web server.
 - Test whether agent provider setup works acceptably inside managed WSL2.
 
 Why this phase is ordered here:
 
-The desktop app architecture depends on whether Windows can be native in the first release or needs managed WSL2.
+The desktop app architecture depends on proving that the managed WSL2 path can be made reliable enough for nontechnical Windows users.
 
 Human verification:
 
 - On macOS, run the packaged runtime and confirm web, worker, MongoDB, Redis, stop, and reset.
 - On Linux, run the packaged runtime and confirm `ldd` shows no missing Redis libraries.
-- On Windows native, run a prototype backend and confirm Redis-compatible replay/pubsub behavior.
 - On Windows WSL2, import a test distro, start a web server inside it, and open it from Windows.
 
 Observable success:
 
 - A written feasibility result is added to this plan under `Surprises & Discoveries`.
-- A decision is recorded choosing Windows native first or managed WSL2 first.
+- The plan records whether managed WSL2 is viable for Windows v1 and what blocked states the app must handle.
 
 Rollback / retry notes:
 
@@ -670,7 +643,7 @@ Implementation scope:
 
 Why this phase is ordered here:
 
-Linux runtime support is close to the CLI Linux direction and is simpler than Windows native.
+Linux runtime support is close to the CLI Linux direction and uses the same Linux runtime family that Windows v1 will run inside managed WSL2.
 
 Human verification:
 
@@ -692,7 +665,7 @@ Rollback / retry notes:
 
 Purpose:
 
-Provide a nontechnical Windows install path even if native Windows Redis remains unresolved.
+Provide the Windows v1 install path.
 
 Files and code areas touched:
 
@@ -723,7 +696,7 @@ Implementation scope:
 
 Why this phase is ordered here:
 
-It gives Windows users a clickable app before native Windows runtime is ready.
+It gives Windows users a clickable app using the single supported Windows v1 architecture.
 
 Human verification:
 
@@ -751,61 +724,50 @@ Rollback / retry notes:
 - Runtime repair should affect only the Second-managed distro.
 
 
-### Phase 6: Native Windows Runtime Spike and Promotion
+### Phase 6: Harden Windows Managed WSL2 Runtime
 
 Purpose:
 
-Replace managed WSL2 with a true native Windows runtime if feasible.
+Make the one Windows v1 path reliable enough for nontechnical users and supportable enough for release.
 
 Files and code areas touched:
 
-- `packages/cli/scripts/prepare-runtime.mjs`
 - `packages/local-runtime`
 - `packages/local-supervisor`
 - `apps/desktop`
 - Windows CI jobs
-- Redis compatibility tests
+- managed WSL runtime build scripts
+- QA guides
 
 Implementation scope:
 
-- Choose candidate Redis-compatible runtime.
-- Write automated Redis compatibility tests covering Second’s actual Redis usage:
-  - `INCR`
-  - `RPUSH`
-  - `LTRIM`
-  - `LRANGE`
-  - `PUBLISH`
-  - `SUBSCRIBE`
-  - `GET`
-  - `SET` with expiry
-  - `EXPIRE`
-  - `DEL`
-  - duplicate clients/subscribers
-  - reconnect behavior
-- Package native `mongod.exe`.
-- Package Redis-compatible Windows binary.
-- Start native Windows supervisor from Electron.
-- Validate stop/reset/update/logs.
+- Test Windows install when WSL is absent.
+- Test Windows install when WSL exists but no Second distro exists.
+- Test Windows install when the Second distro exists but is corrupted.
+- Test repair, reinstall, reset, stop, and uninstall behavior.
+- Test restart-resume after WSL installation requires reboot.
+- Test blocked states for machines where WSL is disabled by policy or virtualization is unavailable.
+- Test provider onboarding inside the managed WSL runtime.
+- Test logs and diagnostics redaction from both Windows and WSL sides.
 
 Why this phase is ordered here:
 
-Native Windows is the best final user experience, but it must not be guessed. It needs a runtime compatibility proof.
+The Windows architecture is intentionally one path, so its failure states need strong coverage before release.
 
 Human verification:
 
-- On Windows with no WSL installed, install and launch Second.
-- Confirm the app starts and reaches onboarding.
-- Confirm streaming/reconnect works.
-- Confirm app-agent and builder-agent workflows work.
+- On a clean Windows machine, install and launch Second.
+- On a Windows machine with WSL already installed, install and launch Second without modifying user distros.
+- Simulate corrupted Second runtime and confirm repair works.
+- Simulate blocked WSL and confirm the app shows a clear blocked state.
 
 Observable success:
 
-- Windows users can run Second without WSL2.
+- Windows users can install and open Second without typing WSL commands, and support can diagnose failures through app-generated diagnostics.
 
 Rollback / retry notes:
 
-- If compatibility is incomplete, keep managed WSL2 as the Windows production path.
-- Do not remove WSL2 support until native Windows has multiple clean-machine passes.
+- If managed WSL2 reliability is not good enough, do not ship Windows desktop yet. Do not introduce a second native Windows runtime path as a shortcut inside this plan.
 
 
 ### Phase 7: Updates, Diagnostics, and Supportability
@@ -878,9 +840,7 @@ Implementation scope:
   - Development from source
   - Self-hosting
 - Create clean-machine QA guides for macOS, Windows, and Linux.
-- Document what “Windows support” means for the current release:
-  - managed WSL2, if that is what ships;
-  - native Windows, only after Phase 6 passes.
+- Document that Windows support means the signed Second app manages WSL2 internally.
 - Add troubleshooting pages for blocked WSL, port conflicts, provider CLI missing, reset, logs, and updates.
 
 Why this phase is ordered here:
@@ -898,7 +858,7 @@ Observable success:
 
 Rollback / retry notes:
 
-- If Windows ships with managed WSL2, do not call it native Windows.
+- Do not call the Windows v1 runtime native Windows.
 
 
 ## Concrete Steps and Commands
@@ -928,19 +888,13 @@ Linux runtime feasibility:
     /tmp/second-runtime-linux-x64/bin/redis-server --version
     ldd /tmp/second-runtime-linux-x64/bin/redis-server
 
-Windows WSL2 prototype commands, to be run from PowerShell by a developer or CI-like Windows test machine:
+Windows managed WSL2 prototype commands, to be run from PowerShell by a developer or CI-like Windows test machine:
 
     wsl --status
     wsl -l -v
     wsl --import SecondDevRuntime C:\SecondDevRuntime .\second-runtime-rootfs.tar --version 2
     wsl -d SecondDevRuntime -- uname -a
     wsl --unregister SecondDevRuntime
-
-Native Windows runtime prototype commands, to be run from PowerShell after a candidate runtime is packaged:
-
-    .\mongod.exe --version
-    .\redis-compatible-server.exe --version
-    node .\scripts\redis-compat-smoke.mjs
 
 Desktop development commands will be defined when `apps/desktop` is introduced. Expected shape:
 
@@ -990,19 +944,12 @@ Manual clean-machine validation:
 
 ### Windows acceptance
 
-For managed WSL2 release:
-
 - Install on Windows with WSL missing.
 - App explains runtime setup and elevation/restart if required.
 - After setup, app imports only Second’s managed distro.
 - App starts Second and reaches onboarding.
 - Existing user WSL distros are untouched.
 - App can repair/remove only the Second runtime.
-
-For native Windows release:
-
-- Install on Windows without WSL.
-- App starts Second and reaches onboarding.
 - Streaming/replay works after refresh.
 - Stop/restart/reset work.
 
@@ -1091,7 +1038,6 @@ External dependencies and services:
 - GitHub Actions runners for macOS, Windows, and Linux.
 - npm packages for CLI path remain separate.
 - Microsoft WSL commands if managed WSL2 is used.
-- Redis-compatible Windows runtime if native Windows is pursued.
 
 
 ## Artifacts and Notes
@@ -1131,10 +1077,9 @@ Important external references checked while writing this plan:
 
 Plain-language Windows conclusion:
 
-    A Windows installer can make WSL2 mostly invisible to nontechnical users,
-    but it cannot guarantee WSL2 is allowed on every Windows machine. Native
-    Windows is cleaner, but only after a Redis-compatible Windows runtime passes
-    Second's actual streaming and replay behavior tests.
+    Windows v1 has one path: install the signed Second app, and the app manages
+    WSL2 internally. If WSL2 is blocked by policy or unavailable, the app should
+    show a clear blocked state instead of falling back to another backend.
 
 
 ## Outcomes & Retrospective
@@ -1146,7 +1091,7 @@ After each major phase, update this section with:
 
 - what shipped;
 - which platforms passed clean-machine QA;
-- which runtime strategy Windows uses;
+- how reliable the managed WSL2 Windows path proved to be;
 - what remains risky;
 - what should be improved before public launch.
 
@@ -1155,6 +1100,7 @@ After each major phase, update this section with:
 
 
 - 2026-05-24, Codex: Created the initial desktop distribution plan in response to the request for a full plan that works for nontechnical Mac, Windows, and Linux users.
+- 2026-05-24, Codex: Revised the Windows architecture to one v1 path only: the signed Windows app manages WSL2 internally. Native Windows is now explicitly out of scope for this plan.
 
 
 ## Captured User Intent (Verbatim)
@@ -1168,3 +1114,9 @@ The user wrote:
 > - Windows users to just install an app
 > - even if they are non-technical
 > - and for Linux obviously
+
+The user later clarified:
+
+> okay so regarding Windows why do we need two options? Why can't we just use, or have, one option, which is the WSL? I mean from my experience whenever there are multiple choices there are more places for things to go wrong in terms of the architecture.
+
+The user also asked whether the plan is self-contained enough to survive context compaction/reset and be used as the source of truth for implementation.
