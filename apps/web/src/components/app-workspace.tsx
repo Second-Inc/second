@@ -1633,6 +1633,7 @@ export function AppWorkspace({
       {/* Top bar — visible for active chat, with app controls once a preview exists */}
       {showTopBar && (
         <div
+          data-second-desktop-drag-region
           className={cn(
             "flex h-11 shrink-0 items-center justify-between border-b bg-background px-3",
             !agentRunsHintOpen && !builderAgentToggleHintOpen && "z-10",

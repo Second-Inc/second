@@ -4,13 +4,23 @@ import {
   currentRuntimeId,
   resolveSupervisorEntrypoint,
 } from "@second-inc/local-supervisor";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ManagedWslSecondRuntime } from "./windows-wsl-runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PORT = 3030;
+const DESKTOP_LOG_FILE = join(homedir(), ".second", "logs", "desktop.log");
+const DESKTOP_SECRET_PATTERNS = [
+  /SECOND_LOCAL_CLI_TOKEN=[^\s]+/gi,
+  /SECOND_NO_AUTH_SESSION_SECRET=[^\s]+/gi,
+  /INTERNAL_API_TOKEN=[^\s]+/gi,
+  /mongodb:\/\/[^\s"']+/gi,
+  /redis:\/\/[^\s"']+/gi,
+  /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
+];
 
 let mainWindow = null;
 let runtime = null;
@@ -32,6 +42,14 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(async () => {
+  writeDesktopLog("app ready", {
+    appPath: app.getAppPath(),
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    platform: process.platform,
+    arch: process.arch,
+    execPath: process.execPath,
+  });
   runtime = createRuntime();
   wireRuntime(runtime);
   registerIpc();
@@ -110,11 +128,19 @@ function createRuntime() {
     resourcesPath: process.resourcesPath,
     repoRoot: resolve(__dirname, "..", "..", "..", ".."),
   });
+  const nodePath = resolvePackagedNodePath();
+
+  writeDesktopLog("resolved local runtime", {
+    port,
+    runtimeId,
+    entrypoint,
+    nodePath,
+  });
 
   return createSecondLocalSupervisor({
     port,
     entrypoint,
-    nodePath: resolvePackagedNodePath(),
+    nodePath,
     nodeEnv: {
       ELECTRON_RUN_AS_NODE: "1",
     },
@@ -150,6 +176,7 @@ function resolvePackagedNodePath() {
 function wireRuntime(target) {
   target.on("progress", (event) => sendStatus(event));
   target.on("log", (event) => {
+    writeDesktopLog(`runtime ${event.stream}`, event.line);
     if (process.env.SECOND_DESKTOP_DEBUG === "1") {
       console.log(`[${event.stream}] ${event.line}`);
     }
@@ -158,12 +185,14 @@ function wireRuntime(target) {
 
 async function startRuntime() {
   try {
+    writeDesktopLog("runtime start requested");
     sendStatus({
       status: "starting",
       step: "runtime",
       message: "Starting Second",
     });
     const ready = await runtime.start();
+    writeDesktopLog("runtime ready", ready);
     sendStatus({
       status: "ready",
       step: "ready",
@@ -172,6 +201,11 @@ async function startRuntime() {
     });
     await mainWindow?.loadURL(ready.publicUrl);
   } catch (err) {
+    writeDesktopLog("runtime start failed", {
+      message: err.message,
+      code: err.code,
+      stack: err.stack,
+    });
     sendStatus({
       status: "error",
       step: "runtime",
@@ -205,6 +239,33 @@ function registerIpc() {
     clipboard.writeText(JSON.stringify(runtime.diagnostics(), null, 2));
     return true;
   });
+}
+
+function writeDesktopLog(message, details) {
+  try {
+    mkdirSync(dirname(DESKTOP_LOG_FILE), { recursive: true });
+    const suffix =
+      details === undefined
+        ? ""
+        : ` ${redactDesktopLogValue(
+            typeof details === "string" ? details : JSON.stringify(details),
+          )}`;
+    appendFileSync(
+      DESKTOP_LOG_FILE,
+      `[${new Date().toISOString()}] ${message}${suffix}\n`,
+      "utf8",
+    );
+  } catch {
+    // Logging must never block the app from starting.
+  }
+}
+
+function redactDesktopLogValue(value) {
+  let output = String(value ?? "");
+  for (const pattern of DESKTOP_SECRET_PATTERNS) {
+    output = output.replace(pattern, "[redacted]");
+  }
+  return output;
 }
 
 function installMenu() {
@@ -281,6 +342,7 @@ function sendStatus(event) {
     ...event,
     at: event.at ?? new Date().toISOString(),
   };
+  writeDesktopLog("status", lastStatusEvent);
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("second:status-event", lastStatusEvent);
 }

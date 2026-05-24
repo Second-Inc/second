@@ -149,6 +149,7 @@ export default async function WorkspaceLayout({
             }))}
           />
           <SidebarInset className="max-h-svh overflow-hidden">
+            <div data-second-desktop-titlebar-drag-region aria-hidden="true" />
             <WorkspaceContentErrorBoundary>
               {children}
             </WorkspaceContentErrorBoundary>

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import {
@@ -479,11 +479,11 @@ async function findExistingRuntime() {
   }
 
   if (state) {
-    if (isRuntimeStateActive(state)) {
+    if (await isRuntimeStateReady(state)) {
       return runtimeInfoFromState(state, "runtime state");
     }
 
-    await stopRuntimeFromState(state);
+    await cleanupInactiveRuntimeState(state);
   }
 
   const lock = readRuntimeLock();
@@ -494,11 +494,22 @@ async function findExistingRuntime() {
     lock.supervisorPid !== process.pid &&
     isProcessAlive(lock.supervisorPid)
   ) {
-    return runtimeInfoFromState(lock, "runtime lock");
+    if (await isRuntimeStateReady(lock)) {
+      return runtimeInfoFromState(lock, "runtime lock");
+    }
+    if (isKnownSecondRuntimeProcess(lock.supervisorPid)) {
+      await terminatePid(lock.supervisorPid);
+    }
   }
 
   removeRuntimeLock();
   return null;
+}
+
+async function isRuntimeStateReady(state) {
+  const runningPort = Number.isInteger(state?.port) ? state.port : null;
+  if (!runningPort) return false;
+  return waitForReady(`http://localhost:${runningPort}/api/health`, 1500);
 }
 
 function runtimeInfoFromState(state, source) {
@@ -532,6 +543,51 @@ function isRuntimeStateActive(state) {
   }
 
   return false;
+}
+
+async function cleanupInactiveRuntimeState(state) {
+  if (!isRuntimeStateActive(state)) {
+    await stopRuntimeFromState(state);
+    return;
+  }
+
+  const pids = [
+    state.processes?.worker?.pid,
+    state.processes?.web?.pid,
+    state.processes?.redis?.pid,
+    state.processes?.mongo?.pid,
+    state.supervisorPid,
+  ].filter((pid) => Number.isInteger(pid) && pid !== process.pid);
+
+  for (const pid of pids) {
+    if (isKnownSecondRuntimeProcess(pid)) {
+      await terminatePid(pid);
+    }
+  }
+
+  removeRuntimeState();
+  removeLocalControlState();
+  removeRuntimeLock();
+}
+
+function isKnownSecondRuntimeProcess(pid) {
+  const command = readProcessCommand(pid);
+  if (!command) return false;
+  return /second-local\.js|payloads\/[^ ]+\/dist\/(?:web\/server\.js|worker\.mjs)|dist\/runtime\/|mongod|redis-server|@second-inc\/cli-local|Second\.app\/Contents\/Resources/.test(
+    command,
+  );
+}
+
+function readProcessCommand(pid) {
+  try {
+    const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) return "";
+    return result.stdout.trim();
+  } catch {
+    return "";
+  }
 }
 
 function printAlreadyRunning(info) {

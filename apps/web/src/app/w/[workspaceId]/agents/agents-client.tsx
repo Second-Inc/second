@@ -331,7 +331,10 @@ export function AgentsClient({ workspaceId, teams }: AgentsClientProps) {
 
     return (
       <div className="flex h-full flex-col overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[720px] flex-col items-center px-6 pt-[18vh] pb-12">
+        <div
+          data-second-desktop-drag-region
+          className="mx-auto flex w-full max-w-[720px] flex-col items-center px-6 pt-[18vh] pb-12"
+        >
           {/* Title */}
           <h1
             className="text-2xl tracking-tight opacity-0 animate-fade-in-up"

@@ -68,16 +68,26 @@ export class SecondLocalSupervisor extends EventEmitter {
     });
     this.child = child;
 
+    const outputLines = [];
+    const rememberOutput = (lines) => {
+      outputLines.push(...lines);
+      if (outputLines.length > 30) {
+        outputLines.splice(0, outputLines.length - 30);
+      }
+    };
+
     child.stdout.on("data", (chunk) => {
-      this.handleOutput(chunk.toString(), "stdout");
+      rememberOutput(this.handleOutput(chunk.toString(), "stdout"));
     });
     child.stderr.on("data", (chunk) => {
-      this.handleOutput(chunk.toString(), "stderr");
+      rememberOutput(this.handleOutput(chunk.toString(), "stderr"));
     });
 
+    let launchSettled = false;
     const exitEarly = new Promise((_, reject) => {
       child.once("error", reject);
-      child.once("exit", async (code, signal) => {
+      child.once("close", async (code, signal) => {
+        if (this.child === child) this.child = null;
         if (!this.ready) {
           if (code === 0 && !signal) {
             try {
@@ -93,11 +103,7 @@ export class SecondLocalSupervisor extends EventEmitter {
             }
           }
           reject(
-            new Error(
-              signal
-                ? `Second local runtime exited with signal ${signal}`
-                : `Second local runtime exited with code ${code ?? 1}`,
-            ),
+            new Error(formatEarlyExitError({ code, signal, outputLines })),
           );
         }
       });
@@ -107,11 +113,17 @@ export class SecondLocalSupervisor extends EventEmitter {
       port,
       timeoutMs: options.startupTimeoutMs ?? this.startupTimeoutMs,
       onProgress: (message) => {
-        this.emitProgress("starting", "health", message);
+        if (!launchSettled) {
+          this.emitProgress("starting", "health", message);
+        }
       },
     });
 
-    this.ready = await Promise.race([ready, exitEarly]);
+    try {
+      this.ready = await Promise.race([ready, exitEarly]);
+    } finally {
+      launchSettled = true;
+    }
     this.emitProgress("ready", "ready", "Second is ready");
     return this.ready;
   }
@@ -162,8 +174,15 @@ export class SecondLocalSupervisor extends EventEmitter {
   status() {
     const state = readRuntimeState();
     const port = Number.isInteger(state?.port) ? state.port : this.port;
+    const childRunning =
+      Boolean(this.child) &&
+      this.child.exitCode === null &&
+      this.child.signalCode === null &&
+      !this.child.killed;
+    const ready = Boolean(this.ready?.publicUrl);
     return {
-      running: Boolean(state?.supervisorPid),
+      running: childRunning || ready,
+      ready,
       runtimeId: this.runtimeId,
       port,
       publicUrl: port ? `http://localhost:${port}` : null,
@@ -226,12 +245,15 @@ export class SecondLocalSupervisor extends EventEmitter {
 
   handleOutput(raw, stream) {
     const text = redactText(raw);
+    const lines = [];
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
+      lines.push(line);
       this.emit("log", { stream, line });
       const event = classifySupervisorLine(line);
       if (event) this.emit("progress", event);
     }
+    return lines;
   }
 
   emitProgress(status, step, message) {
@@ -390,6 +412,18 @@ function runCommand(command, args, { cwd, env, timeoutMs, onOutput } = {}) {
       );
     });
   });
+}
+
+function formatEarlyExitError({ code, signal, outputLines }) {
+  const reason = signal
+    ? `Second local runtime exited with signal ${signal}`
+    : `Second local runtime exited with code ${code ?? 1}`;
+  const usefulLines = outputLines
+    .map((line) => stripAnsi(line).trim())
+    .filter(Boolean)
+    .slice(-8);
+  if (usefulLines.length === 0) return reason;
+  return `${reason}. Last output:\n${usefulLines.join("\n")}`;
 }
 
 function classifySupervisorLine(line) {
