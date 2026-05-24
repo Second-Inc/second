@@ -87,7 +87,7 @@ Second is a single workspace.
 
 ## Second VS other solutions
 
-Most platforms weren't built for multiplayer, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
+Most platforms weren't built for multiplayer, async work with agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
 **Generally, multiplayer human-agent work is where coordination gets hard and things start to break.**
 
 Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom GUI to work with a team of agents, tailored to your company's needs!
