@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source srcset="docs/assets/readme_cover.webp" type="image/webp">
-    <img src="docs/assets/readme_cover.jpg" alt="Second — humans and agents, side by side" width="92%">
+    <img src="docs/assets/readme_cover.jpg" alt="Second — humans and agents, side by side" width="100%">
   </picture>
 </p>
 
