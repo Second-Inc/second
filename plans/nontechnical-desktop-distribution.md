@@ -16,7 +16,7 @@ The user-visible goal is simple:
 
 - Mac users download and open a signed/notarized app installer, then launch Second from Applications.
 - Windows users download and run a signed installer, then launch Second from the Start menu or desktop.
-- Linux users download an AppImage, `.deb`, or `.rpm`, then launch Second from the desktop menu or terminal.
+- Linux users download an AppImage, then launch Second from the desktop menu or terminal.
 - In every case, the app starts the local Second stack, opens the Second UI inside an app window, reports progress clearly, can stop/reset/update itself, and gives useful recovery instructions when the host machine blocks a prerequisite.
 
 
@@ -25,7 +25,7 @@ The user-visible goal is simple:
 
 The work is complete when all of these are true:
 
-1. There is a desktop application package source in the monorepo, tentatively `apps/desktop`, with a small native shell around the existing Second local runtime.
+1. There is a desktop application package source in the monorepo at `apps/desktop`, with a small native shell around the existing Second local runtime.
 2. The desktop app does not require the user to install Node.js, npm, Docker, MongoDB, Redis, Homebrew, WSL manually, or any CLI runtime before the app can open.
 3. macOS installers are signed and notarized, with one universal app or two architecture-specific builds for Apple Silicon and Intel Macs.
 4. Windows installers are signed and work for nontechnical Windows users through exactly one v1 runtime path: a Second-managed WSL2 runtime hidden behind the Windows app.
@@ -34,7 +34,7 @@ The work is complete when all of these are true:
 7. The desktop app and CLI share one core local supervisor implementation so process management, runtime setup, ports, stop/reset, update status, telemetry flags, secrets, and logs do not fork into two independent systems.
 8. MongoDB and Redis runtime behavior is validated on macOS, Linux, and the Windows-managed WSL2 runtime.
 9. Agent provider detection and onboarding work from the desktop app. A user can choose Claude Code, Codex, OpenCode, or API-key based providers according to what the local runtime can actually access.
-10. CI builds release artifacts for macOS, Windows, and Linux, signs them where required, and publishes artifacts in a repeatable release workflow.
+10. CI builds release artifacts for macOS, Windows, and Linux, signs them where required, and uploads them to a GitHub Release in a repeatable release workflow.
 11. QA guides and release checklists exist for clean-machine tests on all supported OSes.
 
 
@@ -116,7 +116,7 @@ The target user flows are:
 
 ### Windows
 
-1. User downloads `SecondSetup.exe` or `Second.msi`.
+1. User downloads `Second-<version>-windows-x64.exe`.
 2. User runs the signed installer.
 3. User opens Second from Start menu or desktop.
 4. The app checks for a Second-managed WSL2 runtime.
@@ -127,7 +127,7 @@ The target user flows are:
 
 ### Linux
 
-1. User downloads `Second.AppImage`, `.deb`, or `.rpm`.
+1. User downloads `Second-<version>-linux-x64.AppImage`.
 2. User installs or runs it.
 3. The app starts the local runtime using packaged Linux binaries.
 4. The app window displays the Second UI.
@@ -192,7 +192,7 @@ Important plain-language terms:
 
 - `packages/cli/scripts/bundle-worker.mjs`
   - Builds the worker bundle, Next standalone web output, static assets, and runtime binaries.
-  - Desktop packaging should either reuse this or replace it with a shared payload build script.
+  - Desktop packaging must move this behavior into a shared payload build script used by both CLI payloads and desktop packaging.
 
 - `packages/cli/scripts/prepare-runtime.mjs`
   - Prepares MongoDB and Redis binaries for a target runtime.
@@ -208,7 +208,13 @@ Important plain-language terms:
 
 - `.github/workflows/release-cli.yml`
   - Existing or recent CLI release workflow.
-  - Desktop release should be a separate workflow or a clearly separated job group.
+  - Desktop release is a separate workflow: `.github/workflows/release-desktop.yml`.
+
+- New: `.github/workflows/release-desktop.yml`
+  - Deterministic desktop release workflow.
+  - Triggered by tags matching `desktop-v*`.
+  - Creates or updates the matching GitHub Release.
+  - Uploads the exact desktop installer artifacts and `checksums.txt`.
 
 - `plans/cli-multi-platform-distribution.md`
   - Existing plan for multi-platform CLI distribution.
@@ -300,7 +306,7 @@ The implementation should introduce three layers:
 2. **Platform payload builder**: shared build scripts that produce platform-specific runtime payloads containing the Next.js standalone server, worker bundle, MongoDB, Redis or Redis-compatible binary, and runtime manifest.
 3. **Desktop shell**: Electron app in `apps/desktop` that displays local setup progress and embeds the Second web UI after the supervisor is ready.
 
-The desktop app should not call `npx --yes @second-inc/cli` in production. It may call the shared supervisor directly or spawn a bundled supervisor entrypoint. This removes user dependency on Node/npm and avoids npm being part of app launch.
+The desktop app should not call `npx --yes @second-inc/cli` in production. Electron's main process should call the shared supervisor API directly. This removes user dependency on Node/npm and avoids npm being part of app launch.
 
 ### macOS Runtime Strategy
 
@@ -317,7 +323,6 @@ The current CLI payload already proves this direction on Apple Silicon. The desk
 macOS deliverables:
 
 - `Second.dmg` for drag-to-Applications installation;
-- optionally `Second.pkg` if a more guided installer is needed;
 - signed and notarized app bundle;
 - universal binary if practical, otherwise separate arm64 and x64 downloads.
 
@@ -332,10 +337,10 @@ Linux should use the same native packaged runtime direction as CLI Linux:
 - packaged worker bundle;
 - packaged `bubblewrap` guidance or dependency handling for Claude Code if needed.
 
-Linux deliverables:
+Linux v1 deliverables:
 
 - AppImage first for broad testability;
-- `.deb` and `.rpm` after the AppImage path is stable;
+- no `.deb` or `.rpm` in v1;
 - desktop file, icon, and MIME/menu integration where useful.
 
 ### Windows Runtime Strategy
@@ -419,20 +424,29 @@ The desktop app must preserve current security boundaries:
 
 ### Release Design
 
-Desktop release should be separate from CLI release:
+Desktop release is separate from CLI release:
 
 - CLI release publishes npm packages.
-- Desktop release publishes OS installers.
-- Both may share the same version number, but each release workflow should be independently understandable.
+- Desktop release uploads OS installers to GitHub Releases.
+- The desktop release source of truth is `.github/workflows/release-desktop.yml`.
+- Desktop releases are triggered only by tags matching `desktop-v<semver>`, for example `desktop-v0.2.0`.
+- The workflow must create a GitHub Release named `Second Desktop v<semver>`.
+- The workflow must upload all required desktop artifacts to that GitHub Release.
+- The workflow must upload `checksums.txt` containing SHA-256 checksums for every installer.
+- If any required platform artifact fails to build, sign, notarize, or upload, the release fails.
+- The GitHub Release is the canonical download location for v1 desktop installers.
 
-Recommended artifacts:
+Required v1 artifacts for `desktop-v0.2.0`:
 
 | Platform | Artifact | Notes |
 | --- | --- | --- |
-| macOS arm64/x64 | `.dmg` plus optional `.zip` for auto-update | signed and notarized |
-| Windows x64 | `.exe` installer or `.msi` | signed; manages WSL2 internally |
-| Linux x64 | `.AppImage` first, `.deb` and `.rpm` later | signing/checksums required |
-| Linux arm64 | later phase | depends on runtime validation |
+| macOS arm64 | `Second-0.2.0-mac-arm64.dmg` | signed and notarized |
+| macOS x64 | `Second-0.2.0-mac-x64.dmg` | signed and notarized |
+| Windows x64 | `Second-0.2.0-windows-x64.exe` | signed; manages WSL2 internally |
+| Linux x64 | `Second-0.2.0-linux-x64.AppImage` | checksum required |
+| Checksums | `checksums.txt` | SHA-256 for every artifact |
+
+`.deb`, `.rpm`, macOS universal binaries, Windows `.msi`, and auto-update-specific `.zip` files are not part of v1. They require a separate plan or an explicit update to this plan.
 
 
 ## Phased Implementation Plan
@@ -637,7 +651,6 @@ Files and code areas touched:
 Implementation scope:
 
 - Produce AppImage for Linux x64.
-- Add `.deb` and `.rpm` after AppImage smoke tests pass.
 - Bundle runtime dependencies or validate system dependencies clearly.
 - Include desktop icon and `.desktop` metadata.
 
@@ -658,7 +671,7 @@ Observable success:
 
 Rollback / retry notes:
 
-- If AppImage works but `.deb` or `.rpm` packaging has issues, ship AppImage first and keep distro packages experimental.
+- If AppImage packaging is not reliable, do not ship Linux desktop yet. `.deb` and `.rpm` are not fallback paths in v1.
 
 
 ### Phase 5: Build Windows Managed WSL2 Installer
@@ -896,7 +909,7 @@ Windows managed WSL2 prototype commands, to be run from PowerShell by a develope
     wsl -d SecondDevRuntime -- uname -a
     wsl --unregister SecondDevRuntime
 
-Desktop development commands will be defined when `apps/desktop` is introduced. Expected shape:
+`apps/desktop` must expose these scripts:
 
     npm --prefix apps/desktop install
     npm --prefix apps/desktop run dev
@@ -905,9 +918,17 @@ Desktop development commands will be defined when `apps/desktop` is introduced. 
 
 Release workflow expectations:
 
-    # Future desktop release, exact command depends on CI design.
     git tag desktop-v0.2.0
     git push origin desktop-v0.2.0
+
+Expected deterministic release result:
+
+    GitHub Release: Second Desktop v0.2.0
+    Second-0.2.0-mac-arm64.dmg
+    Second-0.2.0-mac-x64.dmg
+    Second-0.2.0-windows-x64.exe
+    Second-0.2.0-linux-x64.AppImage
+    checksums.txt
 
 
 ## Validation and Acceptance
@@ -1030,8 +1051,8 @@ Interfaces that must exist by the end:
 
 External dependencies and services:
 
-- Electron or an equivalent desktop framework.
-- Desktop packaging tooling, likely Electron Forge or electron-builder.
+- Electron.
+- electron-builder for desktop packaging and GitHub Release artifact publishing.
 - macOS Developer ID certificate and notarization credentials.
 - Windows code signing certificate.
 - Linux packaging/signing/checksum process.
