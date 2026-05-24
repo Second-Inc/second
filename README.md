@@ -84,7 +84,6 @@ Second is a single workspace.
       <video src="https://github.com/user-attachments/assets/2116c633-48f3-415a-a047-a72f05da3166" width="600" controls></video>
       <p>•</p>
       <p align="left"><strong>Second is the most powerful way to build custom GUIs for agents.</strong><br>Production-ready software for your team, deployed in your VPC, built around your workflows.</p>
-      <img width="1" height="8" alt="">
     </td>
   </tr>
 </table>
