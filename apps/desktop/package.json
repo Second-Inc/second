@@ -8,8 +8,8 @@
   "scripts": {
     "build": "node scripts/check-js.mjs",
     "dev": "electron .",
-    "package": "electron-builder --dir",
-    "make": "electron-builder"
+    "package": "electron-builder --config electron-builder.config.mjs --dir",
+    "make": "electron-builder --config electron-builder.config.mjs"
   },
   "dependencies": {
     "@second-inc/local-supervisor": "file:../../packages/local-supervisor"

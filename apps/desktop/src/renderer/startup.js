@@ -1,4 +1,6 @@
-const orderedSteps = ["runtime", "wsl", "data", "web", "agents", "ready"];
+const orderedSteps = /Windows/i.test(navigator.userAgent)
+  ? ["runtime", "wsl", "data", "web", "agents", "ready"]
+  : ["runtime", "data", "web", "agents", "ready"];
 const headline = document.getElementById("headline");
 const message = document.getElementById("message");
 const restartButton = document.getElementById("restart");
@@ -6,6 +8,11 @@ const logsButton = document.getElementById("logs");
 const diagnosticsButton = document.getElementById("diagnostics");
 
 let currentStep = "runtime";
+
+for (const item of document.querySelectorAll("[data-step]")) {
+  const step = item.getAttribute("data-step");
+  if (!orderedSteps.includes(step)) item.remove();
+}
 
 window.secondDesktop?.onStatus((event) => {
   if (!event || !event.step) return;

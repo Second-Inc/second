@@ -7,5 +7,6 @@ node_modules/
 packages/cli/dist/
 packages/cli/*.tgz
 packages/cli/.runtime-cache/
+apps/desktop/release/
 .second-dev.txt
 .second-dev/

@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld("secondDesktop", {
   },
 });
 
+markDesktopShell();
+
 function filterStatusPayload(payload) {
   const safe = {};
   if (!payload || typeof payload !== "object") return safe;
@@ -51,4 +53,18 @@ function filterStatusPayload(payload) {
     if (allowedStatusFields.has(key)) safe[key] = value;
   }
   return safe;
+}
+
+function markDesktopShell() {
+  const apply = () => {
+    document.documentElement.dataset.secondDesktop = "true";
+    document.documentElement.dataset.secondDesktopPlatform = process.platform;
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", apply, { once: true });
+    return;
+  }
+
+  apply();
 }

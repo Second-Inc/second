@@ -42,6 +42,15 @@ export class SecondLocalSupervisor extends EventEmitter {
 
     const port = normalizePort(options.port ?? this.port);
     this.port = port;
+    const existing = await this.findExistingReadyRuntime({
+      timeoutMs: 2500,
+    });
+    if (existing) {
+      this.ready = existing;
+      this.emitProgress("ready", "ready", "Second is already running");
+      return existing;
+    }
+
     const entrypoint = this.resolveEntrypoint(options.entrypoint);
     const env = this.createChildEnv({
       SECOND_DESKTOP: "1",
@@ -68,8 +77,21 @@ export class SecondLocalSupervisor extends EventEmitter {
 
     const exitEarly = new Promise((_, reject) => {
       child.once("error", reject);
-      child.once("exit", (code, signal) => {
+      child.once("exit", async (code, signal) => {
         if (!this.ready) {
+          if (code === 0 && !signal) {
+            try {
+              this.ready = await this.findExistingReadyRuntime({
+                timeoutMs: 5000,
+              });
+              if (this.ready) {
+                this.emitProgress("ready", "ready", "Second is already running");
+                return;
+              }
+            } catch {
+              // Fall through to the normal early-exit error.
+            }
+          }
           reject(
             new Error(
               signal
@@ -121,6 +143,20 @@ export class SecondLocalSupervisor extends EventEmitter {
   async restart() {
     await this.stop();
     return this.start();
+  }
+
+  async findExistingReadyRuntime({ timeoutMs }) {
+    const state = readRuntimeState();
+    const statePort = Number.isInteger(state?.port) ? state.port : this.port;
+    if (!statePort) return null;
+    try {
+      return await waitForRuntimeReady({
+        port: statePort,
+        timeoutMs,
+      });
+    } catch {
+      return null;
+    }
   }
 
   status() {

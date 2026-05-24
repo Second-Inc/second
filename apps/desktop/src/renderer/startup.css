@@ -21,6 +21,17 @@ body {
     #f6f7f7;
 }
 
+body::before {
+  content: "";
+  position: fixed;
+  z-index: 10;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 48px;
+  -webkit-app-region: drag;
+}
+
 button {
   height: 34px;
   border: 1px solid #c8ccca;
@@ -30,6 +41,7 @@ button {
   color: #202124;
   font: inherit;
   font-size: 13px;
+  -webkit-app-region: no-drag;
 }
 
 button:hover {

@@ -4,6 +4,7 @@ import {
   currentRuntimeId,
   resolveSupervisorEntrypoint,
 } from "@second-inc/local-supervisor";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ManagedWslSecondRuntime } from "./windows-wsl-runtime.js";
@@ -69,6 +70,13 @@ function createMainWindow() {
     minHeight: 640,
     title: "Second",
     show: false,
+    ...(process.platform === "darwin"
+      ? {
+          backgroundColor: "#111113",
+          titleBarStyle: "hiddenInset",
+          trafficLightPosition: { x: 18, y: 18 },
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, "..", "preload", "preload.cjs"),
       nodeIntegration: false,
@@ -106,7 +114,7 @@ function createRuntime() {
   return createSecondLocalSupervisor({
     port,
     entrypoint,
-    nodePath: process.execPath,
+    nodePath: resolvePackagedNodePath(),
     nodeEnv: {
       ELECTRON_RUN_AS_NODE: "1",
     },
@@ -115,6 +123,28 @@ function createRuntime() {
       SECOND_LOCAL_NO_OPEN: "1",
     },
   });
+}
+
+function resolvePackagedNodePath() {
+  if (process.env.SECOND_DESKTOP_NODE_PATH) {
+    return process.env.SECOND_DESKTOP_NODE_PATH;
+  }
+
+  if (process.platform === "darwin" && app.isPackaged) {
+    const helperName = `${app.getName()} Helper`;
+    const helperPath = resolve(
+      dirname(process.execPath),
+      "..",
+      "Frameworks",
+      `${helperName}.app`,
+      "Contents",
+      "MacOS",
+      helperName,
+    );
+    if (existsSync(helperPath)) return helperPath;
+  }
+
+  return process.execPath;
 }
 
 function wireRuntime(target) {
