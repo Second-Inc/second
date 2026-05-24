@@ -3,7 +3,7 @@ title: "App Agents"
 description: "How apps trigger approved AI agents with scoped tools, streaming, and background execution."
 ---
 
-Apps built on Second can trigger AI agents defined in an `agents.json` file. Each agent has its own system prompt, scoped tools (built-in or custom HTTP), and optional write access to the app's data. The same governed file can also define top-level `appTools`: custom HTTP actions callable directly from app code through the SDK for deterministic fetch/process/display workflows. Live runtime uses the approved configuration for that app version, so draft changes cannot quietly expand what an agent or app action can call.
+Apps built on Second can trigger AI agents defined in an `agents.json` file. Each agent has its own system prompt, scoped tools (built-in or custom HTTP), and optional write access to the app's data. The same governed file can also define top-level `appTools`: custom HTTP actions callable directly from app code through the SDK for the narrow deterministic backend-function exception, such as bounded bulk fetches followed by app-side post-processing. Live runtime uses the approved configuration for that app version, so draft changes cannot quietly expand what an agent or app action can call.
 
 ## How it works
 
@@ -38,7 +38,7 @@ App iframe (callIntegrationTool)
         → Return response to app code
 ```
 
-Use app actions when the work is deterministic and the app can page, group, filter, or aggregate the provider response itself. Use agents when the task needs reasoning, generation, autonomous decisions, or natural-language workflows.
+Use agents for most integration-backed workflows. Use app actions only for the narrow deterministic backend-function exception: the app can fetch bounded provider batches and then page, group, filter, or aggregate the response itself without AI reasoning, such as fetching PostHog event batches and grouping them by user ID. This avoids consuming an agent's limited context window with huge tool responses when the task is just API pagination plus local computation. Use agents when the task needs reasoning, generation, autonomous decisions, or natural-language workflows.
 
 ## agents.json
 

@@ -37,8 +37,8 @@ Important: If fetched data contains opaque IDs, handles, foreign keys, status co
 
 - Follow the main prompt's "When to use app agents vs deterministic appTools" rule exactly.
 - Use normal \`agents[].tools\` when an AI agent needs to reason, plan, choose between tools, perform a multi-step workflow, write app data, or interact naturally with the user.
-- Use top-level \`appTools\` only when app code should call a provider API directly with \`callIntegrationTool\` for a deterministic one-off request or bounded page of data, then do deterministic pagination, grouping, filtering, or aggregation in \`src/App.tsx\` or helper files.
-- \`agents\` may be an empty array when the app only needs appTools.
+- Use top-level \`appTools\` only for the narrow deterministic backend-function exception: app code should call a provider API directly with \`callIntegrationTool\` for bounded batches of data, then do simple pagination, grouping, filtering, or aggregation in \`src/App.tsx\` or helper files without AI reasoning. Good example: fetch PostHog event batches and group by \`distinct_id\`/user ID.
+- \`agents\` may be an empty array only when the app truly needs no agent reasoning or workflow.
 
 ### Runtime policy and credential identity
 
@@ -63,7 +63,7 @@ Important: If fetched data contains opaque IDs, handles, foreign keys, status co
 
 ### App runtime calls and failures
 
-- For deterministic integration fetches, prefer top-level \`appTools\` plus \`callIntegrationTool\` instead of an agent. Example: \`const result = await callIntegrationTool<{ query: string }, ProviderResponse>("search_items", { query }); if (!result.success) show formatIntegrationToolError(result); otherwise process result.data in app code.\`
+- Use top-level \`appTools\` plus \`callIntegrationTool\` only for the narrow deterministic backend-function exception. Example: \`const result = await callIntegrationTool<PostHogEventsInput, PostHogEventsPage>("posthog_events_page", { projectId: "123", limit: 50 }); if (!result.success) show formatIntegrationToolError(result); otherwise group result.data.results by distinct_id/user ID in app code.\`
 - Backend function failures include structured diagnostics: \`result.error\`, \`statusCode\`, \`errorCode\`, \`errorCategory\`, \`resolution\`, \`retryable\`, \`canRequestBuilderRepair\`, and \`details\`. Never replace these with a generic message like "request failed"; show the provider status/message and the resolution in the app UI.
 - If a live backend function failure blocks the workflow and \`result.canRequestBuilderRepair\` is true, offer a compact "Ask builder to fix" action that calls \`reportIntegrationToolFailure(toolName, input, result, description, attemptedTask)\`. Do not report wrong/expired credentials or missing permissions to the builder; for those, tell the user what credential or provider access to fix.
 - Backend functions are still approved in \`agents.json\` and still use \`integration-setup.json\` for credentials. The app sends only \`toolName\` and input; Second injects secrets/OAuth tokens server-side.
@@ -85,6 +85,7 @@ Important: If fetched data contains opaque IDs, handles, foreign keys, status co
 ## Bounded response design
 
 - App-callable integration actions return data to app code instead of an agent, so deterministic pagination and app-side grouping are preferred for bulk dashboards. Each individual action response is still bounded; do not design one unbounded request for thousands of records.
+- Use appTools for data-heavy deterministic fetches because huge provider responses can consume an agent's limited context window and waste agent time/tokens when the task is just pagination plus local computation.
 - Keep custom tool responses small enough for the agent to read directly. The agent receives the provider response before it can filter fields or write app data. \`responseSchema\` is descriptive only; it does not trim, project, or reshape runtime output.
 - For search, content, crawl, enrichment, and RAG APIs, avoid unbounded full document/page body fields in multi-result tools. Prefer metadata, summaries, highlights, snippets, or explicit character limits.
 

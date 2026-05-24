@@ -570,8 +570,8 @@ Implementation scope:
 
 - Update planning guidance:
   - `present_plan.backend` can summarize app-callable integration actions when needed.
-  - The builder should choose app tools for deterministic fetch/process/display tasks.
-  - The builder should choose app agents only when reasoning, generation, autonomous decisions, or natural-language workflows are needed.
+  - The builder should choose app agents for most integration-backed workflows.
+  - The builder should choose app tools only for the narrow deterministic backend-function exception, such as fetching bounded PostHog event batches and grouping them by user ID in app code without AI reasoning.
 - Update integration guidance:
   - Builder calls `list_app_integration_keys` before deciding setup for app tools too.
   - Builder writes top-level `appTools` in `agents.json` for direct app calls.
