@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/readme_cover.png" alt="Second — humans and agents, side by side" width="100%">
+  <picture>
+    <source srcset="docs/assets/readme_cover.webp" type="image/webp">
+    <img src="docs/assets/readme_cover.jpg" alt="Second — humans and agents, side by side" width="100%">
+  </picture>
 </p>
 
 <div align="center">
@@ -76,9 +79,9 @@ Second is a single workspace.
 <table align="center" width="100%" cellpadding="16">
   <tr>
     <td align="center">
-      <h3>Example: <strong>competitor tracker app</strong> built on Second</h3>
+      <h4>Example: <strong>competitor tracker app</strong> built on Second</h4>
       <p><sub>Featuring single-competitor enrichment + a weekly recap presentation across all tracked competitors.</sub></p>
-      <video src="docs/assets/full-demo.mp4" width="600" controls></video>
+      <video src="https://github.com/user-attachments/assets/2116c633-48f3-415a-a047-a72f05da3166" width="600" controls></video>
     </td>
   </tr>
 </table>
