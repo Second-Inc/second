@@ -15,8 +15,14 @@ concurrency:
 
 jobs:
   code:
-    name: Code checks
-    runs-on: ubuntu-latest
+    name: Code checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
 
     steps:
       - name: Checkout

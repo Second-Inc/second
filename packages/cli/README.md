@@ -24,14 +24,14 @@ Second is open-source, self-hosted, and bring your own agent.
 npx --yes @second-inc/cli
 ```
 
-The local CLI currently supports Apple Silicon Macs.
+The local CLI currently supports Apple Silicon Macs and Linux x64, including Windows via WSL2.
 
 | Platform | Status |
 |:---|:---|
 | Apple Silicon Mac (M1-M5) | Available now |
+| Linux x64 / Windows via WSL2 | Experimental |
 | Intel Mac | Coming soon |
-| Linux | Coming soon |
-| Windows / WSL2 | Coming soon |
+| Native Windows | Coming soon |
 
 ## CLI Commands
 

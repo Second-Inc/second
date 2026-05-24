@@ -39,7 +39,8 @@ npx --yes @second-inc/cli
 | Platform | Status |
 |:---|:---|
 | Apple Silicon Mac (M1-M5) | **Available now** |
-| Intel Mac, Linux, Windows | Coming soon |
+| Linux x64, Windows via WSL2 | Experimental |
+| Intel Mac, native Windows | Coming soon |
 
 Bring your agent:
 
@@ -445,7 +446,8 @@ npx --yes @second-inc/cli
 | Platform | Status |
 |:---|:---|
 | Apple Silicon Mac (M1-M5) | **Available now** |
-| Intel Mac, Linux, Windows | Coming soon |
+| Linux x64, Windows via WSL2 | Experimental |
+| Intel Mac, native Windows | Coming soon |
 
 <details>
 <summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
@@ -460,6 +462,27 @@ npx --yes @second-inc/cli --disable-telemetry  # No analytics
 ```
 
 </details>
+
+### Windows via WSL2
+
+Second does not currently run from native Windows PowerShell or Command Prompt. On Windows, run it through WSL2:
+
+1. Open PowerShell as Administrator.
+2. Install Ubuntu on WSL2:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+3. Restart Windows if prompted.
+4. Open Ubuntu from Windows Terminal or the Start menu.
+5. Create the Ubuntu username/password when prompted.
+6. In Ubuntu, install Node.js 20+ and npm.
+7. Start Second from the Ubuntu terminal:
+
+```bash
+npx --yes @second-inc/cli
+```
 
 <details>
 <summary>&nbsp;&nbsp;<strong>Development from Source</strong></summary>

@@ -110,6 +110,13 @@ function resolvePayloadPackage() {
       binName: "second-local",
     };
   }
+  if (runtimeId === "linux-x64") {
+    return {
+      runtimeId,
+      packageName: "@second-inc/cli-local-linux-x64",
+      binName: "second-local",
+    };
+  }
   return null;
 }
 
@@ -379,11 +386,11 @@ function printUnsupportedPlatform() {
   printSplashScene({
     eyebrow: "unsupported platform",
     title: "Second is not available here yet",
-    subtitle: "The local installer currently ships for macOS Apple Silicon.",
+    subtitle: "The local installer currently ships for macOS Apple Silicon and Linux x64.",
     quote: "\"Detected a runtime we do not package yet.\"",
     rows: [
       ["detected", currentRuntimeId()],
-      ["supported", "darwin-arm64"],
+      ["supported", "darwin-arm64, linux-x64"],
     ],
     tone: "error",
   });

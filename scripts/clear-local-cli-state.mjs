@@ -44,6 +44,8 @@ const pathsToRemove = [
   join(repoRoot, "packages", "cli", ".runtime-cache"),
   join(repoRoot, "packages", "cli", "dist"),
   join(repoRoot, "packages", "cli-local-darwin-arm64", "dist"),
+  join(repoRoot, "packages", "cli-local-linux-x64", "bin"),
+  join(repoRoot, "packages", "cli-local-linux-x64", "dist"),
 ];
 
 for (const target of pathsToRemove) {
@@ -52,6 +54,7 @@ for (const target of pathsToRemove) {
 
 removeGlobbedTgz(join(repoRoot, "packages", "cli"));
 removeGlobbedTgz(join(repoRoot, "packages", "cli-local-darwin-arm64"));
+removeGlobbedTgz(join(repoRoot, "packages", "cli-local-linux-x64"));
 
 console.log("Cleaning npm cache...");
 const npmCache = spawnSync("npm", ["cache", "clean", "--force"], {

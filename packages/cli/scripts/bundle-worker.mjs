@@ -17,6 +17,7 @@ const root = join(__dirname, "..", "..", "..");
 const cliRoot = join(__dirname, "..");
 const args = process.argv.slice(2);
 const outIndex = args.indexOf("--out");
+const runtimeId = readFlag("--runtime-id");
 const cliDist =
   outIndex === -1
     ? join(cliRoot, "dist")
@@ -100,11 +101,22 @@ if (process.env.SECOND_CLI_SKIP_BUNDLED_RUNTIME === "1") {
   console.log("Runtime bundle skipped; expecting @second-inc/runtime-* optional dependency.");
 } else {
   console.log("Bundling local runtime binaries...");
-  await run("node", [
+  const prepareRuntimeArgs = [
     join(cliRoot, "scripts", "prepare-runtime.mjs"),
     "--out",
     join(cliDist, "runtime"),
-  ]);
+  ];
+  if (runtimeId) {
+    prepareRuntimeArgs.push("--runtime-id", runtimeId);
+  }
+  await run("node", prepareRuntimeArgs);
+}
+
+function readFlag(name) {
+  const index = args.indexOf(name);
+  if (index === -1) return undefined;
+  const value = args[index + 1];
+  return value && !value.startsWith("-") ? value : undefined;
 }
 
 function materializeStandaloneExternalModules({ sourceRoot, targetRoot }) {
