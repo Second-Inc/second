@@ -71,7 +71,7 @@ Second is a single workspace.
 
 1. **You describe your app.** In a single prompt.
 2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
-3. **Your team now works alongside agents,** in the same shared, custom apps you've built.
+3. **Your team now works alongside agents** in the same shared custom apps you've built.
 
 <table align="center" width="100%" cellpadding="16">
   <tr>
