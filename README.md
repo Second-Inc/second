@@ -79,7 +79,7 @@ Second is a single workspace.
 <table align="center" width="100%" cellpadding="16">
   <tr>
     <td align="center">
-      <h4>Example: <strong>competitor tracker app</strong> built on Second</h4>
+      <h3>Example: <strong>competitor tracker app</strong> built on Second</h3>
       <p><sub>Featuring single-competitor enrichment + a weekly recap presentation across all tracked competitors.</sub></p>
       <video src="https://github.com/user-attachments/assets/2116c633-48f3-415a-a047-a72f05da3166" width="600" controls></video>
     </td>
