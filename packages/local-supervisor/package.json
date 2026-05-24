@@ -1,0 +1,15 @@
+{
+  "name": "@second-inc/local-supervisor",
+  "version": "0.1.0",
+  "description": "Programmatic supervisor adapter for the Second local runtime.",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "build": "node --check src/index.js"
+  },
+  "license": "Apache-2.0"
+}

@@ -39,6 +39,7 @@ jobs:
           npm ci --prefix apps/web
           npm ci --prefix apps/worker
           npm ci --prefix packages/cli
+          npm ci --prefix apps/desktop
 
       - name: Typecheck
         run: npm run typecheck
@@ -51,6 +52,12 @@ jobs:
 
       - name: Validate CLI launcher
         run: npm --prefix packages/cli run build
+
+      - name: Validate local supervisor
+        run: npm --prefix packages/local-supervisor run build
+
+      - name: Validate desktop shell
+        run: npm --prefix apps/desktop run build
 
   docs:
     name: Docs check

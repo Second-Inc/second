@@ -9,6 +9,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const bumpScript = resolve(repoRoot, "scripts/bump-cli-version.mjs");
 const payloadDirs = [
   resolve(repoRoot, "packages/cli-local-darwin-arm64"),
+  resolve(repoRoot, "packages/cli-local-darwin-x64"),
   resolve(repoRoot, "packages/cli-local-linux-x64"),
 ];
 const cliDir = resolve(repoRoot, "packages/cli");

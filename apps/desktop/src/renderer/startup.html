@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src http://localhost:* http://127.0.0.1:*"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Second</title>
+    <link rel="stylesheet" href="./startup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="status-panel" aria-live="polite">
+        <div class="brand-row">
+          <div class="mark" aria-hidden="true">S</div>
+          <div>
+            <h1>Second</h1>
+            <p id="headline">Starting local workspace</p>
+          </div>
+        </div>
+
+        <ol class="steps" id="steps">
+          <li data-step="runtime" class="active">
+            <span></span>
+            <p>Checking runtime</p>
+          </li>
+          <li data-step="wsl">
+            <span></span>
+            <p>Preparing Windows runtime</p>
+          </li>
+          <li data-step="data">
+            <span></span>
+            <p>Starting data services</p>
+          </li>
+          <li data-step="web">
+            <span></span>
+            <p>Starting Second</p>
+          </li>
+          <li data-step="agents">
+            <span></span>
+            <p>Starting agents</p>
+          </li>
+          <li data-step="ready">
+            <span></span>
+            <p>Opening workspace</p>
+          </li>
+        </ol>
+
+        <p class="message" id="message">Checking packaged local runtime</p>
+
+        <div class="actions">
+          <button id="restart" type="button">Restart</button>
+          <button id="logs" type="button">Logs</button>
+          <button id="diagnostics" type="button">Copy diagnostics</button>
+        </div>
+      </section>
+    </main>
+    <script src="./startup.js"></script>
+  </body>
+</html>

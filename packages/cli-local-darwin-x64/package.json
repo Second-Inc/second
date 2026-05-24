@@ -1,0 +1,32 @@
+{
+  "name": "@second-inc/cli-local-darwin-x64",
+  "version": "0.1.24",
+  "description": "Platform payload for @second-inc/cli on Intel Macs.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Second-Inc/second.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Second-Inc/second/issues"
+  },
+  "homepage": "https://github.com/Second-Inc/second#readme",
+  "bin": {
+    "second-local": "./bin/second-local.js"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "scripts": {
+    "build": "node ../cli/scripts/build-local-payload-package.mjs --runtime-id darwin-x64 --out dist",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
+  "license": "Apache-2.0"
+}

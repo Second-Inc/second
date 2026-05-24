@@ -238,7 +238,7 @@ Important plain-language terms:
 ## Assumptions and Constraints
 
 
-- The user asked for a plan only. Do not implement desktop packaging as part of this planning step.
+- The original request was for a plan only, but the user later explicitly requested implementation from this plan. This document now tracks both the plan and implementation progress.
 - The final experience must be suitable for nontechnical users.
 - The CLI must remain supported for technical users and release automation. On macOS, `npx --yes @second-inc/cli` can remain a valid technical path, but the nontechnical product path is still a downloadable app.
 - The desktop app should not weaken tenant isolation, workspace guards, internal token boundaries, app-data scoping, audit logging, or agent tool security.
@@ -264,11 +264,23 @@ Important plain-language terms:
 - [x] 2026-05-24 21:25 Asia/Jerusalem: Read `plans/cli-multi-platform-distribution.md` and confirmed existing CLI thinking treats WSL2 as the first Windows bridge and native Windows as a later runtime milestone.
 - [x] 2026-05-24 21:35 Asia/Jerusalem: Reviewed current CLI launcher, local supervisor, runtime preparation script, and worker provider detection paths.
 - [x] 2026-05-24 21:45 Asia/Jerusalem: Created this desktop distribution plan.
+- [x] 2026-05-24 19:29 IDT: Added `packages/local-supervisor`, a programmatic adapter around the existing local payload supervisor, so desktop code can start, stop, reset, read status, read logs, and collect redacted diagnostics without calling `npx`.
+- [x] 2026-05-24 19:29 IDT: Updated `packages/cli-local-darwin-arm64/bin/second-local.js` for desktop embedding with `--no-open`, `SECOND_LOCAL_NO_OPEN`, `SECOND_DESKTOP`, and `SECOND_NODE_PATH`, preserving CLI behavior while allowing Electron to run the supervisor and child Node processes without a user-installed Node.
+- [x] 2026-05-24 19:29 IDT: Added Intel Mac payload package `packages/cli-local-darwin-x64` and updated CLI release/version helper scripts so `mac-x64` is a real deterministic desktop release target.
+- [x] 2026-05-24 19:29 IDT: Added `apps/desktop`, an Electron shell with a locked-down preload bridge, startup status UI, app menu actions, macOS/Linux native runtime launch, and a Windows-only managed WSL2 runtime manager.
+- [x] 2026-05-24 19:29 IDT: Added `apps/desktop/scripts/build-wsl-rootfs.mjs`, which builds the Windows managed WSL2 rootfs from the Linux payload in CI using Docker export. This is build-time only and is not required on user machines.
+- [x] 2026-05-24 19:29 IDT: Added deterministic `.github/workflows/release-desktop.yml`; `desktop-v<semver>` creates or updates GitHub Release `Second Desktop v<semver>` and requires exactly `mac-arm64.dmg`, `mac-x64.dmg`, `windows-x64.exe`, `linux-x64.AppImage`, and `checksums.txt`.
+- [x] 2026-05-24 19:29 IDT: Updated CI to install and syntax-check the desktop shell and local supervisor.
+- [x] 2026-05-24 19:29 IDT: Ran validation commands: `npm --prefix packages/local-supervisor run build`, `npm --prefix apps/desktop run build`, `npm --prefix packages/cli run build`, `node --check packages/cli-local-darwin-arm64/bin/second-local.js`, YAML parse for CI/release workflows, JSON parse for new package manifests, `npm run typecheck`, and `npm ci --prefix apps/desktop`.
+- [x] 2026-05-24 19:29 IDT: Ran a local macOS `electron-builder --dir --mac --arm64` smoke build with notarization skipped and signing auto-discovery disabled, then removed generated build output.
 - [ ] Implement Phase 0 feasibility probes.
-- [ ] Implement shared local supervisor extraction.
-- [ ] Implement macOS desktop installer.
-- [ ] Implement Linux desktop installer.
-- [ ] Implement Windows managed WSL2 installer.
+- [x] Implement first shared local supervisor adapter.
+- [x] Implement desktop app shell source.
+- [x] Implement deterministic desktop release workflow.
+- [ ] Run full desktop payload and installer builds in GitHub Actions.
+- [ ] Run clean-machine macOS installer QA.
+- [ ] Run clean-machine Linux AppImage QA.
+- [ ] Run clean-machine Windows managed WSL2 installer QA.
 - [ ] Run clean-machine QA and publish desktop artifacts.
 
 
@@ -281,6 +293,11 @@ Important plain-language terms:
 - Linux Claude Code support has a `bubblewrap` requirement when subprocess environment scrubbing is enabled. A managed WSL/Linux runtime must include `bubblewrap` or the app must explain that Claude Code is unavailable until the dependency is present. Disabling env scrubbing is not acceptable as the default for nontechnical users.
 - The desktop app must be careful not to expose local control tokens to the renderer. The current CLI already treats `SECOND_LOCAL_CLI_TOKEN` as server-side only.
 - The recent README WSL2 instructions are useful as a temporary technical-user bridge but do not satisfy the user’s nontechnical installer goal.
+- Electron can be used as the Node executable for the local supervisor by launching it with `ELECTRON_RUN_AS_NODE=1`. The existing payload supervisor also needed `SECOND_NODE_PATH` so the web and worker child processes use the packaged Electron binary instead of assuming `node` exists on the user machine.
+- Windows still has one v1 runtime path after implementation: `apps/desktop/src/main/windows-wsl-runtime.js` checks/imports/starts only the managed WSL2 distro. There is no native Windows fallback path in the desktop app.
+- The Windows rootfs is now deterministic in CI shape: `apps/desktop/scripts/build-wsl-rootfs.mjs` builds it from `node:24-bookworm-slim`, installs `ca-certificates`, `bubblewrap`, `procps`, and `curl`, copies the Linux payload, and exports `second-wsl-rootfs.tar`. This still needs clean-machine Windows validation before release.
+- Local validation intentionally did not run Docker, build the WSL rootfs, run the dev server, or create signed installers. Those are covered by the release workflow and clean-machine QA because the repository instructions forbid local container/dev-server work unless explicitly requested.
+- A local `electron-builder --dir --mac --arm64` smoke passed after disabling local signing identity auto-discovery. The real release proof still belongs in GitHub Actions with explicit signing secrets and full payload builds.
 
 
 ## Decision Log
@@ -293,6 +310,9 @@ Important plain-language terms:
 - 2026-05-24, Codex: Do not expose privileged WSL installation as a silent side effect. Rationale: Windows feature installation can require admin elevation and restart; the user must understand and approve OS-level changes.
 - 2026-05-24, Codex: Do not present native Windows as a parallel option in this plan. Rationale: multiple Windows runtime choices create unnecessary architecture branches and more places for the product to fail.
 - 2026-05-24, Codex: Keep the CLI as a separate supported path. Rationale: it remains useful for developers, CI, and debugging, and can share the same supervisor module.
+- 2026-05-24, Codex: Use Electron’s binary as the packaged Node runtime for macOS/Linux desktop launches by setting `ELECTRON_RUN_AS_NODE=1` and `SECOND_NODE_PATH`. Rationale: nontechnical desktop users must not install Node, and this reuses the runtime already shipped inside Electron.
+- 2026-05-24, Codex: Build the Windows managed WSL2 rootfs in GitHub Actions from the Linux payload and include that tarball in the Windows installer. Rationale: Windows users should download one installer; build-time Docker is acceptable in CI, but users must not install Docker or manually create a distro.
+- 2026-05-24, Codex: Make GitHub Releases the canonical and deterministic artifact store for desktop v1. Rationale: the user explicitly rejected vague storage language; `.github/workflows/release-desktop.yml` now creates or updates the exact release and required artifact names.
 
 
 ## Plan of Work
@@ -1106,15 +1126,21 @@ Plain-language Windows conclusion:
 ## Outcomes & Retrospective
 
 
-Not yet implemented. The expected outcome is a desktop installer system that makes Second feel like a normal app on macOS, Windows, and Linux while preserving the existing local/on-prem architecture, security boundaries, and CLI developer path.
+Initial implementation is in place, but clean-machine installer QA is still pending.
 
-After each major phase, update this section with:
+What now exists:
 
-- what shipped;
-- which platforms passed clean-machine QA;
-- how reliable the managed WSL2 Windows path proved to be;
-- what remains risky;
-- what should be improved before public launch.
+- `packages/local-supervisor` provides a desktop-facing API around the existing local runtime supervisor.
+- `apps/desktop` provides the Electron desktop shell, startup status screen, IPC allowlist, menu commands, diagnostics copy, logs opening, macOS/Linux local runtime launch, and Windows managed WSL2 launch.
+- `apps/desktop/scripts/build-wsl-rootfs.mjs` builds the managed Windows WSL2 rootfs from the Linux payload during CI.
+- `.github/workflows/release-desktop.yml` deterministically builds and publishes the required desktop artifacts to GitHub Releases.
+
+What remains risky until QA:
+
+- The release workflow must be run on real GitHub-hosted macOS, Windows, and Linux runners with signing secrets configured.
+- The Windows WSL2 path must be tested on clean machines with WSL absent, WSL present, and WSL blocked by policy.
+- The macOS DMGs must be verified for signing/notarization and first-open Gatekeeper behavior.
+- The Linux AppImage must be tested on a clean Ubuntu install.
 
 
 ## Change Notes
@@ -1122,6 +1148,7 @@ After each major phase, update this section with:
 
 - 2026-05-24, Codex: Created the initial desktop distribution plan in response to the request for a full plan that works for nontechnical Mac, Windows, and Linux users.
 - 2026-05-24, Codex: Revised the Windows architecture to one v1 path only: the signed Windows app manages WSL2 internally. Native Windows is now explicitly out of scope for this plan.
+- 2026-05-24, Codex: Implemented the first desktop distribution foundation from this plan: shared supervisor adapter, Electron shell, managed WSL2 Windows runtime manager, WSL rootfs build script, CI checks, Intel Mac payload package, and deterministic GitHub Release workflow.
 
 
 ## Captured User Intent (Verbatim)

@@ -110,6 +110,13 @@ function resolvePayloadPackage() {
       binName: "second-local",
     };
   }
+  if (runtimeId === "darwin-x64") {
+    return {
+      runtimeId,
+      packageName: "@second-inc/cli-local-darwin-x64",
+      binName: "second-local",
+    };
+  }
   if (runtimeId === "linux-x64") {
     return {
       runtimeId,

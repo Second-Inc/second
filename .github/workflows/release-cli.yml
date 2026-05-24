@@ -21,6 +21,9 @@ jobs:
           - label: macOS arm64
             runner: macos-15
             package_dir: packages/cli-local-darwin-arm64
+          - label: macOS x64
+            runner: macos-15
+            package_dir: packages/cli-local-darwin-x64
           - label: Linux x64
             runner: ubuntu-latest
             package_dir: packages/cli-local-linux-x64
