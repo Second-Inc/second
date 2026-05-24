@@ -273,18 +273,20 @@ html.dark {
   --sh-entity: #e04f1c;
 }
 
-html[data-second-desktop-platform="darwin"] {
-  --second-mac-titlebar-height: 58px;
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"] {
+  --second-mac-sidebar-left-offset: 3px;
+  --second-mac-titlebar-height: 50px;
 }
 
-html[data-second-desktop-platform="darwin"]
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
   [data-slot="sidebar-container"][data-side="left"]
   [data-slot="sidebar-inner"] {
+  padding-left: var(--second-mac-sidebar-left-offset);
   padding-top: var(--second-mac-titlebar-height);
   -webkit-app-region: drag;
 }
 
-html[data-second-desktop-platform="darwin"]
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
   :is(
     a,
     button,
