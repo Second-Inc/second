@@ -65,8 +65,6 @@ Bring your agent:
 
 Second is a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI Agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform actual work instead of just answering questions.
 
-**Second is the most powerful way to build custom GUIs for agents.** Production-ready software for your team, deployed in your VPC, built around your workflows.
-
 ### How it Works
 
 Second is a single workspace.
