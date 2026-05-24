@@ -311,6 +311,8 @@ if (!result.success) {
 
 The route resolves the approved app action server-side from `agents.json`; the iframe sends only `toolName` and `input`. Static secrets are read from the app-scoped integration grant. OAuth app actions use the current app viewer as the `triggering_user` identity.
 
+After a successful `callIntegrationTool` call, if the processed result should survive refresh, be shared across users, or be reused by the app/agents later, save the compact processed result with `useCollection`/`useDoc` `insert` or `update`. Do not persist huge raw provider responses unless the app truly needs them. Make sure to structure the request and post-process the response in code so it can be beautifully saved in the app, not as huge raw chunks.
+
 Live failures return actionable diagnostics, not only a boolean failure. The result can include `error`, `statusCode`, `errorCode`, `errorCategory`, `resolution`, `retryable`, `canRequestBuilderRepair`, and bounded redacted `details`. Generated apps should render `error` plus `resolution` directly. Credential and permission failures should point the user back to integration setup; repairable endpoint/input/spec failures can offer an "Ask builder to fix" action that calls `reportIntegrationToolFailure`.
 
 ### `reportIntegrationToolFailure(toolName, input, result, description)`
