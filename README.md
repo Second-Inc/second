@@ -83,6 +83,8 @@ Second is a single workspace.
   </tr>
 </table>
 
+**Second is the most powerful way to build custom GUIs for agents.** Production-ready software for your team, deployed in your VPC, built around your workflows.
+
 ## Second VS other solutions
 
 Most platforms weren't built for multiplayer, async work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
