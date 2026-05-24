@@ -82,11 +82,11 @@ Second is a single workspace.
       <h3>Example: <strong>competitor tracker app</strong> built on Second</h3>
       <p>This example features agents discovering new competitors, enriching them, and generating a weekly recap deck from all available information.</p>
       <video src="https://github.com/user-attachments/assets/2116c633-48f3-415a-a047-a72f05da3166" width="600" controls></video>
+      <table><tr><td height="12"></td></tr></table>
+      <p align="left"><strong>Second is the most powerful way to build custom GUIs for agents.</strong><br>Production-ready software for your team, deployed in your VPC, built around your workflows.</p>
     </td>
   </tr>
 </table>
-
-**Second is the most powerful way to build custom GUIs for agents.** Production-ready software for your team, deployed in your VPC, built around your workflows.
 
 ## Second VS other solutions
 
