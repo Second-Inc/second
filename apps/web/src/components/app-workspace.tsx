@@ -51,6 +51,7 @@ import { AppPreview } from "@/components/app-preview";
 import { AppFileExplorer } from "@/components/app-file-explorer";
 import { AppDataExplorer } from "@/components/app-data-explorer";
 import { AppAgentBridge } from "@/components/app-agent-bridge";
+import { AppIntegrationBridge } from "@/components/app-integration-bridge";
 import { AppCollaboratorsDialog } from "@/components/app-collaborators-dialog";
 import {
   AppDataBridge,
@@ -2036,17 +2037,25 @@ export function AppWorkspace({
               )}
             </RecoverableErrorBoundary>
             {mainView !== "files" && (
-              <AppDataBridge
-                workspaceId={workspaceId}
-                appId={appId}
-                sourceVersion={sourceVersion}
-                iframeRef={iframeRef}
-                onDataChange={
-                  isDraftVersion && mainView === "data"
-                    ? onDataChange
-                    : undefined
-                }
-              />
+              <>
+                <AppDataBridge
+                  workspaceId={workspaceId}
+                  appId={appId}
+                  sourceVersion={sourceVersion}
+                  iframeRef={iframeRef}
+                  onDataChange={
+                    isDraftVersion && mainView === "data"
+                      ? onDataChange
+                      : undefined
+                  }
+                />
+                <AppIntegrationBridge
+                  workspaceId={workspaceId}
+                  appId={appId}
+                  sourceVersion={sourceVersion}
+                  iframeRef={iframeRef}
+                />
+              </>
             )}
             {canShowAppAgents && (
               <AppAgentBridge

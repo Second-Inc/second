@@ -18,6 +18,10 @@ import {
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { awaitDependencyWarmup } from "./dep-warmup.js";
+import {
+  approvalToolResultShouldStop,
+  isBlockingApprovalToolName,
+} from "./approval-tools.js";
 import { RUNTIME_FORBIDDEN_ENV_KEYS } from "./runtimes/process-env.js";
 import {
   claudeSubprocessEnvScrubValue,
@@ -1671,6 +1675,7 @@ function customToolValidationIssues(agents: unknown[]): string[] {
         ? asRecord(integration?.auth)
         : null;
 
+      // For now, we do not force mockData validation.
       if (
         !integration ||
         typeof integration.name !== "string" ||
@@ -1730,38 +1735,86 @@ export async function executePresentAgentsTool(
     return {
       content: [{
         type: "text",
-        text: "Agent configuration was not accepted because agents.json does not exist. Write agents.json first, then call present_agents again.",
+        text: JSON.stringify({
+          ok: false,
+          status: "invalid",
+          source: "agents.json",
+          agents: [],
+          appTools: [],
+          validationIssues: [
+            "agents.json: file does not exist. Write agents.json first.",
+          ],
+          message:
+            "Agent configuration was not accepted because agents.json does not exist. Write agents.json first, then call present_agents again.",
+        }),
       }],
     };
   }
 
   let agentsConfig: unknown;
   let fileAgents: unknown[];
+  let fileAppTools: unknown[];
   try {
     agentsConfig = JSON.parse(readFileSync(agentsPath, "utf-8")) as unknown;
     const agentsRecord = asRecord(agentsConfig);
     fileAgents = Array.isArray(agentsRecord?.agents)
       ? agentsRecord.agents
       : [];
+    fileAppTools = Array.isArray(agentsRecord?.appTools)
+      ? agentsRecord.appTools
+      : [];
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
     return {
       content: [{
         type: "text",
-        text: `Agent configuration was not accepted because agents.json is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        text: JSON.stringify({
+          ok: false,
+          status: "invalid",
+          source: "agents.json",
+          agents: [],
+          appTools: [],
+          validationIssues: [
+            `agents.json: invalid JSON: ${errorMessage}`,
+          ],
+          message:
+            `Agent configuration was not accepted because agents.json is not valid JSON: ${errorMessage}. Fix agents.json and call present_agents again.`,
+        }),
       }],
     };
   }
 
-  if (fileAgents.length === 0) {
+  if (fileAgents.length === 0 && fileAppTools.length === 0) {
     return {
       content: [{
         type: "text",
-        text: "Agent configuration was not accepted because agents.json does not contain an agents array. Fix agents.json and call present_agents again.",
+        text: JSON.stringify({
+          ok: false,
+          status: "invalid",
+          source: "agents.json",
+          agents: fileAgents,
+          appTools: fileAppTools,
+          validationIssues: [
+            "agents.json: file does not contain any agents or appTools.",
+          ],
+          message:
+            "Agent configuration was not accepted because agents.json does not contain any agents or appTools. Fix agents.json and call present_agents again.",
+        }),
       }],
     };
   }
 
-  const validationIssues = customToolValidationIssues(fileAgents).map(
+  const validationSubjects = fileAppTools.length > 0
+    ? [
+        ...fileAgents,
+        {
+          id: "app-tools",
+          name: "Backend functions",
+          tools: fileAppTools,
+        },
+      ]
+    : fileAgents;
+  const validationIssues = customToolValidationIssues(validationSubjects).map(
     (issue) => `agents.json: ${issue}`,
   );
   if (validationIssues.length > 0) {
@@ -1773,6 +1826,7 @@ export async function executePresentAgentsTool(
           status: "changes_required",
           source: "agents.json",
           agents: fileAgents,
+          appTools: fileAppTools,
           validationIssues,
           message:
             "Agent configuration needs changes before approval. Fix agents.json and call present_agents again. For static custom integrations, saved secrets must use named placeholders like {{secrets.SLACK_BOT_TOKEN}}. For OAuth custom integrations, declare integration.auth and do not include token placeholders; Second injects the access token server-side. Public unauthenticated APIs may omit secrets and auth metadata.",
@@ -1789,8 +1843,9 @@ export async function executePresentAgentsTool(
         status: "presented",
         source: "agents.json",
         agents: fileAgents,
+        appTools: fileAppTools,
         message:
-          `${fileAgents.length} agent(s) presented to the user. Stop here and wait for the user's approval or requested changes before implementing app code or presenting integration setup.`,
+          `${fileAgents.length} agent(s) and ${fileAppTools.length} backend function(s) presented to the user. Stop here and wait for the user's approval or requested changes before implementing app code or presenting integration setup.`,
       }),
     }],
   };
@@ -1799,7 +1854,7 @@ export async function executePresentAgentsTool(
 function createPresentAgentsTool(config: SessionConfig) {
   return tool(
     "present_agents",
-    "Present agents.json to the user for approval. Call this after writing or updating agents.json. The tool reads and validates agents.json as the source of truth. After this tool returns, stop and wait for the user to approve or request changes from the agents card.",
+    "Present agents.json to the user for approval. Call this after writing or updating agents.json with agents and/or backend functions. The tool reads and validates agents.json as the source of truth. If the result has ok=true and status=presented, stop and wait for the user to approve or request changes from the agents card. If the result has ok=false, fix agents.json using the returned message/validationIssues and call present_agents again.",
     {},
     async () => executePresentAgentsTool(config),
   );
@@ -2089,20 +2144,10 @@ function sdkMessageContent(message: SDKMessage): unknown[] {
   return Array.isArray(content) ? content : [];
 }
 
-function isBlockingApprovalToolName(name: unknown): boolean {
-  return (
-    name === "present_plan" ||
-    name === "present_suggestions" ||
-    name === "present_agents" ||
-    name === "set_onboarding_context" ||
-    name === "mcp__second__present_plan" ||
-    name === "mcp__second__present_suggestions" ||
-    name === "mcp__second__present_agents" ||
-    name === "mcp__second__set_onboarding_context"
-  );
-}
-
-function collectBlockingApprovalToolUses(message: SDKMessage, ids: Set<string>): void {
+function collectBlockingApprovalToolUses(
+  message: SDKMessage,
+  ids: Map<string, string>,
+): void {
   if (message.type !== "assistant") return;
   for (const item of sdkMessageContent(message)) {
     if (!item || typeof item !== "object") continue;
@@ -2110,22 +2155,30 @@ function collectBlockingApprovalToolUses(message: SDKMessage, ids: Set<string>):
     if (
       record.type === "tool_use" &&
       typeof record.id === "string" &&
+      typeof record.name === "string" &&
       isBlockingApprovalToolName(record.name)
     ) {
-      ids.add(record.id);
+      ids.set(record.id, record.name);
     }
   }
 }
 
-function hasBlockingApprovalToolResult(message: SDKMessage, ids: Set<string>): boolean {
+function hasBlockingApprovalToolResult(
+  message: SDKMessage,
+  ids: Map<string, string>,
+): boolean {
   if (message.type !== "user") return false;
   for (const item of sdkMessageContent(message)) {
     if (!item || typeof item !== "object") continue;
-    const record = item as { type?: unknown; tool_use_id?: unknown };
+    const record = item as {
+      type?: unknown;
+      tool_use_id?: unknown;
+      content?: unknown;
+    };
     if (
       record.type === "tool_result" &&
       typeof record.tool_use_id === "string" &&
-      ids.has(record.tool_use_id)
+      approvalToolResultShouldStop(ids.get(record.tool_use_id), record.content)
     ) {
       return true;
     }
@@ -2382,6 +2435,12 @@ type ToolExecuteResponse = {
   mockReason?: string;
   error?: string;
   statusCode?: number;
+  errorCode?: string;
+  errorCategory?: string;
+  resolution?: string;
+  retryable?: boolean;
+  canRequestBuilderRepair?: boolean;
+  details?: Record<string, unknown>;
 };
 
 function normalizeAppToolFailureName(toolName?: string | null): string | null {
@@ -2539,6 +2598,12 @@ export async function executeCustomAppTool(
     const responseDetail = data.data === undefined
       ? ""
       : `\n\nResponse:\n${formatToolData(data.data)}`;
+    const resolutionDetail = data.resolution
+      ? `\n\nSuggested next step: ${data.resolution}`
+      : "";
+    const diagnosticDetail = data.details === undefined
+      ? ""
+      : `\n\nDiagnostics:\n${formatToolData(data.details)}`;
     recordToolCallFailure(config, {
       toolName: toolSpec.name,
       toolDisplayName: toolSpec.displayName,
@@ -2554,6 +2619,14 @@ export async function executeCustomAppTool(
         toolExecuteHttpStatus: response.status,
         error: errorDetail,
         ...(typeof data.statusCode === "number" ? { statusCode: data.statusCode } : {}),
+        ...(typeof data.errorCode === "string" ? { errorCode: data.errorCode } : {}),
+        ...(typeof data.errorCategory === "string" ? { errorCategory: data.errorCategory } : {}),
+        ...(typeof data.resolution === "string" ? { resolution: data.resolution } : {}),
+        ...(typeof data.retryable === "boolean" ? { retryable: data.retryable } : {}),
+        ...(typeof data.canRequestBuilderRepair === "boolean"
+          ? { canRequestBuilderRepair: data.canRequestBuilderRepair }
+          : {}),
+        ...(data.details !== undefined ? { details: data.details } : {}),
         ...(data.data !== undefined ? { response: data.data } : {}),
       },
     });
@@ -2562,6 +2635,8 @@ export async function executeCustomAppTool(
         type: "text",
         text: [
           `Tool execution failed: ${errorDetail}${responseDetail}`,
+          resolutionDetail,
+          diagnosticDetail,
           "",
           "If this failure blocks the user's task, do not write placeholder failure data into app data. Complete any unaffected work, then call report_tool_call_failed with a concise description of what failed.",
         ].join("\n"),
@@ -2959,7 +3034,7 @@ export async function* runAgent(
     },
   });
 
-  const blockingApprovalToolUseIds = new Set<string>();
+  const blockingApprovalToolUseIds = new Map<string, string>();
   let aborted = false;
   const onAbort = () => {
     aborted = true;

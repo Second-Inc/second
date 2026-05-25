@@ -61,8 +61,8 @@ only through the publish dialog.
 ## Governed agents.json
 
 `agents.json` is editable draft code, but it is not trusted runtime
-configuration until the platform records an approval for the exact canonical
-JSON hash.
+configuration until the platform records an approval for the versioned
+canonical JSON hash.
 
 The flow is:
 
@@ -70,14 +70,22 @@ The flow is:
 Builder writes agents.json
   → present_agents reads and validates the file
   → admin/owner approves the Agents card payload
-  → platform stores canonical hash + approved payload + approver metadata
+  → platform stores versioned canonical hash + normalized approved payload + approver metadata
   → draft agent runtime can use that exact config
 ```
 
+The canonical hash is intentionally schema-versioned. Hashes are stored as
+`vN:<sha256>` so future `agents.json` schema changes can keep previous approval
+semantics stable. In the current `v1` schema, harmless empty optional arrays
+such as top-level `appTools: []`, agent-level `tools: []`, and agent-level
+`dataCollections: []` are normalized away before hashing. A schema change that
+adds or changes defaulted fields should add a new hash version rather than
+changing the old version's normalization rules.
+
 Any later `agents.json` change clears the draft approval. It does not matter
 whether the change came from a UI toggle, a file edit, or a worker shell command:
-the source persistence path compares the canonical hash and marks the approval
-stale if it changed.
+the source persistence path compares the versioned canonical hash and marks the
+approval stale if it changed.
 
 Draft app-agent runs can start from the draft file so builders can test the
 in-progress app. Custom HTTP tools and agent data tools still require the

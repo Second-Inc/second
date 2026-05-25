@@ -74,7 +74,8 @@ type AgentData = {
 };
 
 export type AgentsCardData = {
-  agents: AgentData[];
+  agents?: AgentData[];
+  appTools?: AgentToolData[];
 };
 
 type AgentsCardProps = {
@@ -946,14 +947,62 @@ export function AgentsCard({
         return normalized ? [normalized] : [];
       })
     : [];
+  const appTools = Array.isArray(data?.appTools)
+    ? data.appTools.flatMap((tool) => {
+        const normalized = normalizeTool(tool);
+        return normalized ? [normalized] : [];
+      })
+    : [];
   const hasAgents = agents.length > 0;
+  const hasAppTools = appTools.length > 0;
   const singleAgent = agents.length === 1;
   const toolCount = agents.reduce(
     (total, agent) => total + (agent.tools?.length ?? 0),
     0,
   );
-  const validationIssues = validateAgents(agents);
+  const appToolValidationIssues = hasAppTools
+    ? validateAgents([
+        {
+          id: "app-tools",
+          name: "Backend functions",
+          description: "",
+          systemPrompt: "",
+          tools: appTools,
+        },
+      ])
+    : [];
+  const validationIssues = [
+    ...validateAgents(agents),
+    ...appToolValidationIssues,
+  ];
   const hasValidationIssues = validationIssues.length > 0;
+  const isBackendOnly = !hasAgents && hasAppTools;
+  const eyebrowLabel = isBackendOnly ? "Backend" : "Agents";
+  const agentsSummary = hasAgents
+    ? [
+        `${agents.length} agent${agents.length === 1 ? "" : "s"}`,
+        toolCount > 0
+          ? `with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : null;
+  const approvalParts = [
+    agentsSummary,
+    hasAppTools
+      ? `${appTools.length} backend function${appTools.length === 1 ? "" : "s"}`
+      : null,
+  ].filter(Boolean);
+  const approvalRequiresPlural =
+    approvalParts.length > 1 || agents.length > 1 || appTools.length > 1;
+  const approvalSummary =
+    approvalParts.length > 0
+      ? `${approvalParts.join(" and ")} ${approvalRequiresPlural ? "require" : "requires"} approval`
+      : "Agent configuration requires approval";
+  const feedbackPlaceholder = isBackendOnly
+    ? "What would you like to change about the backend functions?"
+    : "What would you like to change about the agent configuration?";
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -990,12 +1039,10 @@ export function AgentsCard({
       >
         <div>
           <div className="text-[11px] font-medium text-muted-foreground/50 mb-2.5">
-            Agents
+            {eyebrowLabel}
           </div>
           <span className="text-[15px] font-semibold tracking-[-0.01em]">
-            {hasAgents
-              ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
-              : "Agent configuration"}
+            {approvalSummary}
           </span>
           {hasValidationIssues ? (
             <Badge variant="destructive" className="gap-1 ml-2 align-middle">
@@ -1029,7 +1076,7 @@ export function AgentsCard({
             <textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              placeholder="What would you like to change about the agent configuration?"
+              placeholder={feedbackPlaceholder}
               rows={3}
               className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               autoFocus
@@ -1061,6 +1108,23 @@ export function AgentsCard({
         )}
         </div>
       </div>
+
+      {hasAppTools ? (
+        <div className="rounded-2xl border border-black/15 bg-[var(--composer-bg)] px-5 py-4 shadow-none dark:border-border/50 sm:px-6">
+          <div className="mb-3 flex min-w-0 items-start gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+              <WrenchIcon className="size-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[15px] font-semibold">Backend functions</div>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                Server-side integration calls available to app code.
+              </p>
+            </div>
+          </div>
+          <ResourceTabs tools={appTools} dataCollections={[]} />
+        </div>
+      ) : null}
 
       {/* Agent carousel */}
       {hasAgents ? (
@@ -1113,9 +1177,9 @@ export function AgentsCard({
         </div>
       ) : isStreaming ? (
         <Skeleton className="h-28 rounded-2xl" />
-      ) : (
+      ) : hasAppTools ? null : (
         <div className="text-sm text-muted-foreground">
-          No agents found in the presented configuration.
+          No agents or backend functions found in the presented configuration.
         </div>
       )}
 
@@ -1124,7 +1188,9 @@ export function AgentsCard({
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
           <div className="flex items-center gap-2 font-medium">
             <AlertTriangleIcon className="size-3.5" />
-            Agent configuration needs changes before approval
+            {isBackendOnly
+              ? "Backend configuration needs changes before approval"
+              : "Agent configuration needs changes before approval"}
           </div>
           <div className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed">
             {validationIssues.map((issue, index) => (
@@ -1146,8 +1212,9 @@ export function AgentsCard({
           <ShieldCheckIcon />
           <AlertTitle>Approved for mock-data development</AlertTitle>
           <AlertDescription>
-            Continue building with these agents, but use mock data for
-            integrations until this app is reviewed by an admin or owner.
+            {isBackendOnly
+              ? "Continue building with these backend functions, but use mock data for integrations until this app is reviewed by an admin or owner."
+              : "Continue building with these agents, but use mock data for integrations until this app is reviewed by an admin or owner."}
           </AlertDescription>
         </Alert>
       ) : null}
