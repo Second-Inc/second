@@ -1,19 +1,27 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Second — Startup screen
+   Matches the visual language of the main web app (globals.css).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Tokens ── */
+
 :root {
   color-scheme: light dark;
   --background: #fbfbfa;
-  --foreground: #111113;
-  --muted-foreground: #707174;
-  --subtle-foreground: #8d8e92;
-  --card: rgba(255, 255, 255, 0.78);
-  --card-border: rgba(17, 17, 19, 0.1);
-  --card-shadow:
-    0 18px 60px rgba(17, 17, 19, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.7) inset;
-  --accent: #111113;
-  --accent-soft: rgba(17, 17, 19, 0.08);
-  --button-bg: rgba(255, 255, 255, 0.72);
-  --button-border: rgba(17, 17, 19, 0.14);
-  --danger: #a83232;
+  --foreground: #0D0D0D;
+  --muted-foreground: #8b8b8f;
+  --subtle-foreground: #a1a1a6;
+  --accent: #0D0D0D;
+  --accent-soft: rgba(13, 13, 13, 0.06);
+  --border: rgba(0, 0, 0, 0.08);
+  --danger: #dc4545;
+  --danger-soft: rgba(220, 69, 69, 0.1);
+  --button-bg: rgba(0, 0, 0, 0.03);
+  --button-border: rgba(0, 0, 0, 0.09);
+  --button-hover: rgba(0, 0, 0, 0.06);
+  --progress-track: rgba(0, 0, 0, 0.06);
+  --progress-fill: #0D0D0D;
+  --loader-glow: rgba(13, 13, 13, 0.18);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro",
     "Inter", "Segoe UI", system-ui, sans-serif;
   background: var(--background);
@@ -22,22 +30,25 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #18191b;
-    --foreground: #f7f7f8;
-    --muted-foreground: #a6a7ab;
-    --subtle-foreground: #76777c;
-    --card: rgba(34, 35, 38, 0.72);
-    --card-border: rgba(255, 255, 255, 0.08);
-    --card-shadow:
-      0 18px 70px rgba(0, 0, 0, 0.28),
-      0 1px 0 rgba(255, 255, 255, 0.06) inset;
-    --accent: #ededee;
-    --accent-soft: rgba(255, 255, 255, 0.1);
-    --button-bg: rgba(255, 255, 255, 0.06);
-    --button-border: rgba(255, 255, 255, 0.12);
-    --danger: #ff7f7f;
+    --background: #18191B;
+    --foreground: #FFFFFF;
+    --muted-foreground: #a3a3a8;
+    --subtle-foreground: #6e6e73;
+    --accent: #FFFFFF;
+    --accent-soft: rgba(255, 255, 255, 0.08);
+    --border: rgba(255, 255, 255, 0.08);
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255, 107, 107, 0.12);
+    --button-bg: rgba(255, 255, 255, 0.05);
+    --button-border: rgba(255, 255, 255, 0.09);
+    --button-hover: rgba(255, 255, 255, 0.09);
+    --progress-track: rgba(255, 255, 255, 0.06);
+    --progress-fill: rgba(255, 255, 255, 0.82);
+    --loader-glow: rgba(255, 255, 255, 0.35);
   }
 }
+
+/* ── Reset ── */
 
 * {
   box-sizing: border-box;
@@ -48,10 +59,17 @@ body {
   min-height: 560px;
   margin: 0;
   background: var(--background);
-  letter-spacing: 0;
+  letter-spacing: 0.005em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+h1,
+p {
+  margin: 0;
+}
+
+/* ── Title-bar drag region ── */
 
 body::before {
   content: "";
@@ -64,48 +82,7 @@ body::before {
   -webkit-app-region: drag;
 }
 
-button {
-  height: 32px;
-  border: 1px solid var(--button-border);
-  border-radius: 7px;
-  padding: 0 12px;
-  background: var(--button-bg);
-  color: var(--foreground);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  -webkit-app-region: no-drag;
-}
-
-button:hover {
-  background: var(--accent-soft);
-}
-
-.app-brand {
-  position: fixed;
-  z-index: 20;
-  top: 28px;
-  left: 32px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--foreground);
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: 0;
-  -webkit-app-region: drag;
-}
-
-html[data-second-desktop-platform="darwin"] .app-brand {
-  top: 58px;
-  left: 42px;
-}
-
-.app-logo {
-  width: 20px;
-  height: 20px;
-  flex: none;
-}
+/* ── Shell ── */
 
 .shell {
   min-height: 100vh;
@@ -114,60 +91,94 @@ html[data-second-desktop-platform="darwin"] .app-brand {
   padding: 72px 40px 40px;
 }
 
+/* ── Content area ── */
+
 .startup-card {
-  width: min(440px, 100%);
+  width: min(460px, 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  border: 1px solid var(--card-border);
-  border-radius: 14px;
-  background: var(--card);
-  box-shadow: var(--card-shadow);
-  padding: 30px;
   text-align: center;
-  backdrop-filter: blur(22px);
   -webkit-app-region: drag;
 }
 
-.loader-shell {
-  width: 56px;
-  height: 56px;
+/* ── Centered brand ── */
+
+.app-brand {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  gap: 10px;
+  margin-bottom: 44px;
   color: var(--foreground);
-  background: var(--accent-soft);
-  margin-bottom: 20px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  opacity: 0;
+  animation: brand-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
 }
 
-.pixel-loader {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+.app-logo {
+  width: 28px;
+  height: 28px;
+  flex: none;
 }
 
-.pixel-loader span {
-  border-radius: 3px;
-  background: currentColor;
+/* ── Hidden copy (JS writes to these, user never sees them) ── */
+
+.copy {
+  display: none;
+}
+
+/* ── Status row: inline loader + shimmering text ── */
+
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  opacity: 0;
+  animation: startup-fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
+}
+
+/* ── SVG 3x3 grid loader (matches app-loader) ── */
+
+.loader-shell {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.grid-loader {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.loader-dot {
+  fill: var(--foreground);
   opacity: 0.18;
-  transform: scale(0.78);
-  animation: loader-dot 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: loader-dot-pulse 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-.pixel-loader span:nth-child(1) { animation-delay: 0ms; }
-.pixel-loader span:nth-child(2) { animation-delay: 105ms; }
-.pixel-loader span:nth-child(3) { animation-delay: 210ms; }
-.pixel-loader span:nth-child(4) { animation-delay: 105ms; }
-.pixel-loader span:nth-child(5) { animation-delay: 210ms; }
-.pixel-loader span:nth-child(6) { animation-delay: 315ms; }
-.pixel-loader span:nth-child(7) { animation-delay: 210ms; }
-.pixel-loader span:nth-child(8) { animation-delay: 315ms; }
-.pixel-loader span:nth-child(9) { animation-delay: 420ms; }
+/* Cascade: diagonal sweep top-left to bottom-right */
+.loader-dot:nth-child(1) { animation-delay: 0ms; }
+.loader-dot:nth-child(2) { animation-delay: 105ms; }
+.loader-dot:nth-child(3) { animation-delay: 210ms; }
+.loader-dot:nth-child(4) { animation-delay: 105ms; }
+.loader-dot:nth-child(5) { animation-delay: 210ms; }
+.loader-dot:nth-child(6) { animation-delay: 315ms; }
+.loader-dot:nth-child(7) { animation-delay: 210ms; }
+.loader-dot:nth-child(8) { animation-delay: 315ms; }
+.loader-dot:nth-child(9) { animation-delay: 420ms; }
 
-@keyframes loader-dot {
+@keyframes loader-dot-pulse {
   0%,
   100% {
     opacity: 0.18;
@@ -175,111 +186,126 @@ html[data-second-desktop-platform="darwin"] .app-brand {
   }
   18% {
     opacity: 0.95;
-    transform: scale(1.08);
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 3px var(--loader-glow));
   }
   50% {
     opacity: 0.3;
     transform: scale(0.88);
+    filter: none;
   }
 }
 
-.copy {
-  width: 100%;
-}
-
-h1 {
-  margin: 0;
-  font-size: 20px;
-  line-height: 1.25;
-  font-weight: 650;
-  letter-spacing: 0;
-}
-
-p {
-  margin: 0;
-}
-
-#headline {
-  margin-bottom: 8px;
-  color: var(--subtle-foreground);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
+/* ── Status text with shimmer ── */
 
 #status-line {
-  min-height: 20px;
-  margin-top: 8px;
-  color: var(--muted-foreground);
-  font-size: 13px;
-  line-height: 1.5;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 34%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 66%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 300% 100%;
+  background-position: 120% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: status-shimmer 3.2s ease-in-out infinite;
 }
 
+@keyframes status-shimmer {
+  0% {
+    background-position: 120% 50%;
+  }
+  88% {
+    background-position: -20% 50%;
+  }
+  100% {
+    background-position: -20% 50%;
+  }
+}
+
+/* ── Progress bar ── */
+
 .progress-row {
-  width: 100%;
+  width: 60%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr) 34px;
   align-items: center;
   gap: 12px;
-  margin-top: 22px;
+  opacity: 0;
+  animation: startup-fade-in 0.4s ease-out 0.5s forwards;
 }
 
 progress {
   width: 100%;
-  height: 6px;
+  height: 3px;
   border: 0;
   border-radius: 999px;
   overflow: hidden;
   appearance: none;
-  background: var(--accent-soft);
+  background: var(--progress-track);
 }
 
 progress::-webkit-progress-bar {
   border-radius: 999px;
-  background: var(--accent-soft);
+  background: var(--progress-track);
 }
 
 progress::-webkit-progress-value {
   border-radius: 999px;
-  background: var(--accent);
-  transition: width 260ms ease;
+  background: var(--progress-fill);
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 #percent {
-  color: var(--muted-foreground);
+  color: var(--subtle-foreground);
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
   text-align: right;
 }
 
+/* ── Developer details ── */
+
 .developer-details {
   width: 100%;
-  margin-top: 18px;
+  margin-top: 44px;
   text-align: left;
   -webkit-app-region: no-drag;
+  opacity: 0;
+  animation: startup-fade-in 0.4s ease-out 0.7s forwards;
 }
 
 .developer-details summary {
   width: fit-content;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin: 0 auto;
-  border-radius: 7px;
-  color: var(--muted-foreground);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--subtle-foreground);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.02em;
   list-style: none;
   outline: none;
-  transition: color 140ms ease;
+  transition: color 160ms ease, background 160ms ease;
   -webkit-app-region: no-drag;
 }
 
 .developer-details summary:hover {
-  color: var(--foreground);
+  color: var(--muted-foreground);
+  background: var(--accent-soft);
 }
 
 .developer-details summary::-webkit-details-marker {
@@ -287,9 +313,9 @@ progress::-webkit-progress-value {
 }
 
 .developer-details summary svg {
-  width: 14px;
-  height: 14px;
-  transition: transform 160ms ease;
+  width: 12px;
+  height: 12px;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .developer-details[open] summary svg {
@@ -298,44 +324,56 @@ progress::-webkit-progress-value {
 
 .developer-panel {
   margin-top: 16px;
-  border-top: 1px solid var(--card-border);
-  padding-top: 16px;
+  padding-top: 0;
+  animation: startup-fade-in-up 0.3s ease-out forwards;
 }
+
+/* ── Step list ── */
 
 .steps {
   list-style: none;
   display: grid;
-  gap: 7px;
+  gap: 2px;
   margin: 0;
   padding: 0;
 }
 
 .steps li {
   display: grid;
-  grid-template-columns: 14px 1fr;
+  grid-template-columns: 18px 1fr;
   align-items: center;
-  min-height: 24px;
-  gap: 9px;
+  min-height: 28px;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 6px;
   color: var(--subtle-foreground);
   font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  transition: color 200ms ease;
+}
+
+.steps li p {
+  margin: 0;
 }
 
 .steps span {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
-  border: 1px solid var(--button-border);
-  background: transparent;
+  background: var(--border);
+  justify-self: center;
+  transition: all 200ms ease;
 }
 
 .steps li.active {
   color: var(--foreground);
+  font-weight: 500;
 }
 
 .steps li.active span {
-  border-color: var(--accent);
-  background: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  background: var(--foreground);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .steps li.done {
@@ -343,7 +381,6 @@ progress::-webkit-progress-value {
 }
 
 .steps li.done span {
-  border-color: var(--muted-foreground);
   background: var(--muted-foreground);
 }
 
@@ -352,39 +389,120 @@ progress::-webkit-progress-value {
 }
 
 .steps li.error span {
-  border-color: var(--danger);
   background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
 }
+
+/* ── Developer message ── */
 
 .message {
   min-height: 20px;
-  margin-top: 14px;
+  margin-top: 16px;
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 1.5;
+  letter-spacing: 0.01em;
 }
 
 .message.error {
   color: var(--danger);
 }
 
+/* ── Action buttons ── */
+
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+button {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--subtle-foreground);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
+  -webkit-app-region: no-drag;
+}
+
+button:hover {
+  color: var(--foreground);
+  border-color: var(--muted-foreground);
+}
+
+/* ── Error state ── */
+
+.has-error .loader-dot {
+  fill: var(--danger);
+}
+
+.has-error #status-line {
+  background-image: none;
+  color: var(--danger);
+  animation: none;
+}
+
+.has-error progress::-webkit-progress-value {
+  background: var(--danger);
 }
 
 .has-error .startup-card {
-  border-color: color-mix(in oklab, var(--danger) 24%, var(--card-border));
+  /* Handled by individual elements above. */
 }
 
-@media (max-width: 860px) {
-  .app-brand {
-    left: 28px;
-  }
+/* ── Animations ── */
 
+@keyframes brand-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes startup-fade-in-up {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes startup-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 860px) {
   .startup-card {
     width: min(400px, 100%);
+  }
+
+  .progress-row {
+    width: 70%;
   }
 }

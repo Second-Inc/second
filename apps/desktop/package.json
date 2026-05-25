@@ -8,6 +8,8 @@
   "scripts": {
     "build": "node scripts/check-js.mjs",
     "dev": "electron .",
+    "preview:startup": "node scripts/open-startup-preview.mjs",
+    "preview:startup:watch": "node scripts/startup-preview-server.mjs",
     "package": "electron-builder --config electron-builder.config.mjs --dir",
     "make": "electron-builder --config electron-builder.config.mjs"
   },
