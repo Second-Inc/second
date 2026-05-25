@@ -2318,6 +2318,35 @@ type UseDocReturn = {
   remove: () => Promise<void>;
 };
 
+export type IntegrationToolResult<TData = unknown> = {
+  success: boolean;
+  data?: TData;
+  mock: boolean;
+  mockReason?: string;
+  statusCode?: number;
+  error?: string;
+  errorCode?: string;
+  errorCategory?: string;
+  resolution?: string;
+  retryable?: boolean;
+  canRequestBuilderRepair?: boolean;
+  details?: Record<string, unknown>;
+};
+
+type UseIntegrationToolReturn<TInput extends Record<string, unknown>, TData> = {
+  execute: (input: TInput) => Promise<IntegrationToolResult<TData>>;
+  loading: boolean;
+  error: string | null;
+};
+
+export type IntegrationToolFailureReportResult = {
+  ok: boolean;
+  status?: 'builder_repair_message_scheduled' | 'builder_repair_run_created' | string;
+  builderRunId?: string;
+  appendedToExisting?: boolean;
+  error?: string;
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -2331,8 +2360,9 @@ function postToParent(msg: Record<string, unknown>) {
   window.parent.postMessage({ source: 'second-app', ...msg }, '*');
 }
 
-function waitForResponse<T>(type: string, match?: Record<string, unknown>): Promise<T> {
-  return new Promise((resolve) => {
+function waitForResponse<T>(type: string, match?: Record<string, unknown>, timeoutMs?: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
     const handler = (event: MessageEvent) => {
       const data = event.data;
       if (data?.source !== 'second-platform') return;
@@ -2343,9 +2373,16 @@ function waitForResponse<T>(type: string, match?: Record<string, unknown>): Prom
         }
       }
       window.removeEventListener('message', handler);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
       resolve(data as T);
     };
     window.addEventListener('message', handler);
+    if (timeoutMs) {
+      timeoutId = window.setTimeout(() => {
+        window.removeEventListener('message', handler);
+        reject(new Error(\`Timed out waiting for \${type}\`));
+      }, timeoutMs);
+    }
   });
 }
 
@@ -2563,6 +2600,144 @@ export function useDoc(collectionName: string, docId: string | null): UseDocRetu
   }, []);
 
   return { data, loading, update, remove };
+}
+
+// ---------------------------------------------------------------------------
+// Integration actions — callIntegrationTool / useIntegrationTool
+// ---------------------------------------------------------------------------
+
+export async function callIntegrationTool<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TData = unknown,
+>(
+  toolName: string,
+  input: TInput,
+): Promise<IntegrationToolResult<TData>> {
+  const requestId = nextRequestId();
+  const responsePromise = waitForResponse<
+    IntegrationToolResult<TData> & { requestId: string; toolName: string }
+  >('second:integration:execute-response', { requestId }, 35_000);
+
+  postToParent({
+    type: 'second:integration:execute',
+    requestId,
+    toolName,
+    input,
+  });
+
+  try {
+    const response = await responsePromise;
+    return {
+      success: Boolean(response.success),
+      data: response.data,
+      mock: Boolean(response.mock),
+      mockReason: response.mockReason,
+      statusCode: response.statusCode,
+      error: response.error,
+      errorCode: response.errorCode,
+      errorCategory: response.errorCategory,
+      resolution: response.resolution,
+      retryable: response.retryable,
+      canRequestBuilderRepair: response.canRequestBuilderRepair,
+      details: response.details,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      mock: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export function formatIntegrationToolError(
+  result: Pick<
+    IntegrationToolResult,
+    'error' | 'statusCode' | 'resolution' | 'retryable'
+  >,
+  fallback = 'Integration request failed',
+): string {
+  const parts = [result.error ?? fallback];
+  if (result.resolution) parts.push(result.resolution);
+  if (result.retryable) parts.push('This request can be retried.');
+  if (result.statusCode && !parts[0]?.includes(String(result.statusCode))) {
+    parts.push(\`HTTP \${result.statusCode}\`);
+  }
+  return parts.filter(Boolean).join(' ');
+}
+
+export async function reportIntegrationToolFailure<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TData = unknown,
+>(
+  toolName: string,
+  input: TInput,
+  result: IntegrationToolResult<TData>,
+  description: string,
+  attemptedTask?: string,
+): Promise<IntegrationToolFailureReportResult> {
+  const requestId = nextRequestId();
+  const responsePromise = waitForResponse<
+    IntegrationToolFailureReportResult & { requestId: string; toolName: string }
+  >('second:integration:report-failure-response', { requestId }, 15_000);
+
+  postToParent({
+    type: 'second:integration:report-failure',
+    requestId,
+    toolName,
+    input,
+    result,
+    description,
+    attemptedTask,
+  });
+
+  try {
+    const response = await responsePromise;
+    return {
+      ok: Boolean(response.ok),
+      status: response.status,
+      builderRunId: response.builderRunId,
+      appendedToExisting: response.appendedToExisting,
+      error: response.error,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export function useIntegrationTool<
+  TInput extends Record<string, unknown> = Record<string, unknown>,
+  TData = unknown,
+>(toolName: string): UseIntegrationToolReturn<TInput, TData> {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const execute = useCallback(async (input: TInput) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await callIntegrationTool<TInput, TData>(toolName, input);
+      if (!result.success) {
+        setError(formatIntegrationToolError(result));
+      }
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      return {
+        success: false,
+        mock: false,
+        error: message,
+      } satisfies IntegrationToolResult<TData>;
+    } finally {
+      setLoading(false);
+    }
+  }, [toolName]);
+
+  return { execute, loading, error };
 }
 
 // ---------------------------------------------------------------------------

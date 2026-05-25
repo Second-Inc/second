@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { approvalToolResultShouldStop } from "../approval-tools.js";
 import { generateSyntheticSdkMessagesFromJsonEvent } from "./json-event-normalizer.js";
 import type {
   AgentRuntimeId,
@@ -18,27 +19,25 @@ export type CliRuntimeOptions = {
   signal?: AbortSignal;
 };
 
-function isBlockingApprovalTool(name: string | undefined): boolean {
-  return (
-    name === "mcp__second__present_plan" ||
-    name === "mcp__second__present_suggestions" ||
-    name === "mcp__second__present_agents" ||
-    name === "mcp__second__set_onboarding_context"
-  );
-}
-
-function toolResultId(message: RuntimeRunResultMessage): string | null {
+function toolResult(message: RuntimeRunResultMessage): {
+  id: string;
+  content: unknown;
+} | null {
   if (message.type !== "user") return null;
   const content = (message.message as { content?: unknown } | undefined)?.content;
   if (!Array.isArray(content)) return null;
   for (const item of content) {
     if (!item || typeof item !== "object") continue;
-    const record = item as { type?: unknown; tool_use_id?: unknown };
+    const record = item as {
+      type?: unknown;
+      tool_use_id?: unknown;
+      content?: unknown;
+    };
     if (
       record.type === "tool_result" &&
       typeof record.tool_use_id === "string"
     ) {
-      return record.tool_use_id;
+      return { id: record.tool_use_id, content: record.content };
     }
   }
   return null;
@@ -106,9 +105,13 @@ export async function* runJsonlCliRuntime(
       if (message.providerSessionState?.sessionId) {
         sessionId = message.providerSessionState.sessionId;
       }
-      const resultId = toolResultId(message);
+      const result = toolResult(message);
       const shouldStopAfterTool =
-        resultId !== null && isBlockingApprovalTool(pendingToolCalls.get(resultId));
+        result !== null &&
+        approvalToolResultShouldStop(
+          pendingToolCalls.get(result.id),
+          result.content,
+        );
       push(message);
       if (shouldStopAfterTool && !child.killed) {
         child.kill("SIGTERM");

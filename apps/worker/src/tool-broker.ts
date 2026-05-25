@@ -202,7 +202,7 @@ const secondTools: McpTool[] = [
   {
     name: "present_agents",
     description:
-      "Present agents.json to the user for approval, then stop and wait for approval in a later user message.",
+      "Validate agents.json and present agents/backend functions to the user for approval. If the result has ok=true and status=presented, stop and wait for approval in a later user message. If the result has ok=false, fix agents.json using the returned message/validationIssues and call this tool again.",
     inputSchema: {
       type: "object",
       properties: {},

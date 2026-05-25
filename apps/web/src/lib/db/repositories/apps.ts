@@ -1,8 +1,8 @@
 import { ObjectId } from "mongodb";
 import {
+  agentsJsonApprovalHashMatches,
   createAgentsJsonSnapshot,
   readAgentsJsonSnapshot,
-  tryReadAgentsJsonSnapshot,
 } from "@/lib/agents/agents-governance";
 import {
   getAppsCollection,
@@ -194,8 +194,14 @@ function staleAgentsJsonApprovalFields(input: {
   existingHash?: string | null;
   sourceFiles: Record<string, string>;
 }): typeof CLEARED_AGENTS_JSON_APPROVAL_FIELDS | Record<string, never> {
-  const snapshot = tryReadAgentsJsonSnapshot(input.sourceFiles);
-  if (snapshot?.hash && snapshot.hash === input.existingHash) return {};
+  if (
+    agentsJsonApprovalHashMatches({
+      approvalHash: input.existingHash,
+      sourceFiles: input.sourceFiles,
+    })
+  ) {
+    return {};
+  }
   return CLEARED_AGENTS_JSON_APPROVAL_FIELDS;
 }
 

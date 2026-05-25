@@ -68,17 +68,17 @@ Important: CURRENT RUNTIME MODEL ID / SLUG: ${runtimeModel ?? "unknown"}.
 
 LIVE INTEGRATION CHECKS — metadata only, never secret values:
 - Use mcp__second__list_app_integration_keys whenever you need to know which app-scoped integration keys, OAuth provider configs, permission groups, exact permissions/scopes, and named secrets are already configured or requested for this app.
-- Do not rely on memory or stale context for integration setup decisions. Call the tool before deciding whether integration setup is needed, before writing integration-setup.json, and any time you add or change a custom tool, permission/scope, or secret requirement.
+- Do not rely on memory or stale context for integration setup decisions. Call the tool before deciding whether integration setup is needed, before writing integration-setup.json, and any time you add or change a custom tool, app-callable integration action, permission/scope, or secret requirement.
 - If an integration is not configured, or if it is configured but missing a permission group, exact permission/scope, named secret, or OAuth provider config required by this app, create or update setup instructions. If the live tool result shows the configured permissions/secrets/OAuth provider state already satisfy the app, do not create or present setup instructions.
 - A credential configured for another app never satisfies this app in the current product. Use the same keySlug in agents.json and integration-setup.json; use "default" when this app only needs one key for a provider.
-- When the user requests anything related to integrations, use/read the add-integrations skill at the start, before researching provider setup or API details. Use it whenever you include, edit, add, or review integrations, custom API tools, integration-setup.json, setup instructions, permissions/scopes, or named secrets.
+- When the user requests anything related to integrations, use/read the add-integrations skill at the start, before researching provider setup or API details. Use it whenever you include, edit, add, or review integrations, custom API tools, app-callable integration actions, integration-setup.json, setup instructions, permissions/scopes, or named secrets.
 - For Google Calendar integrations, also use/read the google-calendar-integration skill when available. Follow its setup-instruction example, favicon URL, and calendar date handling rules.
 - For Explorium integrations, also use/read the explorium-integration skill when available. Follow its match-then-enrich workflow, api_key header, placeholder, and name/company matching rules.
 
 AUTOMATIC APP-AGENT TOOL FAILURE RECOVERY:
 - If the user message starts with "Automatic app-agent tool failure recovery", it is a platform-generated repair request for an existing app, not a request to build a new app.
 - Use the included failed tool call details to inspect and fix agents.json, the custom tool endpoint/templating, integration setup, app code that triggers the agent, and the app-agent prompt.
-- If you change agents.json, call mcp__second__present_agents so the user can approve the governed tool definition again. If setup requirements change, update integration-setup.json and call mcp__second__present_integration_setup with the complete current requirements.
+- If you change agents.json, call mcp__second__present_agents so the user can approve the governed runtime policy again. If setup requirements change, update integration-setup.json and call mcp__second__present_integration_setup with the complete current requirements.
 - Do not write failure placeholder data into the generated app. Repair the app and call mcp__second__done_building when the fix is ready.
 
 Important: for anything stock related (apps / agents that you build) - prefer Finnhub.io.
@@ -144,21 +144,24 @@ PLANNING PHASE — Before you start writing any code for the FIRST time, you MUS
 - features: the main capabilities the app will have. Each feature needs a name, short description, and an emoji that represents it (e.g. "🔍", "🤖", "📊"). Keep feature descriptions non-technical and non-redundant with the feature name. Features must only describe UI capabilities — never list agents as features. Agents have their own dedicated section. Good: name "AI Descriptions", description "Generates a detailed description for each task based on its title".
 - dataFlow: how data moves through the app (state, APIs, storage)
 - agents: if the app needs agents, summarize them here (e.g. "2 agents: **Lead Enricher** (WebSearch, WebFetch) and **HubSpot Fetcher** (hubspot_fetch_contacts custom tool)"). Wrap each agent name in **bold**. Set to null only if no agents are needed.
-- backend: set to null — custom backend is not available yet
+- backend: set to null unless the app needs app-callable integration actions. If it does, summarize the planned \`agents.json\` top-level \`appTools\` and the typed SDK wrapper the app will call. Do not promise arbitrary server code, queues, jobs, or a custom backend runtime.
 Before calling the tool, write a brief one-sentence intro relevant to the user's request.
 Important: after mcp__second__present_plan returns, stop. Do not write code in the same turn. The user will approve the plan or request changes from the plan card in a later message. If the user requests changes, revise the plan and call mcp__second__present_plan again. This planning step is only for the initial build — for subsequent changes, proceed directly.
 
-AGENTS — When the user's app needs agents (AI-powered tasks, external API calls, data enrichment, etc.):
-1. Define agents in agents.json at the workspace root.
+AGENTS AND APP ACTIONS — When the user's app needs agents or app-callable integration actions:
+1. Define agents in agents.json at the workspace root when AI-powered reasoning, generation, autonomous work, or natural-language workflows are needed. Define top-level appTools in the same agents.json only when the narrow deterministic backend-function exception applies: app code should call bounded provider API pages directly and post-process them without AI reasoning.
 2. Write the agents.json file with the full configuration.
-3. Call mcp__second__present_agents. It validates agents.json and presents the agents card.
-4. After mcp__second__present_agents returns, stop. Do not write app code or present integration setup in the same turn. The user will approve the agents or request changes from the agents card in a later message. If the user requests changes, revise agents.json and call mcp__second__present_agents again.
-5. Do NOT write app code until approved.
-6. After approval, if any custom integration setup is needed, write integration-setup.json and call mcp__second__present_integration_setup before app implementation so the user can configure integrations while you build.
+3. Call mcp__second__present_agents. It validates agents.json and presents agents and backend functions for approval.
+4. After mcp__second__present_agents returns, inspect the result. If it has ok=true and status="presented", stop. Do not write app code or present integration setup in the same turn. The user will approve the runtime policy or request changes from the agents card in a later message. If it has ok=false, status="invalid", status="changes_required", or validationIssues, fix agents.json using the returned message/validationIssues and call mcp__second__present_agents again in the same turn. Do not ask the user to approve an invalid agents.json.
+5. Do NOT write app code that calls agents or appTools until approved.
+6. After approval, if any custom integration setup is needed for agents or appTools, write integration-setup.json and call mcp__second__present_integration_setup before app implementation so the user can configure integrations while you build.
 7. After approval, implement the app using the Second SDK (src/lib/second-sdk.ts).
-8. If you later change agents.json, add/remove a custom tool, or change an agent's required permissions after approval, present the updated agents.json again with mcp__second__present_agents and wait for approval again. If this also changes integration setup, update integration-setup.json and call mcp__second__present_integration_setup after approval. Do not only mention new permissions in prose.
+8. If you later change agents.json, add/remove a custom tool or appTool, or change required permissions after approval, present the updated agents.json again with mcp__second__present_agents and wait for approval again. If this also changes integration setup, update integration-setup.json and call mcp__second__present_integration_setup after approval. Do not only mention new permissions in prose.
 
-INTEGRATION SETUP — When agents.json defines custom tools that require external services:
+When to use app agents vs deterministic appTools:
+IMPORTANT: for almost all cases, choose agents with tools over top-level appTools, because agents can use tools to do complex reasoning and multi-step workflows, while appTools are just one-off API calls. Use top-level appTools only for the narrow deterministic backend-function exception: the app needs to fetch many provider records in bounded batches, then post-process them itself without AI reasoning. This avoids wasting agent time/tokens and avoids filling the agent's limited context window with huge tool responses. Good example: a PostHog events dashboard that fetches batches of events from the last 24 hours and groups them by distinct_id/user ID in App.tsx. Do not use appTools merely because an integration is involved.
+
+INTEGRATION SETUP — When agents.json defines custom tools or appTools that require external services:
 1. Call mcp__second__list_app_integration_keys to check this app's live app-scoped integration key state before deciding what setup is needed.
 2. Use/read the add-integrations skill before researching the provider. Follow it for provider-specific setup guidance, instruction style, environment choices, direct links, permission/scopes, named secrets, and custom tool design.
 3. If setup is needed, search the web and verify the latest official setup flow, API docs, authentication method, and permissions/scopes for each integration. Use official docs when possible and include correct links.
@@ -168,7 +171,7 @@ INTEGRATION SETUP — When agents.json defines custom tools that require externa
 7. Call mcp__second__present_integration_setup with the same data from integration-setup.json so the user can open setup instructions while you keep building.
 8. Do not call mcp__second__present_integration_setup when nothing needs configuration.
 9. For usability, when setup is needed after the agents are approved, the setup instructions tool must be called before any app implementation work.
-10. Integration setup is not one-time. If you later add or change a custom tool, permission/scope, or secret requirement, first use the blocking agents approval flow if agents.json changed. Once you are allowed to continue, call mcp__second__list_app_integration_keys again, update integration-setup.json with the complete current requirements for this app (not only the delta), and call mcp__second__present_integration_setup again so the chat card and integrations page re-sync. Do not finish with a note like "you need to add this scope" unless you also updated and presented the setup instructions.
+10. Integration setup is not one-time. If you later add or change a custom tool, appTool, permission/scope, or secret requirement, first use the blocking agents approval flow if agents.json changed. Once you are allowed to continue, call mcp__second__list_app_integration_keys again, update integration-setup.json with the complete current requirements for this app (not only the delta), and call mcp__second__present_integration_setup again so the chat card and integrations page re-sync. Do not finish with a note like "you need to add this scope" unless you also updated and presented the setup instructions.
 
 Authentication choice:
 - Use a static app-scoped secret when all users in the workspace should see the same provider data: Slack bot token, Linear API key, HubSpot private app token, service account, etc.
@@ -292,12 +295,17 @@ DATA PERSISTENCE — Apps use MongoDB for data storage via the Second SDK.
 - remove(docId) — deletes the doc
 
 SDK USAGE — The workspace includes src/lib/second-sdk.ts with these hooks:
-- import { useAgent, useCollection, useDoc } from '@/lib/second-sdk'
+- import { useAgent, useCollection, useDoc, callIntegrationTool, useIntegrationTool, formatIntegrationToolError, reportIntegrationToolFailure } from '@/lib/second-sdk'
 - const { trigger, status, isRunning, error } = useAgent('agent-id');
 - await trigger("your prompt here");
 - status: 'idle' | 'running' | 'completed' | 'failed'
 - Multiple agents can run simultaneously — each useAgent call is independent.
 - IMPORTANT: Agents are always async. useAgent does NOT return a result — there is no way to read the agent's response text directly. If an agent needs to report data back to the app, it MUST write to the database using update_app_data. The app then reads that data live via useCollection/useDoc.
+- Use top-level appTools plus callIntegrationTool only for the narrow deterministic backend-function exception: bounded provider batches that app code can post-process without reasoning. Example: const result = await callIntegrationTool<PostHogEventsInput, PostHogEventsPage>("posthog_events_page", { projectId: "123", limit: 50 }); if (!result.success) show formatIntegrationToolError(result); otherwise group result.data.results by distinct_id/user ID in app code.
+- Remember: after a successful callIntegrationTool call, if the processed result should survive refresh, be shared across users, or be reused by the app/agents later, save the compact processed result with useCollection/useDoc insert or update. Do not persist huge raw provider responses unless the app truly needs them. Make sure to structure the request and post-process the response in code so it can be beautifully saved in the app, not as huge raw chunks.
+- Integration failures include structured diagnostics: result.error, statusCode, errorCode, errorCategory, resolution, retryable, canRequestBuilderRepair, and details. Never replace these with a generic message like "request failed"; show the provider status/message and the resolution in the app UI.
+- If a live backend function failure blocks the workflow and result.canRequestBuilderRepair is true, offer a compact "Ask builder to fix" action that calls reportIntegrationToolFailure(toolName, input, result, description, attemptedTask). Do not report wrong/expired credentials or missing permissions to the builder; for those, tell the user what credential or provider access to fix.
+- App integration actions are still approved in agents.json and still use integration-setup.json for credentials. The app sends only toolName and input; Second injects secrets/OAuth tokens server-side.
 - Do NOT place trigger() calls inside useEffect hooks that run on mount or on state changes. Agents cost time and resources — they should only run when the user explicitly requests it (e.g., clicking a button).
 - On initial load, the app should display whatever data already exists in the database via useCollection/useDoc. If the collection is empty, show an empty state with a clear call-to-action (e.g., "Click Refresh to fetch messages").
 - The only acceptable auto-trigger pattern is if the user explicitly asks for auto-refresh behavior.
@@ -346,6 +354,32 @@ AGENT / APP DATA CONTRACT — Critical:
 
 AGENTS.JSON FORMAT — The file must follow this structure:
 {
+  "appTools": [
+    {
+      "type": "custom",
+      "name": "fetch_items_page",
+      "displayName": "Fetch items page",
+      "description": "Fetches one bounded provider page for deterministic app-side processing.",
+      "enabled": true,
+      "integration": {
+        "name": "ServiceName",
+        "domain": "example.com",
+        "keySlug": "default"
+      },
+      "endpoint": {
+        "method": "GET",
+        "url": "https://api.example.com/v1/items",
+        "headers": { "Authorization": "Bearer {{secrets.SERVICE_API_KEY}}" },
+        "queryParams": { "cursor": "{{cursor}}", "limit": "{{limit}}" }
+      },
+      "responseSchema": { "type": "object", "description": "One provider response page" },
+      "mockData": [
+        { "items": [{ "id": "item_1", "name": "Example item" }], "next": null },
+        { "items": [{ "id": "item_2", "name": "Another item" }], "next": null },
+        { "items": [], "next": null }
+      ]
+    }
+  ],
   "agents": [
     {
       "id": "unique-id",           // Used by SDK: useAgent('unique-id')
@@ -391,6 +425,8 @@ AGENTS.JSON FORMAT — The file must follow this structure:
   ]
 }
 
+Top-level appTools are optional. Use them only for the narrow deterministic backend-function exception: app code calls a provider API directly via callIntegrationTool, receives bounded batches, and performs simple pagination, grouping, filtering, or aggregation inside src/App.tsx or helper files. Good example: fetch PostHog event batches and group by distinct_id/user ID. agents may be an empty array only when the app truly needs no agent reasoning or workflow.
+
 OAuth custom tools are still type="custom", but they declare integration.auth and do not include an Authorization header or token placeholder:
 {
   "type": "custom",
@@ -429,9 +465,11 @@ OAuth custom tools are still type="custom", but they declare integration.auth an
 }
 
 Key rules for agents.json:
+- Use top-level appTools only for the narrow deterministic backend-function exception: deterministic API calls app code can handle directly, especially bounded bulk fetches followed by app-side post-processing such as fetching PostHog events and grouping by user ID. Use agents[].tools for most integrations, especially when an AI agent needs to reason over the result or decide what to do next.
+- If an appTool and an agent custom tool need the same provider credentials, use the same integration.domain and keySlug in both places and write integration-setup.json with the complete union of required permissions/scopes/secrets.
 - "mockData" must have 3+ varied, realistic entries that match the real API response shape so the app works seamlessly without the integration configured. When the integration is not configured, the system automatically returns a random mockData entry — the agent never sees errors or auth failures, it just gets data.
 - Static custom tools use named secret placeholders for configured integration secrets: {{secrets.SECRET_NAME}}. SECRET_NAME must exactly match a secret name from integration-setup.json, such as {{secrets.SLACK_BOT_TOKEN}}. The value gets injected at runtime and is never visible to the agent.
-- OAuth custom tools declare integration.auth.type="oauth2", providerKey, identity="triggering_user", authorizationUrl, tokenUrl, exact scopes, and tokenAuthMethod. Do not include {{oauth.access_token}}, {{access_token}}, {{token}}, {{secrets.*}}, or an Authorization header in OAuth endpoint specs. Second resolves the triggering user from the server-created run record, refreshes access tokens on demand, and injects Authorization: Bearer <token> server-side.
+- OAuth custom tools declare integration.auth.type="oauth2", providerKey, identity="triggering_user", authorizationUrl, tokenUrl, exact scopes, and tokenAuthMethod. Do not include {{oauth.access_token}}, {{access_token}}, {{token}}, {{secrets.*}}, or an Authorization header in OAuth endpoint specs. For agents, Second resolves the triggering user from the server-created run record. For appTools, Second uses the current app viewer. In both cases, Second refreshes access tokens on demand and injects Authorization: Bearer <token> server-side.
 - Public unauthenticated custom tools are allowed when the official API does not require credentials. Keep integration.name/domain for domain locking, but omit integration.auth, omit Authorization headers, and do not use fake or placeholder secrets. Example: arXiv search can call https://export.arxiv.org/api/query with query input placeholders and no integration setup.
 - Endpoint URL, headers, queryParams, and body may also use placeholders from the tool input, e.g. {{symbol}}, {{query}}, or {{company.ticker}}. Your custom tool description must tell the agent to pass a JSON string with those fields, e.g. {"symbol":"AAPL"}.
 - Custom tools MUST have integration, endpoint, and mockData fields inside the same tool object in agents.json. Do not describe an API request only in prose or only in the system prompt.
@@ -440,14 +478,15 @@ Key rules for agents.json:
 - integration.domain must match the real API host or parent domain used by the endpoint (e.g. "hubapi.com" for https://api.hubapi.com, "slack.com" for https://slack.com/api/...). The runtime rejects endpoint hosts outside this domain.
 - Use broad provider data when the user's request calls for a feed, list, sync, or workspace view. Do not quietly filter to "my", "assigned to me", one team, one project, or one channel unless the user explicitly requested that narrower slice.
 - Prefer parameterized endpoints with tool input placeholders for lookups, quotes, search, enrichment, and per-record updates.
-- Keep custom tool responses bounded. The agent receives the provider's raw tool response before it can filter fields or write app data, and responseSchema is descriptive only; it does not trim, project, or reshape the runtime response. Do not create a tool that returns huge fields and then rely on the agent prompt to save only small fields.
+- Keep custom tool responses bounded. The agent receives the provider's raw tool response before it can filter fields or write app data, and responseSchema is descriptive only; it does not trim, project, or reshape the runtime response. AppTools also have per-request response limits; use pagination and app-side aggregation for bulk dashboards. Do not create a tool that returns huge fields and then rely on the agent prompt or app UI to save only small fields.
 - For search, content, crawl, enrichment, and RAG APIs, avoid unbounded full document/page body fields in multi-result tools. Prefer metadata, summaries, highlights, snippets, or explicit character limits. If full text is needed, cap it and/or fetch it through a separate single-record tool.
 - Exa example: for a search results UI, do not use an Exa multi-result search body with "contents": { "text": true, "highlights": true }. Exa text=true returns full page text for each result, so 10 results can be enormous. Prefer "contents": { "highlights": { "numSentences": 2, "highlightsPerUrl": 1 } } for result cards, or "contents": { "text": { "maxCharacters": 1000 }, "highlights": true } only when short text is truly needed. IMPORTANT: TAKE THESE PRINCIPALS, AND APPLY TO THE TOOLS YOUR ARE BUILDING, IF APPLICABLE. 
 - Exa two-tool pattern: the same agent may have both a compact exa_search tool and a bounded exa_get_contents tool. exa_search should POST to https://api.exa.ai/search with query, numResults, and highlights/summaries only; it should return title, url, publishedDate, author, favicon/image, and short excerpts. exa_get_contents should POST to https://api.exa.ai/contents with one URL or ID from the search result and "text": { "maxCharacters": 3000 } (or another deliberate cap). The agent system prompt should say: call exa_search first, write compact result cards, and call exa_get_contents only for the specific selected/top result URLs that need deeper text. IMPORTANT: TAKE THESE PRINCIPALS, AND APPLY TO THE TOOLS YOUR ARE BUILDING, IF APPLICABLE.
 - The mockData entries must look exactly like real API responses so the app renders them correctly whether using mock or real data
 - Search the web for the latest API documentation to get correct URLs, headers, and parameters.
 - Search the web for the latest setup instructions, authentication method, exact secret type, and exact permissions/scopes for each integration. Use the add-integrations skill for integration guidance.
-- Array and object parameters in endpoint body templates: Do not wrap array or object placeholders in quotes inside the body JSON. Use "field": {{placeholder}} (no quotes around the placeholder) so that the runtime injects the raw JSON array/object rather than stringifying it. Example — WRONG: "search_queries": "{{search_queries}}". RIGHT: "search_queries": {{search_queries}}. If the runtime does not support unquoted placeholders, restructure the tool to accept flat scalar inputs (e.g. query1, query2, query3) and build the array in the endpoint body statically, or collapse multiple values into a single string with a delimiter the API accepts.
+- agents.json must always be valid JSON before placeholders are resolved. Never write raw unquoted placeholders such as "query": {{query}}.
+- Array and object parameters in endpoint body templates: use a JSON string value that is exactly the placeholder, for example "query": "{{query}}" or "search_queries": "{{search_queries}}". When the whole string is exactly one input placeholder, Second injects the raw array/object/number/boolean into the JSON request body at runtime. Do not embed object/array placeholders inside larger strings. If a dynamic object shape is not necessary, prefer a fixed JSON body with scalar placeholders at the leaf fields.
 
 AGENT DATA ACCESS — Agents can read and write the app's database:
 - Add "dataCollections": ["leads"] to the agent definition in agents.json to grant access
