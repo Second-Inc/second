@@ -36,9 +36,7 @@ if (!gotLock) {
 }
 
 app.on("second-instance", () => {
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.focus();
+  showMainWindow();
 });
 
 app.whenReady().then(async () => {
@@ -59,8 +57,12 @@ app.whenReady().then(async () => {
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createMainWindow();
+  showMainWindow();
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
   }
 });
 
@@ -107,7 +109,42 @@ function createMainWindow() {
     mainWindow?.show();
   });
 
-  mainWindow.loadFile(join(__dirname, "..", "renderer", "startup.html"));
+  mainWindow.on("close", (event) => {
+    if (process.platform !== "darwin" || quitAfterRuntimeStop) return;
+    event.preventDefault();
+    mainWindow?.hide();
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+
+  loadInitialWindowContent(mainWindow);
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+  }
+  if (mainWindow?.isMinimized()) mainWindow.restore();
+  mainWindow?.show();
+  mainWindow?.focus();
+}
+
+function loadInitialWindowContent(targetWindow) {
+  const status = runtime?.status();
+  if (status?.ready && status.publicUrl) {
+    targetWindow.loadURL(status.publicUrl).catch((err) => {
+      writeDesktopLog("failed to load ready workspace", {
+        message: err.message,
+        publicUrl: status.publicUrl,
+      });
+      return targetWindow.loadFile(join(__dirname, "..", "renderer", "startup.html"));
+    });
+    return;
+  }
+
+  targetWindow.loadFile(join(__dirname, "..", "renderer", "startup.html"));
 }
 
 function createRuntime() {
