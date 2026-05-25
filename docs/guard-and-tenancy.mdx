@@ -136,11 +136,13 @@ Review actions against superseded requests are rejected.
 Agent configuration has an additional governance check. `agents.json` can be
 edited as part of a draft, including by worker file tools, and draft app-agent
 runs can start from that draft file. Live custom/data tools still require the
-current canonical `agents.json` hash to match an approval recorded by a
-workspace admin or owner. Publishing or review approval promotes that approved
-payload with the published snapshot. Internal tool routes then verify the
-requested custom tool or data collection is present in the approved payload for
-the calling agent.
+current versioned canonical `agents.json` hash to match an approval recorded by
+a workspace admin or owner. The hash canonicalizer is schema-versioned so
+non-policy representation changes, such as omitted optional empty arrays, do
+not expand or invalidate access. Publishing or review approval promotes that
+approved payload with the published snapshot. Internal tool routes then verify
+the requested custom tool or data collection is present in the approved payload
+for the calling agent.
 
 Integration secrets add one more boundary. A custom tool cannot choose an
 arbitrary host at call time: `/api/internal/tool-execute` checks the approved

@@ -1,10 +1,19 @@
 import { createHash } from "node:crypto";
 import type { AppDocument } from "@/lib/db/types";
 
+const AGENTS_JSON_APPROVAL_SCHEMA_VERSION = 1;
+const SUPPORTED_AGENTS_JSON_APPROVAL_SCHEMA_VERSIONS = [
+  AGENTS_JSON_APPROVAL_SCHEMA_VERSION,
+] as const;
+
+type AgentsJsonApprovalSchemaVersion =
+  (typeof SUPPORTED_AGENTS_JSON_APPROVAL_SCHEMA_VERSIONS)[number];
+
 export type AgentsJsonSnapshot = {
   hash: string;
   payload: unknown;
   canonicalJson: string;
+  schemaVersion: AgentsJsonApprovalSchemaVersion;
 };
 
 export class InvalidAgentsJsonError extends Error {
@@ -41,6 +50,53 @@ export function stableJsonStringify(value: unknown): string {
   return JSON.stringify(canonicalizeJsonValue(value));
 }
 
+function normalizeAgentForApprovalV1(agent: unknown): unknown {
+  if (!isRecord(agent)) return agent;
+
+  const normalized: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(agent)) {
+    if (
+      (key === "tools" || key === "dataCollections") &&
+      Array.isArray(item) &&
+      item.length === 0
+    ) {
+      continue;
+    }
+    normalized[key] = item;
+  }
+
+  return normalized;
+}
+
+function normalizeAgentsJsonPayloadForApprovalV1(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+
+  const normalized: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key === "agents" && Array.isArray(item)) {
+      if (item.length > 0) {
+        normalized.agents = item.map(normalizeAgentForApprovalV1);
+      }
+      continue;
+    }
+
+    if (key === "appTools" && Array.isArray(item)) {
+      if (item.length > 0) {
+        normalized.appTools = item;
+      }
+      continue;
+    }
+
+    normalized[key] = item;
+  }
+
+  return normalized;
+}
+
+export function normalizeAgentsJsonPayloadForApproval(value: unknown): unknown {
+  return normalizeAgentsJsonPayloadForApprovalV1(value);
+}
+
 function validateAgentsJsonPayload(value: unknown): void {
   if (!isRecord(value)) {
     throw new InvalidAgentsJsonError(
@@ -57,8 +113,52 @@ function validateAgentsJsonPayload(value: unknown): void {
   }
 }
 
+function isSupportedApprovalSchemaVersion(
+  version: number,
+): version is AgentsJsonApprovalSchemaVersion {
+  return SUPPORTED_AGENTS_JSON_APPROVAL_SCHEMA_VERSIONS.includes(
+    version as AgentsJsonApprovalSchemaVersion,
+  );
+}
+
+function parseApprovalSchemaVersion(
+  hash: string | null | undefined,
+): AgentsJsonApprovalSchemaVersion | null {
+  const match = hash?.match(/^v(\d+):/);
+  if (!match) return null;
+
+  const version = Number(match[1]);
+  return isSupportedApprovalSchemaVersion(version) ? version : null;
+}
+
+function resolveApprovalSchemaVersionForHash(
+  hash: string | null | undefined,
+): AgentsJsonApprovalSchemaVersion {
+  return parseApprovalSchemaVersion(hash) ?? AGENTS_JSON_APPROVAL_SCHEMA_VERSION;
+}
+
+function normalizeAgentsJsonPayloadForVersion(
+  value: unknown,
+  version: AgentsJsonApprovalSchemaVersion,
+): unknown {
+  switch (version) {
+    case 1:
+      return normalizeAgentsJsonPayloadForApprovalV1(value);
+  }
+}
+
+function versionedAgentsJsonApprovalHash(input: {
+  canonicalJson: string;
+  schemaVersion: AgentsJsonApprovalSchemaVersion;
+}): string {
+  const digest = createHash("sha256").update(input.canonicalJson).digest("hex");
+  return `v${input.schemaVersion}:${digest}`;
+}
+
 export function readAgentsJsonSnapshot(
   sourceFiles: Record<string, string> | null | undefined,
+  schemaVersion: AgentsJsonApprovalSchemaVersion =
+    AGENTS_JSON_APPROVAL_SCHEMA_VERSION,
 ): AgentsJsonSnapshot | null {
   const raw = sourceFiles?.["agents.json"];
   if (!raw?.trim()) return null;
@@ -70,16 +170,25 @@ export function readAgentsJsonSnapshot(
     throw new InvalidAgentsJsonError("agents.json is not valid JSON");
   }
 
-  return createAgentsJsonSnapshot(payload);
+  return createAgentsJsonSnapshot(payload, schemaVersion);
 }
 
-export function createAgentsJsonSnapshot(payload: unknown): AgentsJsonSnapshot {
-  validateAgentsJsonPayload(payload);
-  const canonicalJson = stableJsonStringify(payload);
-  return {
-    hash: createHash("sha256").update(canonicalJson).digest("hex"),
+export function createAgentsJsonSnapshot(
+  payload: unknown,
+  schemaVersion: AgentsJsonApprovalSchemaVersion =
+    AGENTS_JSON_APPROVAL_SCHEMA_VERSION,
+): AgentsJsonSnapshot {
+  const normalizedPayload = normalizeAgentsJsonPayloadForVersion(
     payload,
+    schemaVersion,
+  );
+  validateAgentsJsonPayload(normalizedPayload);
+  const canonicalJson = stableJsonStringify(normalizedPayload);
+  return {
+    hash: versionedAgentsJsonApprovalHash({ canonicalJson, schemaVersion }),
+    payload: normalizedPayload,
     canonicalJson,
+    schemaVersion,
   };
 }
 
@@ -90,6 +199,21 @@ export function tryReadAgentsJsonSnapshot(
     return readAgentsJsonSnapshot(sourceFiles);
   } catch {
     return null;
+  }
+}
+
+export function agentsJsonApprovalHashMatches(input: {
+  approvalHash: string | null | undefined;
+  sourceFiles: Record<string, string> | null | undefined;
+}): boolean {
+  if (!input.approvalHash) return false;
+
+  try {
+    const schemaVersion = resolveApprovalSchemaVersionForHash(input.approvalHash);
+    const snapshot = readAgentsJsonSnapshot(input.sourceFiles, schemaVersion);
+    return snapshot?.hash === input.approvalHash;
+  } catch {
+    return false;
   }
 }
 
@@ -125,7 +249,10 @@ export function getDraftAgentsJsonApproval(input: {
 
   return {
     requiresApproval: true,
-    approved: input.app.agentsJsonApprovalHash === snapshot.hash,
+    approved: agentsJsonApprovalHashMatches({
+      approvalHash: input.app.agentsJsonApprovalHash,
+      sourceFiles: input.sourceFiles,
+    }),
     hash: snapshot.hash,
     invalid: false,
   };

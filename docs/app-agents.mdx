@@ -161,11 +161,20 @@ as a governed artifact:
 1. `present_agents` reads and validates the file on disk.
 2. The Agents card shows the exact parsed payload.
 3. A workspace admin or owner approves that payload.
-4. The platform stores the canonical JSON hash, the approved payload, the
-   approver, and the approval time.
+4. The platform stores a versioned canonical JSON hash, the normalized approved
+   payload, the approver, and the approval time.
 5. Draft app-agent runtime can start from the draft file, but live custom
    tools, app-callable actions, and app-data tools are usable only while the
    current `agents.json` hash matches that approval.
+
+The approval hash is semantic, not a raw byte-for-byte file hash. The current
+`v1` approval schema normalizes harmless empty optional arrays before hashing:
+top-level `appTools: []`, agent-level `tools: []`, and agent-level
+`dataCollections: []` are treated the same as omitted fields. Stored hashes are
+prefixed with the approval schema version, for example `v1:<sha256>`. Future
+`agents.json` schema changes should add a new approval schema version instead
+of changing old normalization behavior, so already-approved configs do not
+become stale unless their effective runtime policy changed.
 
 Creating `agents.json` or showing the Agents card does not send the app to
 review. It only pauses the builder until an admin/owner approves or someone
@@ -357,7 +366,11 @@ const presentAgents = tool(
 
 `present_agents` validates the `agents.json` file on disk as the source of truth, including custom integration tool and app action shape, and returns a fix-it message if the file is missing, invalid JSON, empty, or uses invalid custom-tool placeholders. A file with no agents is valid when it has a non-empty top-level `appTools` array.
 
-When an admin or owner approves, `AppChat` first records the governed approval for the exact Agents card payload, then sends the follow-up user message that continues the build. On requested changes, it sends the feedback as the next user message and the builder must update `agents.json` and call `present_agents` again.
+When an admin or owner approves, `AppChat` first records the governed approval
+for the normalized Agents card payload, then sends the follow-up user message
+that continues the build. On requested changes, it sends the feedback as the
+next user message and the builder must update `agents.json` and call
+`present_agents` again.
 
 ## Agent run lifecycle
 

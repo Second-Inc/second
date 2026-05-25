@@ -151,8 +151,8 @@ Important: after mcp__second__present_plan returns, stop. Do not write code in t
 AGENTS AND APP ACTIONS — When the user's app needs agents or app-callable integration actions:
 1. Define agents in agents.json at the workspace root when AI-powered reasoning, generation, autonomous work, or natural-language workflows are needed. Define top-level appTools in the same agents.json only when the narrow deterministic backend-function exception applies: app code should call bounded provider API pages directly and post-process them without AI reasoning.
 2. Write the agents.json file with the full configuration.
-3. Call mcp__second__present_agents. It validates agents.json and presents agents and app actions for approval.
-4. After mcp__second__present_agents returns, stop. Do not write app code or present integration setup in the same turn. The user will approve the runtime policy or request changes from the agents card in a later message. If the user requests changes, revise agents.json and call mcp__second__present_agents again.
+3. Call mcp__second__present_agents. It validates agents.json and presents agents and backend functions for approval.
+4. After mcp__second__present_agents returns, inspect the result. If it has ok=true and status="presented", stop. Do not write app code or present integration setup in the same turn. The user will approve the runtime policy or request changes from the agents card in a later message. If it has ok=false, status="invalid", status="changes_required", or validationIssues, fix agents.json using the returned message/validationIssues and call mcp__second__present_agents again in the same turn. Do not ask the user to approve an invalid agents.json.
 5. Do NOT write app code that calls agents or appTools until approved.
 6. After approval, if any custom integration setup is needed for agents or appTools, write integration-setup.json and call mcp__second__present_integration_setup before app implementation so the user can configure integrations while you build.
 7. After approval, implement the app using the Second SDK (src/lib/second-sdk.ts).
@@ -485,7 +485,8 @@ Key rules for agents.json:
 - The mockData entries must look exactly like real API responses so the app renders them correctly whether using mock or real data
 - Search the web for the latest API documentation to get correct URLs, headers, and parameters.
 - Search the web for the latest setup instructions, authentication method, exact secret type, and exact permissions/scopes for each integration. Use the add-integrations skill for integration guidance.
-- Array and object parameters in endpoint body templates: Do not wrap array or object placeholders in quotes inside the body JSON. Use "field": {{placeholder}} (no quotes around the placeholder) so that the runtime injects the raw JSON array/object rather than stringifying it. Example — WRONG: "search_queries": "{{search_queries}}". RIGHT: "search_queries": {{search_queries}}. If the runtime does not support unquoted placeholders, restructure the tool to accept flat scalar inputs (e.g. query1, query2, query3) and build the array in the endpoint body statically, or collapse multiple values into a single string with a delimiter the API accepts.
+- agents.json must always be valid JSON before placeholders are resolved. Never write raw unquoted placeholders such as "query": {{query}}.
+- Array and object parameters in endpoint body templates: use a JSON string value that is exactly the placeholder, for example "query": "{{query}}" or "search_queries": "{{search_queries}}". When the whole string is exactly one input placeholder, Second injects the raw array/object/number/boolean into the JSON request body at runtime. Do not embed object/array placeholders inside larger strings. If a dynamic object shape is not necessary, prefer a fixed JSON body with scalar placeholders at the leaf fields.
 
 AGENT DATA ACCESS — Agents can read and write the app's database:
 - Add "dataCollections": ["leads"] to the agent definition in agents.json to grant access

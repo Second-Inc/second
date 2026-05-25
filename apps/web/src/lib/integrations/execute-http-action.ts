@@ -786,6 +786,37 @@ function substituteTemplate(
   );
 }
 
+const EXACT_TEMPLATE_PATTERN = /^\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}$/;
+
+function substituteExactBodyTemplate(
+  template: string,
+  secrets: Record<string, string>,
+  toolInput: Record<string, unknown>,
+  missingPlaceholders: Set<string>,
+  missingSecretPlaceholders: Set<string>,
+): unknown | null {
+  const match = template.match(EXACT_TEMPLATE_PATTERN);
+  const name = match?.[1];
+  if (!name) return null;
+
+  if (isSecretPlaceholderName(name)) {
+    const value = readNamedSecret(secrets, name);
+    if (value === null) {
+      missingSecretPlaceholders.add(name.slice("secrets.".length));
+      return template;
+    }
+    return value;
+  }
+
+  const value = readToolInputValue(toolInput, name);
+  if (value === null || value === undefined) {
+    missingPlaceholders.add(name);
+    return template;
+  }
+
+  return value;
+}
+
 function substituteTemplatesInHeaders(
   headers: Record<string, string>,
   secrets: Record<string, string>,
@@ -814,6 +845,15 @@ function substituteTemplatesInBody(
   missingSecretPlaceholders: Set<string>,
 ): unknown {
   if (typeof body === "string") {
+    const exactValue = substituteExactBodyTemplate(
+      body,
+      secrets,
+      toolInput,
+      missingPlaceholders,
+      missingSecretPlaceholders,
+    );
+    if (exactValue !== null) return exactValue;
+
     return substituteTemplate(
       body,
       secrets,

@@ -978,10 +978,18 @@ export function AgentsCard({
   const hasValidationIssues = validationIssues.length > 0;
   const isBackendOnly = !hasAgents && hasAppTools;
   const eyebrowLabel = isBackendOnly ? "Backend" : "Agents";
+  const agentsSummary = hasAgents
+    ? [
+        `${agents.length} agent${agents.length === 1 ? "" : "s"}`,
+        toolCount > 0
+          ? `with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : null;
   const approvalParts = [
-    hasAgents
-      ? `${agents.length} agent${agents.length === 1 ? "" : "s"} with ${toolCount} tool${toolCount === 1 ? "" : "s"}`
-      : null,
+    agentsSummary,
     hasAppTools
       ? `${appTools.length} backend function${appTools.length === 1 ? "" : "s"}`
       : null,

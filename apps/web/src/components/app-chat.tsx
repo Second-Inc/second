@@ -24,7 +24,7 @@ import {
   StickToBottom,
   type StickToBottomContext,
 } from "use-stick-to-bottom";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp,
@@ -769,6 +769,58 @@ function appToolsFromPresentAgentsInput(
     : [];
 }
 
+function presentAgentsErrorMessage(output: unknown): string | null {
+  const parsed = parseToolTextOutput(output);
+  const record = asRecord(parsed);
+  if (record) {
+    const status = typeof record.status === "string" ? record.status : "";
+    const message = typeof record.message === "string" ? record.message : "";
+    const validationIssues = Array.isArray(record.validationIssues)
+      ? record.validationIssues.filter((issue): issue is string =>
+          typeof issue === "string" && issue.length > 0
+        )
+      : [];
+    if (
+      record.ok === false ||
+      status === "invalid" ||
+      status === "changes_required" ||
+      validationIssues.length > 0
+    ) {
+      return [
+        message || "Agent configuration was not accepted.",
+        ...validationIssues,
+      ].join("\n");
+    }
+  }
+
+  if (
+    typeof parsed === "string" &&
+    parsed.startsWith("Agent configuration was not accepted")
+  ) {
+    return parsed;
+  }
+
+  return null;
+}
+
+function presentAgentsWasPresented(output: unknown): boolean {
+  const parsed = parseToolTextOutput(output);
+  const record = asRecord(parsed);
+  return record?.ok === true && record.status === "presented";
+}
+
+function AgentsConfigErrorCard({ message }: { message: string }) {
+  return (
+    <Alert className="not-prose border-amber-500/25 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+      <AlertTriangleIcon className="size-4 text-amber-700 dark:text-amber-300" />
+      <AlertTitle>Agent configuration needs changes: it is now being fixed.</AlertTitle>
+      <AlertDescription className="whitespace-pre-wrap text-xs leading-relaxed text-amber-700/80 dark:text-amber-300/80">
+        {message}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 const LEGACY_SUGGESTION_ICON_EMOJI: Record<string, string> = {
   "app-window": "🧩",
   appwindow: "🧩",
@@ -1129,6 +1181,9 @@ function pendingBlockingApprovalFromMessages(
           : kind === "suggestions"
             ? suggestionsApprovalAnalytics(record.input, record.output)
             : planApprovalAnalytics(record.input);
+        if (kind === "agents" && !presentAgentsWasPresented(record.output)) {
+          continue;
+        }
         if (
           kind === "agents" &&
           analytics.agent_count === 0 &&
@@ -4248,6 +4303,21 @@ export function AppChat({
                           };
                           const agentCount = agentsData.agents?.length ?? 0;
                           const appToolCount = agentsData.appTools?.length ?? 0;
+                          const errorMessage = presentAgentsErrorMessage(
+                            part.output,
+                          );
+                          if (
+                            errorMessage &&
+                            agentCount === 0 &&
+                            appToolCount === 0
+                          ) {
+                            return (
+                              <AgentsConfigErrorCard
+                                key={`tool-${toolPartKey}`}
+                                message={errorMessage}
+                              />
+                            );
+                          }
                           const isCurrentApproval =
                             pendingApproval?.toolCallId === part.toolCallId;
                           return (
