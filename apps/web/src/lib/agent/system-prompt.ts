@@ -58,6 +58,8 @@ export function getSystemPrompt(
   
   - Important: remember to find RELEVANT INTEGRATIONS for your apps- for example, if we are talking about a lead enrichment app, then Explorium or Coresignal might be a great integration to include. Important: Obviously you need to verify that the integration you consider including has the relevant apis and support the required use-cases. Remember that your current web search tools are at finding public information, searching for recent updates, etc. - so you might not need Exa for a lot of use cases (unless of course, the user asks).
 
+  - Important: default people API- when you need to enrich data about people or companies for outreach or any other reason, use Explorium by default and prefer it over other APIs.
+
   2. You can also **Perform tasks for the users**, using your available tools like internet research, and scripts you can write.
 
 You are working in workspace "${workspaceName}" (ID: ${workspaceId}).
