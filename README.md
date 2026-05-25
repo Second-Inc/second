@@ -66,7 +66,7 @@ Bring your agent:
 
 Second the most powerful way to build custom GUIs for agents.
 
-It lets you orchestrate a team of agents inside custom apps built around your workflows, giving agents room to work while your team stays in full control.
+Instead of being locked into a pre-built agent orchestration platform, Second lets you orchestrate a team of agents inside custom apps you build around your workflows, giving agents room to work while your team stays in full control.
 
 From one prompt, Second builds complete apps **that treat agents as first-class citizens:** agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB, call only the tools you approve, and perform actual work without broad access to your company.
 
