@@ -64,13 +64,11 @@ Bring your agent:
 
 ## What is Second?
 
-Second is a local / on-prem Lovable for building internal software **that treats agents as first-class citizens.**
+Second the most powerful way to build custom GUIs for agents.
 
-It creates custom GUIs for your team of agents.
+It lets you orchestrate a team of agents inside custom apps built around your workflows, giving agents room to work while your team stays in full control.
 
-Agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB, get scoped tools generated for the use case, and perform actual work instead of just answering questions.
-
-The idea is simple: agents should be free to work around the workflow, not free to roam your company. You approve the tools, integration grants, and `agents.json` policy before live data is touched.
+From one prompt, Second builds complete apps **that treat agents as first-class citizens:** agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB, call only the tools you approve, and perform actual work without broad access to your company.
 
 ### How It Works
 
