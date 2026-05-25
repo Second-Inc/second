@@ -100,21 +100,6 @@ Second solves that: think Paperclip or Multica, but instead of pre-built softwar
 
 ---
 
-## Core Philosophy
-
-| Principle | What it means in Second |
-|:---|:---|
-| **Build the app, not just the agent.** | The durable artifact is working internal software: a focused UI, live data, team workflows, and agents that operate inside that product. |
-| **Agents are first-class citizens.** | Apps can include multiple named agents with roles, tools, data access, schedules, and visible run history. They are not bolted-on chat widgets. |
-| **Humans stay in command.** | Plans, agent configs, integration setup, and publishing go through explicit review. Agents can work freely only inside the boundaries you approved. |
-| **Small tools beat broad access.** | The builder creates scoped tools for the specific app and use case. Tools are tied to approved domains, collections, integration grants, and secret placeholders. |
-| **Integrations should self-build.** | Instead of starting with a giant MCP catalog or handing agents every connector, Second generates the narrow integration contract and human setup instructions the app actually needs. |
-| **Collaboration is the runtime.** | Agent-to-agent and agent-to-human work happens through the app's shared state, realtime updates, resumable streams, comments, approvals, and audit trail. |
-| **Generated software must still be real software.** | Draft and published snapshots are separated, source is persisted, builds are checked, data survives restarts, and production access follows the same tenant and permission model. |
-| **Local-first, on-prem-ready.** | Start on your machine. Deploy inside your cloud when the workflow matters. Your VPC, your auth provider, your secrets, your rules. |
-
----
-
 ## The Internal Platform Everyone Needs (and Builds)
 
 Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, and Lovable-style builders, but most of that work never reaches production. Security, governance, integrations, maintenance, agent access control, and deployment all become platform problems.
@@ -152,6 +137,21 @@ Every app you build in Second gets a realtime database, app agents, scoped tools
 > **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise).
 >
 > Need help with security, SSO, deployment, cost management, runtime setup, and SLA support? Contact [sales@second.so](mailto:sales@second.so).
+
+---
+
+## Core Philosophy
+
+| Principle | What it means in Second |
+|:---|:---|
+| **Build the app, not just the agent.** | The durable artifact is working internal software: a focused UI, live data, team workflows, and agents that operate inside that product. |
+| **Agents are first-class citizens.** | Apps can include multiple named agents with roles, tools, data access, schedules, and visible run history. They are not bolted-on chat widgets. |
+| **Humans stay in command.** | Plans, agent configs, integration setup, and publishing go through explicit review. Agents can work freely only inside the boundaries you approved. |
+| **Small tools beat broad access.** | The builder creates scoped tools for the specific app and use case. Tools are tied to approved domains, collections, integration grants, and secret placeholders. |
+| **Integrations should self-build.** | Instead of starting with a giant MCP catalog or handing agents every connector, Second generates the narrow integration contract and human setup instructions the app actually needs. |
+| **Collaboration is the runtime.** | Agent-to-agent and agent-to-human work happens through the app's shared state, realtime updates, resumable streams, comments, approvals, and audit trail. |
+| **Generated software must still be real software.** | Draft and published snapshots are separated, source is persisted, builds are checked, data survives restarts, and production access follows the same tenant and permission model. |
+| **Local-first, on-prem-ready.** | Start on your machine. Deploy inside your cloud when the workflow matters. Your VPC, your auth provider, your secrets, your rules. |
 
 ---
 
