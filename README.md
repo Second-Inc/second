@@ -1,31 +1,34 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/favicon-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="apps/web/public/favicon-light.svg">
-    <img alt="Second" src="apps/web/public/favicon-light.svg" width="72" height="67">
+    <source srcset="docs/assets/readme_cover.webp" type="image/webp">
+    <img src="docs/assets/readme_cover.jpg" alt="Second — humans and agents, side by side" width="100%">
   </picture>
 </p>
 
-<h1 align="center">Second</h1>
+<div align="center">
 
-<p align="center">
-  The factory for custom internal software,<br>purpose-built for human2agent work.
-</p>
+<br>
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>&nbsp;&nbsp;
-  <a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>&nbsp;&nbsp;
-  <a href="#platform-support"><img src="https://img.shields.io/badge/Platform-Apple_Silicon-lightgrey.svg" alt="Platform"></a>
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/favicon-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="apps/web/public/favicon-light.svg">
+  <img alt="Second" src="apps/web/public/favicon-light.svg" width="56" height="52">
+</picture>
 
-<h3 align="center">⭐ Like what we're doing? Give us a star ⬆️</h3>
+<h1>Second</h1>
 
-<p align="center">
-  <a href="#quick-start"><strong>Quick Start</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="https://docs.second.so"><strong>Docs</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="#security--governance"><strong>Security & Governance</strong></a> &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="#self-hosting"><strong>Self-Hosting</strong></a>
-</p>
+**Humans and agents, side by side.**
+
+Second is a factory for custom internal software,<br>purpose-built for human2agent work.
+
+<!-- Let your team ship custom internal apps from a prompt, where agents work natively alongside your humans. -->
+
+<a href="https://github.com/Second-Inc/second/actions"><img src="https://img.shields.io/github/actions/workflow/status/Second-Inc/second/ci.yml?label=CI" alt="CI"></a>&nbsp;&nbsp;
+<a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>
+
+<a href="#quick-start"><strong>Quick Start</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
+
+</div>
 
 ## Quick Start
 Run Second locally:
@@ -38,70 +41,73 @@ npx --yes @second-inc/cli
 | Apple Silicon Mac (M1-M5) | **Available now** |
 | Intel Mac, Linux, Windows | Coming soon |
 
-<br>
-
-## What is Second?
-
-Second is a factory for shipping internal software built for human-agent collaboration.
-
-Most platforms were not built for deep, multiplayer, asynchronous work with AI agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works. Generally, multiplayer human-agent work is where coordination gets hard and things start to break.
-
-**Second solves that:** imagine an on-prem, secure Lovable for building complete internal software (e.g. competitor research, lead enrichment, various pipelines) **that treats agents as first-class citizens:** agents read and write to the same real-time DB as your human team does, get dynamically generated, scoped tools to do the work inside the apps you've built, and most importantly work alongside your human team.
-
-Second is open-source, self-hosted, bring your own agent.
-
-> [!TIP]
-> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise).
->
-> Need help with security, SSO, deployment, cost management, runtime setup, and SLA support? Contact [sales@second.so](mailto:sales@second.so).
-
-## Bring Your Agent
-
-Bring your own agent harness, switch runtimes and models per message, per app, without restarting conversations.
+Bring your agent:
 
 <table>
   <tr>
-    <td width="120" align="center">
+    <td width="70" align="center">
       <img src="apps/web/public/icons/claude-code.svg" width="28" height="28" alt="Claude Code">
     </td>
-    <td width="120" align="center">
+    <td width="70" align="center">
       <img src="apps/web/public/icons/codex.svg" width="28" height="28" alt="Codex">
     </td>
-    <td width="120" align="center">
+    <td width="70" align="center">
       <img src="apps/web/public/icons/opencode.svg" width="28" height="28" alt="OpenCode">
     </td>
   </tr>
   <tr>
-    <td align="center"><sub><strong>Claude Code</strong></sub></td>
-    <td align="center"><sub><strong>Codex</strong></sub></td>
-    <td align="center"><sub><strong>OpenCode</strong></sub></td>
-  </tr>
-  <tr>
     <td align="center">✅</td>
     <td align="center">✅</td>
-    <td align="center"><sub>Coming soon</sub></td>
+    <td align="center"><sub>Soon</sub></td>
   </tr>
 </table>
 
-## Core Philosophy: Agent-Native Software
+<br>
 
-Every app you build in Second treats **agents as first-class citizens**: they read and write to the same real-time DB your team works on, get scoped and secure tools to get the job done inside the apps you've built, and work alongside humans.
+## What is Second?
 
-On top of that, Second handles the hard parts:
+Second is a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI Agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform actual work instead of just answering questions.
 
-| Capability | How It Works |
-|---|---|
-| **Multi-agent orchestration** | Run multiple specialized agents per app: one for research, one for alerts, one for enrichment |
-| **Long-running async work** | Agents run scheduled jobs, periodic research, etc. |
-| **Live data persistence** | MongoDB-backed collections with Change Streams; data survives browser close, agent restarts, and worker churn |
+### How it Works
 
-## Personal Software Factory
+Second is a single workspace.
+
+1. **You describe your app.** In a single prompt.
+2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
+3. **Your team now works alongside agents** in the same shared custom software you've built.
+
+<table align="center" width="100%" cellpadding="16">
+  <tr>
+    <td align="center">
+      <h3>Example: <strong>competitor tracker app</strong> built on Second</h3>
+      <p>This example features agents discovering new competitors, enriching them, and generating a weekly recap deck from all available information.</p>
+      <video src="https://github.com/user-attachments/assets/2116c633-48f3-415a-a047-a72f05da3166" width="600" controls></video>
+      <p><sub>GitHub mobile app? <a href="https://github.com/user-attachments/assets/2116c633-48f3-415a-a047-a72f05da3166">Click here to watch the video →</a></sub></p>
+      <p>•</p>
+      <p align="left"><strong>Second is the most powerful way to build custom GUIs for agents.</strong><br>Production-ready software for your team, deployed in your VPC, built around your workflows.</p>
+      <br>
+    </td>
+  </tr>
+</table>
+
+## Second VS other solutions
+
+Most platforms weren't built for multiplayer, async work with agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
+**Generally, multiplayer human-agent work is where coordination gets hard and things start to break.**
+
+Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom GUI to work with a team of agents, tailored to your company's needs!
+
+<!-- Second's infrastructure handles agent orchestration, security, real-time data, and governance out of the box. -->
+
+---
+
+## The Internal Platform Everyone Needs (and Builds)
+
+Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable- but most never reach production (security, governance, integrations, maintenance, agent access control...). To solve this, they built internal platforms for themselves.
+
+**Second lets every organization have that.**
 
 Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
-
-Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable, but most of these projects never reach production because of various reasons (security, integrations, governance, safe deployments, maintenance, agent access control, and so on...).
-
-**To solve this, they built internal platforms for themselves. Second lets every organization have that.**
 
 <table>
   <tr>
@@ -111,71 +117,174 @@ Companies like **Ramp** and **Deel** have already figured out that teams are bui
         <li>Build custom apps from a single prompt</li>
         <li>Run multiple agents in parallel across workflows</li>
         <li>Real-time collaborative UI with agents and humans on the same page</li>
-        <li>No code required — designed for non-technical teams</li>
+        <li>Never blocked: integrations return mock data until connected</li>
       </ul>
-      <br>
     </td>
     <td width="50%" valign="top">
       <h3 align="center">🛠️ For Platform Engineers</h3>
       <ul>
+        <li>Fine-grained access control per app, per agent, per integration</li>
         <li>One-time workspace setup, unlimited apps</li>
         <li>Full governance: draft/review/publish lifecycle</li>
-        <li>Fine-grained access control per app, per agent, per integration</li>
         <li>Deploy on your own k8s, air-gapped or on-prem</li>
       </ul>
-      <br>
     </td>
   </tr>
 </table>
+
+> [!TIP]
+> **Enterprise deployment?** See [Enterprise Deployment and Security](https://docs.second.so/enterprise).
+>
+> Need help with security, SSO, deployment, cost management, runtime setup, and SLA support? Contact [sales@second.so](mailto:sales@second.so).
 
 ---
 
 ## Features
 
+| Feature | &nbsp; |
+|:---|:---|
+| **🔧 Self-Building** | Integrations are generated on demand with exact connection instructions |
+| **🤖 App Agents** | Each app gets its own agents, with tools and data access presented for approval |
+| **🔌 BYO Agent** | Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message |
+| **⚡ Realtime** | Live data, change streams, and optimistic updates keep teams and agents synced |
+| **👥 Multiplayer Sessions** | Talk with your agents, invite teammates into the session, and collaborate with shared context |
+| **🔒 Agent Permissions** | Agents run with approved tools, data, and integrations. Everything is scoped and audited |
+| **🛡️ Governance** | Draft, review, approve, and publish apps with agents and integrations under control |
+| **📋 Audit Logs** | Every agent action, tool call, data write, and access denial recorded and searchable |
+| **🏠 Self-Hosted / On-Prem** | Deploy on your own infrastructure. Your k8s cluster, your VPC, your rules |
+| **🧠 Workspace Agents** | Create reusable agents with prompts, skills, models, and team visibility |
+| **📚 Workspace Skills** | Define instructions once, then attach them to agents across the workspace |
+| **⏲️ Scheduled Agent Jobs** | Agents run on a schedule for periodic research, monitoring, and background tasks |
+| **🚀 One-Command Setup** | From zero to running with `npx @second-inc/cli` |
+
+## What You Can Build
+
 <table>
 <tr>
-<td align="center" width="33%">
-<h3>🔧 Self-Building Integrations</h3>
-Second builds itself: integrations are generated on demand with exact connection instructions.
-</td>
-<td align="center" width="33%">
-<h3>🤖 App Agents</h3>
-Each app gets its own agents, with tools and data access presented for approval.
-</td>
-<td align="center" width="33%">
-<h3>🔌 BYO Agent</h3>
-Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message.
+<td width="100%" valign="top">
+
+<div align="center">
+
+<h3>🎯 Lead Enrichment Pipeline</h3>
+
+<sub>**Flow:** 🤖 Scrape leads → 🤖 Enrich from LinkedIn + web → 🤖 Score and rank → 👤 Team reviews top leads</sub><br>
+<sub>**Tools:** HubSpot, LinkedIn, Web Search</sub><br>
+<sub>**Agents:** Scraper Agent, Enrichment Agent, Scoring Agent</sub>
+
+</div>
+
+<table align="center" width="90%" cellpadding="10">
+  <tr>
+    <td colspan="3"><strong>PIPELINE</strong> <span align="right">47 leads ▼</span></td>
+  </tr>
+  <tr>
+    <td><sub>Lead</sub></td>
+    <td><sub>Score</sub></td>
+    <td><sub>Status</sub></td>
+  </tr>
+  <tr>
+    <td><strong>Acme Corp</strong></td>
+    <td>92/100</td>
+    <td>✅ Ready<br>👤 <code>[Call]</code></td>
+  </tr>
+  <tr>
+    <td><strong>Nova Labs</strong></td>
+    <td>78/100</td>
+    <td>🤖 Enriching<br>🤖 Score next</td>
+  </tr>
+  <tr>
+    <td><strong>Peak Inc</strong></td>
+    <td>--</td>
+    <td>🤖 Scraping...<br><sub>3 sources</sub></td>
+  </tr>
+  <tr>
+    <td colspan="3">💬 <strong>Scoring Agent</strong><br>"Acme Corp: 200 employees, Series A, hiring 3 engineers. Score: 92. Ready for review."<br><br>👤 <code>[Accept]</code> <code>[Edit]</code> <code>[Skip]</code></td>
+  </tr>
+</table>
+
 </td>
 </tr>
 <tr>
-<td align="center">
-<h3>👥 Multiplayer Sessions</h3>
-Talk with Claude Code or Codex, invite teammates into the session, and collaborate with shared context.
-</td>
-<td align="center">
-<h3>🔒 Permissions</h3>
-Agents run with approved tools, data, and integrations. Everything is scoped and audited.
-</td>
-<td align="center">
-<h3>⚡ Realtime</h3>
-Live data, change streams, and optimistic updates keep teams and agents synced.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🧠 Workspace Agents</h3>
-Create reusable agents with prompts, skills, models, and team visibility.
-</td>
-<td align="center">
-<h3>📚 Workspace Skills</h3>
-Define instructions once, then attach them to agents across the workspace.
-</td>
-<td align="center">
-<h3>🛡️ Governance</h3>
-Draft, review, approve, and publish apps with agents and integrations under control.
+<td width="100%" valign="top">
+
+<div align="center">
+
+<h3>📊 GTM War Room</h3>
+
+<sub>**Flow:** 🤖 Agent pulls weekly metrics → 👤 PMM reviews positioning → 👤 Sales adds field notes → 🤖 Agent generates battlecard</sub><br>
+<sub>**Tools:** HubSpot, Slack, Google Docs, Analytics</sub><br>
+<sub>**Agents:** Metrics Agent, Battlecard Agent</sub>
+
+</div>
+
+<table align="center" width="90%" cellpadding="10">
+  <tr>
+    <td colspan="2"><strong>GTM WAR ROOM</strong></td>
+    <td align="right"><sub>Week 21 ▼</sub></td>
+  </tr>
+  <tr>
+    <td width="36" align="center">📈</td>
+    <td colspan="2"><strong>THIS WEEK</strong><br>Pipeline: $320k (+14%)<br>Win rate: 38% (up from 31%)<br>Lost to competitor: 3 deals</td>
+  </tr>
+  <tr>
+    <td width="36" align="center">👤</td>
+    <td colspan="2"><strong>PMM added positioning note</strong><br>"Emphasize self-hosted angle vs. Acme's cloud-only offer"</td>
+  </tr>
+  <tr>
+    <td width="36" align="center">👤</td>
+    <td colspan="2"><strong>Sales added field note</strong><br>"Acme offering 40% discounts to win back churned accounts"</td>
+  </tr>
+  <tr>
+    <td width="36" align="center">🤖</td>
+    <td colspan="2"><strong>Battlecard Agent</strong><br>"Updated battlecard with new field intel. 2 new objection handlers added."<br><br>👤 <code>[Review card]</code> <code>[Push to Docs]</code></td>
+  </tr>
+</table>
+
 </td>
 </tr>
 </table>
+
+And many more:
+
+| Use Case | What It Does | Tools | Agents |
+|:---|:---|:---|:---|
+| **Competitor Research Dashboard** | Monitor competitor changes, review and flag important updates, compile reports, and share research | Web Search, Google Alerts, Drive | Research Agent, Alert Agent, Report Agent |
+| **Content Curation Pipeline** | Fetch videos, select clips, cut and upload assets, and route finished content for approval | YouTube API, Clipping Service, Google Drive | Curator Agent, Clip Agent |
+| **Social Media Ops** | Draft posts, schedule across platforms, track engagement, repurpose top performers | Twitter/X, LinkedIn, Buffer | Content Agent, Scheduling Agent, Analytics Agent |
+| **Recruiting Pipeline** | Source candidates, screen resumes, schedule interviews, track pipeline | LinkedIn, ATS, Google Calendar, Gmail | Sourcing Agent, Screening Agent, Scheduling Agent |
+| **Customer Success** | Pull data from CRMs and support tools, surface churn risk, draft outreach | HubSpot, Intercom, Slack | Insights Agent, Churn Agent, Outreach Agent |
+| **Invoice & Expense Tracking** | Collect invoices from email, extract data, match to POs, flag discrepancies | Gmail, Google Drive, Accounting API | Extraction Agent, Matching Agent, Approval Agent |
+| **Compliance Monitoring** | Scan for policy violations, flag issues, route to approvers | Internal APIs, Slack, Jira | Compliance Agent, Triage Agent, Routing Agent |
+| **Internal Knowledge Base** | Continuously index docs, summarize updates, answer team questions | Notion, Confluence, Slack | Indexing Agent, Summary Agent, Q&A Agent |
+| **Founder's Daily Brief** | Aggregate metrics, news, emails, and calendar into one morning summary | Gmail, Google Calendar, Analytics, Web Search | Metrics Agent, News Agent, Brief Agent |
+| **PR & Media Monitoring** | Track brand mentions, analyze sentiment, draft responses, alert on crises | Web Search, Twitter/X, Slack, Google Docs | Monitor Agent, Sentiment Agent, Response Agent |
+| **Product Feedback Loop** | Collect feedback from support tickets, reviews, and calls, cluster themes, surface to PM | Intercom, G2, Gong, Slack | Collection Agent, Clustering Agent, Summary Agent |
+| **Vendor & Contract Management** | Track renewal dates, compare pricing, flag expiring contracts, draft RFPs | Gmail, Notion, Slack | Tracker Agent, Comparison Agent, Draft Agent |
+| **SEO Content Pipeline** | Research keywords, generate briefs, draft articles, track rankings | Ahrefs, Web Search, Notion, Analytics | Research Agent, Brief Agent, Writer Agent |
+| **Security Alert Triage** | Ingest alerts from multiple tools, deduplicate, prioritize, assign to on-call | PagerDuty, Slack, Jira, SIEM API | Ingestion Agent, Triage Agent, Assignment Agent |
+| **Meeting Follow-ups** | Record action items from meetings, assign owners, send follow-up emails, track completion | Google Calendar, Gong, Gmail, Notion | Notes Agent, Follow-up Agent, Tracker Agent |
+
+<!-- Your team sees everything in one collaborative workspace. Agents write to the same database your team reads from. No export, no copy-paste, no context switching. -->
+
+---
+
+## Why Second is Special
+
+**Second generates dynamic, agent-native software.** For each app:
+
+- **Scoped tools created per app, for every agent.** Agents can never do things you don't want them to do.
+- **Second is true self-building software.** It generates the integrations, connection instructions, and scoped tools.
+- **Agents never see secrets.** Secrets are injected server-side.
+- **`agents.json`: governed policy as code.** Each app has an `agents.json`. Changes require admin approval via hash verification.
+- **Draft and published are fully separated.** Builders iterate freely with mock data. Published apps only run the last approved config.
+
+On top of that, Second handles the hard parts:
+
+| Capability | &nbsp; |
+|:---|:---|
+| **🤹 Multi-agent orchestration** | Multiple specialized agents per app |
+| **⏲️ Long-running async work** | Scheduled jobs, periodic research, background tasks |
+| **🗃️ Live data persistence** | Real-time DB with Change Streams; survives restarts and churn |
 
 <!-- ## Second Is Right For You If
 
@@ -188,7 +297,7 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 - ✅ You have security constraints that require local, self-hosted, or on-prem deployment.
 -->
 
-## Problems Second Solves
+<!-- ## Problems Second Solves
 
 | Without Second | With Second |
 |---|---|
@@ -197,31 +306,7 @@ Draft, review, approve, and publish apps with agents and integrations under cont
 | ❌ Every integration becomes a one-off security project. | ✅ Second generates scoped tools and keeps secrets server-side. |
 | ❌ Agent permissions are hard to explain, approve, and audit. | ✅ `agents.json`, RBAC, approvals, and audit logs make access explicit. |
 | ❌ Every team rebuilds deployment, governance, and collaboration from scratch. | ✅ One workspace gives teams and platform engineers the same foundation. |
-
----
-
-## What You Can Build
-
-Second excels at apps where teams collaborate with agents on long-running, asynchronous workflows:
-
-- **Competitor intelligence:** Agents monitor competitors, aggregate news, alert on pricing changes, and collect case studies.
-- **Lead enrichment pipelines:** Agents research and qualify leads while your team reviews and acts.
-- **Content operations:** Agents draft, research, and organize while editors review in real time.
-- **Customer success dashboards:** Agents pull data from CRMs and support tools so teams can act on insights.
-- **Internal knowledge bases:** Agents continuously index and organize docs while teams search and annotate.
-- **Compliance monitoring:** Agents scan for policy violations while approvers review and resolve.
-
-<!-- ### Example: Competitor Research
-
-From a single prompt, build an app where agents:
-- Produce a live **news feed** of latest competitor updates
-- Run a scheduled job that **alerts on pricing changes**
-- Maintain a **research overview** page with structured analysis
-- Collect and store **PDFs and case studies** found across the web
-
 -->
-
-Your team sees everything in one collaborative interface. Agents write to the same database your team reads from, no export, no copy-paste, no context switching.
 
 ---
 
