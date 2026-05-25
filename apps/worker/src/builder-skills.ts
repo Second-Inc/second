@@ -303,11 +303,7 @@ description: Use this skill when building integrations that use Explorium for pr
 
 # Explorium Integration
 
-- Use this skill when building integrations that use Explorium for prospect matching, contact enrichment, professional profile enrichment business firmographics, etc.
-
-- Read it before designing Explorium custom tools, writing agent prompts, or creating setup instructions.
-
-- Crucial: The information here is accurate, but it is guidance, not a fixed template. Adapt it to the user's actual request and use case - you definetly might need to research more online!
+Use this skill when building integrations that use Explorium for prospect matching, contact enrichment, professional profile enrichment, or business firmographics. Read it before designing Explorium custom tools, writing agent prompts, or creating setup instructions.
 
 ## API Architecture — Match → Enrich (Two-Step)
 
@@ -402,7 +398,7 @@ CRITICAL: When calling explorium_match_prospect, you must ALWAYS pass ALL four f
 
 Always instruct the agent to follow this order:
 
-0. Before matching, verify you have at least \`full_name\` + \`company_name\`. If \`company_name\` is missing but email is available, extract the domain as a company signal. If neither company nor email is available, set status to \`not_found\` and skip enrichment — a name-only match will fail.
+0. Before matching, verify you have at least full_name + company_name. If company_name is missing but email is available, extract the domain as a company signal. If neither company nor email is available, set status to 'not_found' and skip enrichment — a name-only match will fail.
 1. Match prospect (get \`prospect_id\`)
 2. Enrich profile (get title, LinkedIn, company info)
 3. Enrich contacts (get emails, phones) — do NOT skip this
@@ -473,7 +469,7 @@ Group by capability:
 3. Using Authorization header: Explorium uses \`api_key\` header, not \`Authorization: Bearer\`.
 4. Trying to enrich without matching: Always match first to get the entity ID. There is no "enrich by name" shortcut.
 5. Expecting email from profile: The \`/profiles/enrich\` endpoint returns job title, experience, education — NOT contact details. For email/phone, you MUST use \`/contacts_information/enrich\`.
-6. Name-only matching fails: Explorium almost never matches on \`full_name\` alone — it needs \`full_name\` + \`company_name\` at minimum for a reliable match. If the lead has no company, the match will likely return a miss. The agent system prompt should instruct: "If the lead has no company_name, try to infer it from their email domain or other context before calling match. Do not attempt a match with only full_name — it will almost certainly return a miss."
+6. **Name-only matching fails**: Explorium almost never matches on \`full_name\` alone — it needs \`full_name\` + \`company_name\` at minimum for a reliable match. If the lead has no company, the match will likely return a miss. The agent system prompt should instruct: "If the lead has no company_name, try to infer it from their email domain or other context before calling match. Do not attempt a match with only full_name — it will almost certainly return a miss."
 `;
 
 export function ensureBuilderSkills(workingDirectory: string): void {
