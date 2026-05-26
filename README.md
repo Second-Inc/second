@@ -19,7 +19,7 @@
 
 **Humans and agents, side by side.**
 
-Second is a factory for custom internal software,<br>purpose-built for human2agent and agent2agent work.
+Second is a factory for custom internal software,<br>purpose-built for human2agent work.
 
 <a href="https://github.com/Second-Inc/second/actions"><img src="https://img.shields.io/github/actions/workflow/status/Second-Inc/second/ci.yml?label=CI" alt="CI"></a>&nbsp;&nbsp;
 <a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>
