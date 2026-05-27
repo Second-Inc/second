@@ -78,7 +78,7 @@ Second is a single workspace that creates production-ready apps.
 
 1. **You describe your app.** In a single prompt.
 2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
-3. **Your team works alongside agents** in the same shared custom software.
+3. **Your team now works alongside agents** in the same shared custom software.
 
 <table align="center" width="100%" cellpadding="16">
   <tr>
@@ -104,13 +104,11 @@ Second solves that: think Paperclip or Multica, but instead of pre-built softwar
 
 ## The Internal Platform Everyone Needs (and Builds)
 
-Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, and Lovable-style builders, but most of that work never reaches production. Security, governance, integrations, maintenance, agent access control, and deployment all become platform problems.
+Companies like **Ramp** and **Deel** have already figured out that teams are building amazing things internally with Claude, Codex, or Lovable- but most never reach production (security, governance, integrations, maintenance, agent access control...). To solve this, they built internal platforms for themselves.
 
-So they build internal platforms for themselves.
+**Second lets every organization have that.**
 
-**Second lets every organization have that platform layer.**
-
-Every app you build in Second gets a realtime database, app agents, scoped tools, audit logs, RBAC, agent RBAC, review flows, and governance controls built into the workspace.
+Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC, and governance tools built into the workspace.
 
 <table>
   <tr>
