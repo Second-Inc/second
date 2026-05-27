@@ -287,15 +287,15 @@ And many more:
 
 ---
 
-## What Second Handles
+## Why Second is Special
 
-Second is not just a prompt-to-UI generator. It is the control layer around the generated app:
+**Second generates dynamic, agent-native software.** For each app:
 
-- **Scoped tools per app, per agent.** Agents receive the smallest useful tool surface for the workflow, not blanket access to a connector.
-- **Self-building integration setup.** The builder creates the integration contract, setup instructions, mock data, and tool definitions needed by the app.
-- **Server-side secret resolution.** Agents never receive raw API keys, OAuth tokens, cookies, or provider secrets.
-- **`agents.json` as governed policy.** Every runtime capability is declared, validated, approved, hashed, and invalidated when it changes.
-- **Draft / published separation.** Builders can keep iterating while team members keep using the last approved published version.
+- **Scoped tools created per app, for every agent.** Agents can never do things you don't want them to do.
+- **Second is true self-building software.** It generates the integrations, connection instructions, and scoped tools.
+- **Agents never see secrets.** Secrets are injected server-side.
+- **`agents.json`: governed policy as code.** Each app has an `agents.json`. Changes require admin approval via hash verification.
+- **Draft and published are fully separated.** Builders iterate freely with mock data. Published apps only run the last approved config.
 
 On top of that, Second handles the hard parts:
 
