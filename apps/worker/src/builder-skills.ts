@@ -3,22 +3,23 @@ import { join } from "node:path";
 
 const ADD_INTEGRATIONS_SKILL = `---
 name: add-integrations
-description: Use this skill whenever you need to include, edit, add, or review integrations, custom API tools, integration-setup.json, setup instructions, permissions, scopes, or named integration secrets. Read it before researching provider setup or API details.
+description: Use this skill whenever you need to include, edit, add, or review integrations, custom API tools, app-callable integration actions, integration-setup.json, setup instructions, permissions, scopes, or named integration secrets. Read it before researching provider setup or API details.
 ---
 
 # Add Integrations
 
-Use this skill for every integration change, including adding custom tools, editing a tool endpoint, adding scopes, changing named secrets, or writing setup instructions. Read it before researching the provider so the research follows Second's integration rules.
+Use this skill for every integration change, including adding custom tools, app-callable integration actions, editing a tool endpoint, adding scopes, changing named secrets, or writing setup instructions. Read it before researching the provider so the research follows Second's integration rules.
 
 ## First checks
 
 1. Read the main prompt's \`Important: ENV: ...\` value and choose the setup flow that matches the runtime environment.
 2. Call \`mcp__second__list_app_integration_keys\` before deciding whether this app's integration keys need setup.
 3. Verify the current provider setup flow in official docs or official settings pages. Use direct official links whenever possible.
-4. If requirements changed, rewrite \`integration-setup.json\` with the complete current requirements for this app and call \`mcp__second__present_integration_setup\` again.
-5. For Google Calendar integrations, also read the \`google-calendar-integration\` skill when available and follow its setup, favicon, and date-handling rules.
-6. For Slack integrations, also read the \`slack-integration\` skill when available and follow its scopes, channel membership, and setup rules.
-7. For Explorium integrations, also read the \`explorium-integration\` skill when available and follow its match-then-enrich workflow, \`api_key\` header, placeholder, and setup rules.
+4. Verify the latest official API documentation for endpoint URLs, HTTP methods, headers, query/body parameters, pagination, response shape, authentication method, and exact permissions/scopes.
+5. If requirements changed, rewrite \`integration-setup.json\` with the complete current requirements for this app, not only the delta, and call \`mcp__second__present_integration_setup\` again. Do not finish with a prose note like "you need to add this scope" unless you also updated and presented the setup instructions.
+6. For Google Calendar integrations, also read the \`google-calendar-integration\` skill when available and follow its setup, favicon, and date-handling rules.
+7. For Slack integrations, also read the \`slack-integration\` skill when available and follow its scopes, channel membership, and setup rules.
+8. For Explorium integrations, also read the \`explorium-integration\` skill when available and follow its match-then-enrich workflow, \`api_key\` header, placeholder, and setup rules.
 
 ## Integration completeness
 
@@ -32,22 +33,65 @@ Important: If fetched data contains opaque IDs, handles, foreign keys, status co
 
 ## Custom tool rules
 
-- Define the real HTTP request inside each custom tool's \`endpoint\`. Do not put the API request only in prose or only in the agent system prompt.
-- For static API-key or bot-token integrations, use named secret placeholders like \`{{secrets.SERVICE_API_KEY}}\`; the secret name must match \`integration-setup.json\`.
-- For OAuth integrations, declare \`integration.auth.type: "oauth2"\` in the custom tool and in \`integration-setup.json\`. Include \`providerKey\`, \`identity: "triggering_user"\`, official \`authorizationUrl\`, official \`tokenUrl\`, exact \`scopes\`, and any provider-required authorization params such as Google's \`access_type: "offline"\`. Do not include \`{{oauth.access_token}}\`, \`{{access_token}}\`, \`{{token}}\`, \`{{secrets.*}}\`, or an \`Authorization\` header; Second injects the access token server-side.
-- For official public APIs that require no API key, OAuth client, or token, use a public unauthenticated custom tool. Keep \`integration.name\`, \`integration.domain\`, \`endpoint\`, and realistic \`mockData\`, but omit \`integration.auth\`, omit \`{{secrets.*}}\`, omit \`Authorization\` headers, and do not create \`integration-setup.json\` for that provider. Example: arXiv search can call \`https://export.arxiv.org/api/query\` with query input placeholders and no setup.
+### Choosing appTools vs agent tools
+
+- Follow the main prompt's "When to use app agents vs deterministic appTools" rule exactly.
+- Use normal \`agents[].tools\` when an AI agent needs to reason, plan, choose between tools, perform a multi-step workflow, write app data, or interact naturally with the user.
+- Use top-level \`appTools\` only for the narrow deterministic backend-function exception: app code should call a provider API directly with \`callIntegrationTool\` for bounded batches of data, then do simple pagination, grouping, filtering, or aggregation in \`src/App.tsx\` or helper files without AI reasoning. Good example: fetch PostHog event batches and group by \`distinct_id\`/user ID.
+- \`agents\` may be an empty array only when the app truly needs no agent reasoning or workflow.
+
+### Runtime policy and credential identity
+
+- Top-level \`appTools\` use the same \`type: "custom"\`, \`integration\`, \`endpoint\`, \`mockData\`, static secret, OAuth, public API, \`domain\`, and \`keySlug\` rules as agent custom tools.
+- If an appTool and an agent custom tool need the same provider credentials, reuse the same \`integration.domain\` and \`keySlug\`, and put the complete union of required permissions/scopes/secrets in \`integration-setup.json\`.
 - For providers that need setup, give each provider request a stable app-scoped \`keySlug\` in both \`agents.json\` custom tools and \`integration-setup.json\`. Use \`default\` when the app only needs one key for that provider.
 - Another app's configured credential does not satisfy this app. Only skip setup when \`mcp__second__list_app_integration_keys\` reports this app has a configured grant for the same provider, keySlug, auth mode, required permissions/scopes, and named secrets or OAuth provider config.
+- Custom tools MUST have \`integration\`, \`endpoint\`, and \`mockData\` fields inside the same tool object in \`agents.json\`. Do not describe an API request only in prose or only in the agent system prompt.
+- Custom tools SHOULD include \`displayName\` as the action name shown in the UI, for example \`name: "clearbit_company_lookup"\`, \`displayName: "Company Lookup"\`. The integration name already comes from \`integration.name\`.
+- \`integration.domain\` must match the real API host or parent domain used by the endpoint, for example \`hubapi.com\` for \`https://api.hubapi.com\` or \`slack.com\` for \`https://slack.com/api/...\`. The runtime rejects endpoint hosts outside this domain.
+- Custom tool endpoint details are validated when \`mcp__second__present_agents\` runs. If validation fails, fix \`agents.json\` and call \`mcp__second__present_agents\` again.
+
+### Endpoint design and placeholders
+
+- Define the real HTTP request inside each custom tool's \`endpoint\`. Do not put the API request only in prose or only in the agent system prompt.
+- Endpoint \`url\`, \`headers\`, \`queryParams\`, and \`body\` may use placeholders from tool input, for example \`{{symbol}}\`, \`{{query}}\`, or \`{{company.ticker}}\`.
+- For agent custom tools, the tool description must tell the agent to pass a JSON string with the needed input fields, for example \`{"symbol":"AAPL"}\`.
+- \`agents.json\` must always be valid JSON before placeholders are resolved. Never write raw unquoted placeholders such as \`"query": {{query}}\`.
+- Array and object parameters in endpoint body templates: use a JSON string value that is exactly the placeholder, for example \`"query": "{{query}}"\` or \`"search_queries": "{{search_queries}}"\`. When the whole string is exactly one input placeholder, Second injects the raw array/object/number/boolean into the JSON request body at runtime. Do not embed object/array placeholders inside larger strings. If a dynamic object shape is not necessary, prefer a fixed JSON body with scalar placeholders at the leaf fields.
 - Fetch the broad provider data the user asked for. Do not quietly filter to "my", "assigned to me", one team, one project, or one channel unless the user explicitly asked for that narrower slice.
+- Prefer parameterized endpoints with tool input placeholders for lookups, quotes, search, enrichment, and per-record updates.
 - Use specific endpoints for lookups, searches, and per-record actions. For list/sync/feed apps, broad collection endpoints are correct when that matches the request.
-- Keep mock data varied, realistic, and shaped like the provider's real response.
+
+### App runtime calls and failures
+
+- Use top-level \`appTools\` plus \`callIntegrationTool\` only for the narrow deterministic backend-function exception. Example: \`const result = await callIntegrationTool<PostHogEventsInput, PostHogEventsPage>("posthog_events_page", { projectId: "123", limit: 50 }); if (!result.success) show formatIntegrationToolError(result); otherwise group result.data.results by distinct_id/user ID in app code.\`
+- Remember: after a successful \`callIntegrationTool\` call, if the processed result should survive refresh, be shared across users, or be reused by the app/agents later, save the compact processed result with \`useCollection\`/\`useDoc\` \`insert\` or \`update\`. Do not persist huge raw provider responses unless the app truly needs them. Make sure to structure the request and post-process the response in code so it can be beautifully saved in the app, not as huge raw chunks.
+- Backend function failures include structured diagnostics: \`result.error\`, \`statusCode\`, \`errorCode\`, \`errorCategory\`, \`resolution\`, \`retryable\`, \`canRequestBuilderRepair\`, and \`details\`. Never replace these with a generic message like "request failed"; show the provider status/message and the resolution in the app UI.
+- If a live backend function failure blocks the workflow and \`result.canRequestBuilderRepair\` is true, offer a compact "Ask builder to fix" action that calls \`reportIntegrationToolFailure(toolName, input, result, description, attemptedTask)\`. Do not report wrong/expired credentials or missing permissions to the builder; for those, tell the user what credential or provider access to fix.
+- Backend functions are still approved in \`agents.json\` and still use \`integration-setup.json\` for credentials. The app sends only \`toolName\` and input; Second injects secrets/OAuth tokens server-side.
+
+### Authentication modes
+
+- For static API-key or bot-token integrations, use named secret placeholders like \`{{secrets.SERVICE_API_KEY}}\`; the secret name must match \`integration-setup.json\`.
+- For OAuth integrations, declare \`integration.auth.type: "oauth2"\` in the custom tool and in \`integration-setup.json\`. Include \`providerKey\`, \`identity: "triggering_user"\`, official \`authorizationUrl\`, official \`tokenUrl\`, exact \`scopes\`, \`tokenAuthMethod\`, and any provider-required authorization params such as Google's \`access_type: "offline"\`. Do not include \`{{oauth.access_token}}\`, \`{{access_token}}\`, \`{{token}}\`, \`{{secrets.*}}\`, or an \`Authorization\` header; Second injects the access token server-side.
+- For agent OAuth tools, Second resolves the triggering user from the server-created run record. For appTools, Second uses the current app viewer. In both cases, Second refreshes tokens on demand and injects \`Authorization: Bearer <token>\` server-side.
+- For official public APIs that require no API key, OAuth client, or token, use a public unauthenticated custom tool. Keep \`integration.name\`, \`integration.domain\`, \`endpoint\`, and realistic \`mockData\`, but omit \`integration.auth\`, omit \`{{secrets.*}}\`, omit \`Authorization\` headers, and do not create \`integration-setup.json\` for that provider. Example: arXiv search can call \`https://export.arxiv.org/api/query\` with query input placeholders and no setup.
+
+### Mock data and app error UI
+
+- \`mockData\` must have 3+ varied, realistic entries that match the real API response shape so the app works seamlessly without the integration configured. When the integration is not configured, Second automatically returns a random \`mockData\` entry, so the agent/app gets data instead of auth failures during setup.
+- The \`mockData\` entries must look exactly like real API responses so the app renders them correctly whether using mock or real data.
+- App code must display structured backend function failures from \`callIntegrationTool\`: show \`error\`, provider \`statusCode\`, and \`resolution\`. Do not collapse failures to generic messages.
+- When \`canRequestBuilderRepair\` is true and the failure blocks the workflow, expose a small "Ask builder to fix" action using \`reportIntegrationToolFailure\`. Credential and permission failures should direct the user to fix integration setup instead.
 
 ## Bounded response design
 
+- App-callable integration actions return data to app code instead of an agent, so deterministic pagination and app-side grouping are preferred for bulk dashboards. Each individual action response is still bounded; do not design one unbounded request for thousands of records.
+- Use appTools for data-heavy deterministic fetches because huge provider responses can consume an agent's limited context window and waste agent time/tokens when the task is just pagination plus local computation.
 - Keep custom tool responses small enough for the agent to read directly. The agent receives the provider response before it can filter fields or write app data. \`responseSchema\` is descriptive only; it does not trim, project, or reshape runtime output.
 - For search, content, crawl, enrichment, and RAG APIs, avoid unbounded full document/page body fields in multi-result tools. Prefer metadata, summaries, highlights, snippets, or explicit character limits.
 
-IMPORTANT: TAKE THE FOLLOWING PRINCIPALS, AND APPLY TO THE TOOLS YOUR ARE BUILDING, IF APPLICABLE:
+Important: apply the following principles to the tools you are building when they are relevant:
 - If the app needs full text, split the workflow into two tools on the same agent: one compact search/list tool, then one bounded single-record contents/details tool.
 - Exa example: do not use a multi-result Exa search body like \`"contents": { "text": true, "highlights": true }\` for result-card apps. Exa \`text: true\` returns full page text for each result, so 10 results can overflow the agent's tool output. For result cards, prefer \`"contents": { "highlights": { "numSentences": 2, "highlightsPerUrl": 1 } }\`. If short text is genuinely needed, use a cap such as \`"contents": { "text": { "maxCharacters": 1000 }, "highlights": true }\`.
 - Exa two-tool pattern: \`exa_search\` should POST to \`https://api.exa.ai/search\` with \`query\`, \`numResults\`, and highlights/summaries only, returning compact result metadata. \`exa_get_contents\` should POST to \`https://api.exa.ai/contents\` with one URL or ID from a previous search result and \`"text": { "maxCharacters": 3000 }\` or another deliberate cap. In the agent system prompt, instruct the agent to call \`exa_search\` first and call \`exa_get_contents\` only for the specific selected/top URLs that need deeper text.
@@ -259,11 +303,7 @@ description: Use this skill when building integrations that use Explorium for pr
 
 # Explorium Integration
 
-- Use this skill when building integrations that use Explorium for prospect matching, contact enrichment, professional profile enrichment business firmographics, etc.
-
-- Read it before designing Explorium custom tools, writing agent prompts, or creating setup instructions.
-
-- Crucial: The information here is accurate, but it is guidance, not a fixed template. Adapt it to the user's actual request and use case - you definetly might need to research more online!
+Use this skill when building integrations that use Explorium for prospect matching, contact enrichment, professional profile enrichment, or business firmographics. Read it before designing Explorium custom tools, writing agent prompts, or creating setup instructions.
 
 ## API Architecture — Match → Enrich (Two-Step)
 
@@ -358,7 +398,7 @@ CRITICAL: When calling explorium_match_prospect, you must ALWAYS pass ALL four f
 
 Always instruct the agent to follow this order:
 
-0. Before matching, verify you have at least \`full_name\` + \`company_name\`. If \`company_name\` is missing but email is available, extract the domain as a company signal. If neither company nor email is available, set status to \`not_found\` and skip enrichment — a name-only match will fail.
+0. Before matching, verify you have at least full_name + company_name. If company_name is missing but email is available, extract the domain as a company signal. If neither company nor email is available, set status to 'not_found' and skip enrichment — a name-only match will fail.
 1. Match prospect (get \`prospect_id\`)
 2. Enrich profile (get title, LinkedIn, company info)
 3. Enrich contacts (get emails, phones) — do NOT skip this
@@ -429,7 +469,7 @@ Group by capability:
 3. Using Authorization header: Explorium uses \`api_key\` header, not \`Authorization: Bearer\`.
 4. Trying to enrich without matching: Always match first to get the entity ID. There is no "enrich by name" shortcut.
 5. Expecting email from profile: The \`/profiles/enrich\` endpoint returns job title, experience, education — NOT contact details. For email/phone, you MUST use \`/contacts_information/enrich\`.
-6. Name-only matching fails: Explorium almost never matches on \`full_name\` alone — it needs \`full_name\` + \`company_name\` at minimum for a reliable match. If the lead has no company, the match will likely return a miss. The agent system prompt should instruct: "If the lead has no company_name, try to infer it from their email domain or other context before calling match. Do not attempt a match with only full_name — it will almost certainly return a miss."
+6. **Name-only matching fails**: Explorium almost never matches on \`full_name\` alone — it needs \`full_name\` + \`company_name\` at minimum for a reliable match. If the lead has no company, the match will likely return a miss. The agent system prompt should instruct: "If the lead has no company_name, try to infer it from their email domain or other context before calling match. Do not attempt a match with only full_name — it will almost certainly return a miss."
 `;
 
 export function ensureBuilderSkills(workingDirectory: string): void {

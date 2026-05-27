@@ -175,13 +175,15 @@ review promotes the current draft snapshot into the published snapshot. See
 
 `agents.json` is a protected draft artifact. The builder and file tools may
 edit it, but live agent runtime permissions are trusted only after the platform
-records an approval for the exact canonical JSON hash. Any later `agents.json`
-change clears that draft approval. Draft app-agent runs can start from the
-draft file so builders can test the in-progress app, but custom HTTP tools and
-agent data tools require the current draft hash to match the stored approval
-before they can touch live integrations or app data. Publishing and review
-approval promote both the source snapshot and the approved `agents.json`
-payload into the published snapshot.
+records an approval for the versioned canonical JSON hash. The canonicalizer is
+schema-versioned so harmless representation changes, such as missing optional
+arrays versus empty optional arrays, do not invalidate approval. Any later
+effective `agents.json` policy change clears that draft approval. Draft
+app-agent runs can start from the draft file so builders can test the
+in-progress app, but custom HTTP tools and agent data tools require the current
+draft hash to match the stored approval before they can touch live integrations
+or app data. Publishing and review approval promote both the source snapshot
+and the approved `agents.json` payload into the published snapshot.
 
 Integration domains and OAuth metadata are approved at runtime, not trusted from
 model output. A custom tool must exist in the approved `agents.json` payload,

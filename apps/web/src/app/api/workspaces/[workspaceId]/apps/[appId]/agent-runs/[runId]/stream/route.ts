@@ -59,7 +59,7 @@ type AgentsJsonToolDef = {
 };
 
 type AgentsJson = {
-  agents: Array<{
+  agents?: Array<{
     id: string;
     name: string;
     systemPrompt: string;
@@ -304,7 +304,8 @@ export async function POST(request: Request, context: StreamRouteContext) {
     return NextResponse.json({ error: "invalid_agents_json" }, { status: 400 });
   }
 
-  const agentDef = agentsJson.agents.find((a) => a.id === run.agentId);
+  const agents = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
+  const agentDef = agents.find((a) => a.id === run.agentId);
   if (!agentDef) {
     return NextResponse.json({ error: "agent_not_found" }, { status: 404 });
   }

@@ -38,7 +38,7 @@ type AgentsJsonAgentDef = {
 };
 
 type AgentsJson = {
-  agents: AgentsJsonAgentDef[];
+  agents?: AgentsJsonAgentDef[];
 };
 
 export async function POST(request: Request, context: AgentRunsRouteContext) {
@@ -91,7 +91,8 @@ export async function POST(request: Request, context: AgentRunsRouteContext) {
     return NextResponse.json({ error: "invalid_agents_json" }, { status: 400 });
   }
 
-  const agentDef = agentsJson.agents.find((a) => a.id === body.agentId);
+  const agents = Array.isArray(agentsJson.agents) ? agentsJson.agents : [];
+  const agentDef = agents.find((a) => a.id === body.agentId);
   if (!agentDef) {
     return NextResponse.json({ error: "agent_not_found" }, { status: 404 });
   }

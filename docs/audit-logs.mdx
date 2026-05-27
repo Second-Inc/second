@@ -62,7 +62,7 @@ Open-source v1 records the core governance and platform events:
 | Integrations | `integration.requested`, `integration.configured`, `integration.secret_rotated`, `integration.reset`, `integration.deleted`, `oauth.provider_configured`, `oauth.provider_secret_rotated`, `oauth.connected`, `oauth.connect_failed`, `oauth.revoked`, `oauth.token_refreshed` |
 | Permission denials | `access.denied` for safe same-workspace authorization failures |
 | App-agent governance and runs | `app.agents_config.approved`, `app.agents_config.stale`, `app_agent_run.created`, `app_agent_run.started`, `app_agent_run.completed`, `app_agent_run.failed` |
-| Custom tools | `tool.custom.executed`, `tool.custom.denied`, `tool.custom.mocked`, `tool.custom.failed` |
+| Custom tools | `tool.custom.executed`, `tool.custom.denied`, `tool.custom.mocked`, `tool.custom.failed`, `app_agent_tool_failure.reported`, `app_runtime_tool_failure.reported` |
 | App data writes | `app_data.document.inserted`, `app_data.document.updated`, `app_data.document.upserted`, `app_data.document.deleted` |
 | Audit usage | `audit.viewed` through an explicit rate-limited POST |
 

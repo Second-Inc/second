@@ -5,6 +5,7 @@ import type {
   RuntimeRunResultMessage,
 } from "./types.js";
 import { estimateOpenAiCostUsd } from "./openai-pricing.js";
+import { approvalToolResultShouldStop } from "../approval-tools.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -339,15 +340,6 @@ function mcpToolCallName(item: JsonObject): string {
   return normalizeToolName(
     stringValue(item.server),
     stringValue(item.tool) ?? "unknown",
-  );
-}
-
-function isBlockingApprovalTool(name: string): boolean {
-  return (
-    name === "mcp__second__present_plan" ||
-    name === "mcp__second__present_suggestions" ||
-    name === "mcp__second__present_agents" ||
-    name === "mcp__second__set_onboarding_context"
   );
 }
 
@@ -1515,9 +1507,10 @@ export class CodexAppServerClient {
         emitPendingWebSearchUpdates();
         const name = pendingToolCalls.get(id) ?? mcpToolCallName(item);
         pendingToolCalls.set(id, name);
-        push(toolResultMessage(id, toolResultContent(item)));
+        const resultContent = toolResultContent(item);
+        push(toolResultMessage(id, resultContent));
         pendingToolCalls.delete(id);
-        if (isBlockingApprovalTool(name)) {
+        if (approvalToolResultShouldStop(name, resultContent)) {
           turnCompleted = true;
           terminateChild();
           wake();

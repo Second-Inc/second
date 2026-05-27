@@ -187,13 +187,15 @@ export const AUDIT_EVENT_EXPLANATIONS: AuditEventExplanation[] = [
       "tool.custom.denied",
       "tool.custom.mocked",
       "tool.custom.failed",
+      "app_agent_tool_failure.reported",
+      "app_runtime_tool_failure.reported",
     ],
     category: "tools",
     source: "app_agent",
-    actor: "app agent",
+    actor: "app agent or user",
     target: "tool",
     canAnswer:
-      "Which app agent ran, what approved tool/integration it used, whether it was live or mock, and the outcome class.",
+      "Which app or app agent used an approved tool/integration, whether it was live or mock, the outcome class, and whether a builder repair run was requested.",
     notLogged:
       "Full agent transcript, reasoning, raw request bodies, full responses, external records.",
     scope: "OSS v1",
