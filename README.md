@@ -21,8 +21,6 @@
 
 Second is a factory for custom internal software,<br>purpose-built for human2agent work.
 
-<!-- Let your team ship custom internal apps from a prompt, where agents work natively alongside your humans. -->
-
 <a href="https://github.com/Second-Inc/second/actions"><img src="https://img.shields.io/github/actions/workflow/status/Second-Inc/second/ci.yml?label=CI" alt="CI"></a>&nbsp;&nbsp;
 <a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>
 
@@ -66,15 +64,21 @@ Bring your agent:
 
 ## What is Second?
 
-Second is a local / on-prem Lovable for building internal software (e.g. competitor research, lead enrichment) **that treats agents as first-class citizens:** AI Agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, get scoped tools to handle real workloads inside the apps you've built, and perform actual work instead of just answering questions.
+Second is the infrastructure for human2agent work.
 
-### How it Works
+Instead of managing agents in chat windows, **Second lets you orchestrate a team of agents inside custom apps you build around your team's actual needs.**
 
-Second is a single workspace.
+From one prompt, Second builds complete apps **that treat agents as first-class citizens:** agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team does, and get generated, scoped tools to handle real workloads inside your apps.
+
+We believe custom apps are the right abstraction for continuous work with a team of agents. Chat is great for one-off tasks, but shared state, queues and pipelines require real software where humans and agents can work on the same page.
+
+### How It Works
+
+Second is a single workspace that creates production-ready apps.
 
 1. **You describe your app.** In a single prompt.
 2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
-3. **Your team now works alongside agents** in the same shared custom software you've built.
+3. **Your team now works alongside agents** in the same shared custom software.
 
 <table align="center" width="100%" cellpadding="16">
   <tr>
@@ -90,14 +94,11 @@ Second is a single workspace.
   </tr>
 </table>
 
-## Second VS other solutions
+## Second vs. Other Solutions
 
-Most platforms weren't built for multiplayer, async work with agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.\
-**Generally, multiplayer human-agent work is where coordination gets hard and things start to break.**
+Most platforms weren't built for multiplayer, async work with agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.
 
-Second solves that: Think Paperclip or Multica, but instead of pre-built software you get to build your own custom GUI to work with a team of agents, tailored to your company's needs!
-
-<!-- Second's infrastructure handles agent orchestration, security, real-time data, and governance out of the box. -->
+Second solves that: think Paperclip or Multica, but instead of pre-built software you get to build your own custom GUI for a team of agents, tailored to your company's needs.
 
 ---
 
@@ -139,19 +140,37 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 
 ---
 
+## Core Philosophy
+
+| Principle | What it means in Second |
+|:---|:---|
+| **Build the app, not just the agent.** | The durable artifact is working internal software: a focused UI, live data, team workflows, and agents that operate inside that product. |
+| **Agents are first-class citizens.** | Apps can include multiple named agents with roles, tools, data access, schedules, and visible run history. They are not bolted-on chat widgets. |
+| **Humans stay in command.** | Plans, agent configs, integration setup, and publishing go through explicit review. Agents can work freely only inside the boundaries you approved. |
+| **Small tools beat broad access.** | The builder creates scoped tools for the specific app and use case. Tools are tied to approved domains, collections, integration grants, and secret placeholders. |
+| **Integrations should self-build.** | Instead of starting with a giant MCP catalog or handing agents every connector, Second generates the narrow integration contract and human setup instructions the app actually needs. |
+| **Collaboration is the runtime.** | Agent-to-agent and agent-to-human work happens through the app's shared state, realtime updates, resumable streams, comments, approvals, and audit trail. |
+| **Generated software must still be real software.** | Draft and published snapshots are separated, source is persisted, builds are checked, data survives restarts, and production access follows the same tenant and permission model. |
+| **Local-first, on-prem-ready.** | Start on your machine. Deploy inside your cloud when the workflow matters. Your VPC, your auth provider, your secrets, your rules. |
+
+---
+
 ## Features
 
 | Feature | &nbsp; |
 |:---|:---|
-| **🔧 Self-Building** | Integrations are generated on demand with exact connection instructions |
-| **🤖 App Agents** | Each app gets its own agents, with tools and data access presented for approval |
-| **🔌 BYO Agent** | Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message |
-| **⚡ Realtime** | Live data, change streams, and optimistic updates keep teams and agents synced |
-| **👥 Multiplayer Sessions** | Talk with your agents, invite teammates into the session, and collaborate with shared context |
+| **🔧 Prompt-to-App Generation** | Generate internal apps, data models, agents, tools, and setup instructions from one prompt |
+| **🤖 App Agents** | Each app gets its own first-class agents with roles, prompts, data access, and approved tools |
+| **🧰 Scoped Tool Generation** | Tools are generated per app and tied to explicit domains, collections, inputs, and integration grants |
+| **🔌 Self-Building Integrations** | Second creates connection requirements and human setup instructions only when the app needs them |
+| **🤹 Multi-Agent Orchestration** | Run specialized agents in parallel across foreground, background, scheduled, and async workflows |
+| **🔄 BYO Runtime** | Use Claude Code, Codex, OpenCode, or your own harness. Switch runtimes per app or message |
+| **⚡ Realtime Collaboration** | Live data, change streams, resumable streams, and optimistic updates keep teams and agents synced |
+| **👥 Multiplayer Sessions** | Talk with agents, invite teammates into sessions, and collaborate with shared context |
 | **🔒 Agent Permissions** | Agents run with approved tools, data, and integrations. Everything is scoped and audited |
 | **🛡️ Governance** | Draft, review, approve, and publish apps with agents and integrations under control |
 | **📋 Audit Logs** | Every agent action, tool call, data write, and access denial recorded and searchable |
-| **🏠 Self-Hosted / On-Prem** | Deploy on your own infrastructure. Your k8s cluster, your VPC, your rules |
+| **🏠 Self-Hosted / On-Prem** | Deploy on your own infrastructure. Your Kubernetes cluster, your VPC, your rules |
 | **🧠 Workspace Agents** | Create reusable agents with prompts, skills, models, and team visibility |
 | **📚 Workspace Skills** | Define instructions once, then attach them to agents across the workspace |
 | **⏲️ Scheduled Agent Jobs** | Agents run on a schedule for periodic research, monitoring, and background tasks |
@@ -264,8 +283,6 @@ And many more:
 | **Security Alert Triage** | Ingest alerts from multiple tools, deduplicate, prioritize, assign to on-call | PagerDuty, Slack, Jira, SIEM API | Ingestion Agent, Triage Agent, Assignment Agent |
 | **Meeting Follow-ups** | Record action items from meetings, assign owners, send follow-up emails, track completion | Google Calendar, Gong, Gmail, Notion | Notes Agent, Follow-up Agent, Tracker Agent |
 
-<!-- Your team sees everything in one collaborative workspace. Agents write to the same database your team reads from. No export, no copy-paste, no context switching. -->
-
 ---
 
 ## Why Second is Special
@@ -282,31 +299,10 @@ On top of that, Second handles the hard parts:
 
 | Capability | &nbsp; |
 |:---|:---|
-| **🤹 Multi-agent orchestration** | Multiple specialized agents per app |
-| **⏲️ Long-running async work** | Scheduled jobs, periodic research, background tasks |
-| **🗃️ Live data persistence** | Real-time DB with Change Streams; survives restarts and churn |
-
-<!-- ## Second Is Right For You If
-
-- ✅ Your team has Claude, Codex, or Lovable prototypes that need to become real production software.
-- ✅ You need internal tools where humans and agents work on the same workflows.
-- ✅ You need agents to work with real systems while keeping access scoped, approved, and auditable.
-- ✅ You want to keep using your own agent harness (e.g. Claude Code or Codex) to ship powerful internal apps.
-- ✅ You need RBAC, agent access control, approval flows, audit logs, integrations, and safe deployments from the start.
-- ✅ You want agents inside the app, not off to the side in a separate chat window.
-- ✅ You have security constraints that require local, self-hosted, or on-prem deployment.
--->
-
-<!-- ## Problems Second Solves
-
-| Without Second | With Second |
-|---|---|
-| ❌ Prototypes work in Claude, Codex, or Lovable, then stall before production. | ✅ Apps are generated inside a governed workspace with the runtime pieces already there. |
-| ❌ Agents work in separate chats and lose the context your team is acting on. | ✅ Agents and humans share the same app, real-time DB, and interface. |
-| ❌ Every integration becomes a one-off security project. | ✅ Second generates scoped tools and keeps secrets server-side. |
-| ❌ Agent permissions are hard to explain, approve, and audit. | ✅ `agents.json`, RBAC, approvals, and audit logs make access explicit. |
-| ❌ Every team rebuilds deployment, governance, and collaboration from scratch. | ✅ One workspace gives teams and platform engineers the same foundation. |
--->
+| **🤹 Multi-agent orchestration** | Multiple specialized agents per app, coordinated through shared app state |
+| **⏲️ Long-running async work** | Scheduled jobs, periodic research, background runs, and resumable streams |
+| **🗃️ Live data persistence** | Realtime DB with Change Streams; app data survives restarts and user churn |
+| **🧾 Governance and auditability** | Review flows, access checks, integration approvals, and searchable audit events |
 
 ---
 
@@ -369,7 +365,7 @@ Every app's agent capabilities are declared, version-controlled, and approved:
 
 ## Self-Hosting
 
-Second runs on your infrastructure: your k8s cluster, your VPC, your rules.
+Second runs on your infrastructure: your Kubernetes cluster, your VPC, your rules.
 
 For full environment setup, see the [self-hosting docs](https://docs.second.so/self-hosting).
 
