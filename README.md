@@ -64,7 +64,7 @@ Bring your agent:
 
 ## What is Second?
 
-Second the most powerful way to build custom GUIs for agents.
+Second is the most powerful way to build custom GUIs for agents.
 
 Instead of being locked into a pre-built agent orchestration platform, Second lets you orchestrate a team of agents inside custom apps you build around your workflows, giving agents room to work while your team stays in full control.
 
@@ -92,7 +92,7 @@ Second is a single workspace.
   </tr>
 </table>
 
-## Second VS other solutions
+## Second vs. Other Solutions
 
 Most platforms weren't built for multiplayer, async work with agents. They either treat agents as an afterthought bolted onto existing tools, or they're too opinionated and end up not fitting how your team actually works.
 
