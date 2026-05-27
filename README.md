@@ -68,7 +68,7 @@ Second is the infrastructure for human to agent work.
 
 Instead of managing agents in chat windows, **Second lets you orchestrate a team of agents inside custom apps you build around your team's actual needs.**
 
-We believe custom apps are the right abstraction for continuous work with a team of agents. Chat works for one-off tasks, but shared state, queues, approvals, and long-running work need a real surface.
+We believe custom apps are the right abstraction for continuous work with a team of agents. Chat is great for one-off tasks, but shared state, queues and pipelines require real software where humans and agents can work on the same page.
 
 From one prompt, Second builds complete apps **that treat agents as first-class citizens:** agents work inside the apps you build, right alongside your team. They read and write to the same real-time DB as your team, and get generated, scoped tools to handle real workloads inside your apps.
 
