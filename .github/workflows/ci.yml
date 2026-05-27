@@ -51,7 +51,9 @@ jobs:
         run: npm --prefix apps/web run build
 
       - name: Validate CLI launcher
-        run: npm --prefix packages/cli run build
+        run: |
+          npm --prefix packages/cli run build
+          npm --prefix packages/cli-local-win32-x64 run build
 
       - name: Validate local supervisor
         run: npm --prefix packages/local-supervisor run build

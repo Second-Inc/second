@@ -346,6 +346,10 @@ function installMenu() {
       ],
     },
     {
+      label: "File",
+      submenu: [{ role: "close" }],
+    },
+    {
       label: "Edit",
       submenu: [
         { role: "undo" },

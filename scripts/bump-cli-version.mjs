@@ -19,6 +19,10 @@ const linuxPayloadPackagePath = resolve(
   repoRoot,
   "packages/cli-local-linux-x64/package.json",
 );
+const windowsPayloadPackagePath = resolve(
+  repoRoot,
+  "packages/cli-local-win32-x64/package.json",
+);
 
 const versionArg = process.argv[2]?.trim();
 
@@ -34,6 +38,7 @@ updateCliLockfile(cliLockPath, nextVersion);
 updatePackageJson(localPayloadPackagePath, nextVersion);
 updatePackageJson(intelMacPayloadPackagePath, nextVersion);
 updatePackageJson(linuxPayloadPackagePath, nextVersion);
+updatePackageJson(windowsPayloadPackagePath, nextVersion);
 
 console.log(`CLI release version bumped to ${nextVersion}`);
 console.log("");
@@ -43,6 +48,7 @@ console.log("  packages/cli/package-lock.json");
 console.log("  packages/cli-local-darwin-arm64/package.json");
 console.log("  packages/cli-local-darwin-x64/package.json");
 console.log("  packages/cli-local-linux-x64/package.json");
+console.log("  packages/cli-local-win32-x64/package.json");
 
 function printUsage(exitCode) {
   console.log("Usage:");

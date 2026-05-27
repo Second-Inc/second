@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const DEFAULT_PORT = 3030;
 const DEFAULT_STARTUP_TIMEOUT_MS = 180_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
+const DEFAULT_STOP_TIMEOUT_MS = 30_000;
 const SECRET_PATTERNS = [
   /SECOND_LOCAL_CLI_TOKEN=[^\s]+/gi,
   /SECOND_NO_AUTH_SESSION_SECRET=[^\s]+/gi,
@@ -131,25 +132,39 @@ export class SecondLocalSupervisor extends EventEmitter {
   async stop() {
     const entrypoint = this.resolveEntrypoint();
     this.emitProgress("stopping", "shutdown", "Stopping local Second runtime");
-    await this.runEntrypoint(entrypoint, ["stop"]);
-    if (this.child && !this.child.killed) {
-      this.child.kill("SIGTERM");
+
+    let stopError = null;
+    try {
+      await this.runEntrypoint(entrypoint, ["stop"]);
+    } catch (err) {
+      stopError = err;
     }
-    this.child = null;
+
+    await this.stopSpawnedChild();
+    const stopped = await waitForRuntimeStopped({
+      port: this.port,
+      timeoutMs: DEFAULT_STOP_TIMEOUT_MS,
+    });
     this.ready = null;
+
+    if (!stopped) {
+      throw stopError ?? new Error(`Second did not stop at http://localhost:${this.port}.`);
+    }
+    if (stopError) throw stopError;
+
     this.emitProgress("stopped", "shutdown", "Second stopped");
   }
 
   async reset() {
     const entrypoint = this.resolveEntrypoint();
     this.emitProgress("resetting", "reset", "Resetting local Second data");
-    await this.runEntrypoint(entrypoint, ["reset", "--yes"]);
-    if (this.child && !this.child.killed) {
-      this.child.kill("SIGTERM");
+    try {
+      await this.runEntrypoint(entrypoint, ["reset", "--yes"]);
+    } finally {
+      await this.stopSpawnedChild();
+      this.ready = null;
+      this.emitProgress("stopped", "reset", "Second local data reset");
     }
-    this.child = null;
-    this.ready = null;
-    this.emitProgress("stopped", "reset", "Second local data reset");
   }
 
   async restart() {
@@ -232,6 +247,21 @@ export class SecondLocalSupervisor extends EventEmitter {
       timeoutMs: this.commandTimeoutMs,
       onOutput: (chunk, stream) => this.handleOutput(chunk, stream),
     });
+  }
+
+  async stopSpawnedChild() {
+    const child = this.child;
+    this.child = null;
+    if (!child || child.exitCode !== null || child.signalCode !== null || child.killed) {
+      return;
+    }
+
+    child.kill("SIGTERM");
+    const exited = await waitForChildExit(child, 10_000);
+    if (!exited && child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForChildExit(child, 5_000);
+    }
   }
 
   createChildEnv(extra = {}) {
@@ -353,6 +383,52 @@ export async function waitForRuntimeReady({
   }
 
   throw new Error(`Second did not become ready at ${publicUrl}.`);
+}
+
+async function waitForRuntimeStopped({
+  port = DEFAULT_PORT,
+  timeoutMs = DEFAULT_STOP_TIMEOUT_MS,
+} = {}) {
+  const publicUrl = `http://localhost:${port}`;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${publicUrl}/api/health`);
+      if (!response.ok) return true;
+    } catch {
+      return true;
+    }
+    await delay(500);
+  }
+
+  return false;
+}
+
+function waitForChildExit(child, timeoutMs) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve(true);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, timeoutMs);
+    const onExit = () => {
+      cleanup();
+      resolve(true);
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      child.off("exit", onExit);
+      child.off("close", onExit);
+    };
+
+    child.once("exit", onExit);
+    child.once("close", onExit);
+  });
 }
 
 function normalizePort(value) {

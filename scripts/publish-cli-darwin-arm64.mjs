@@ -11,6 +11,7 @@ const payloadDirs = [
   resolve(repoRoot, "packages/cli-local-darwin-arm64"),
   resolve(repoRoot, "packages/cli-local-darwin-x64"),
   resolve(repoRoot, "packages/cli-local-linux-x64"),
+  resolve(repoRoot, "packages/cli-local-win32-x64"),
 ];
 const cliDir = resolve(repoRoot, "packages/cli");
 const cliPackagePath = resolve(cliDir, "package.json");
