@@ -117,19 +117,19 @@ Every app you build in Second gets a realtime database, app agents, scoped tools
     <td width="50%" valign="top">
       <h3 align="center">👥 For Teams</h3>
       <ul>
-        <li>Build custom internal apps from a single prompt</li>
-        <li>Run multiple agents across the workflows your team already owns</li>
-        <li>Work in a realtime collaborative UI where agents and humans share state</li>
-        <li>Move before credentials are connected: integrations return mock data until configured</li>
+        <li>Build custom apps from a single prompt</li>
+        <li>Run multiple agents in parallel across workflows</li>
+        <li>Real-time collaborative UI with agents and humans on the same page</li>
+        <li>Never blocked: integrations return mock data until connected</li>
       </ul>
     </td>
     <td width="50%" valign="top">
       <h3 align="center">🛠️ For Platform Engineers</h3>
       <ul>
-        <li>Fine-grained access control per app, agent, collection, and integration</li>
+        <li>Fine-grained access control per app, per agent, per integration</li>
         <li>One-time workspace setup, unlimited apps</li>
-        <li>Full governance: draft, review, approve, publish, audit</li>
-        <li>Deploy on your own Kubernetes cluster, air-gapped or on-prem</li>
+        <li>Full governance: draft/review/publish lifecycle</li>
+        <li>Deploy on your own k8s, air-gapped or on-prem</li>
       </ul>
     </td>
   </tr>
