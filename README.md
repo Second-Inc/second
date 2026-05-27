@@ -64,7 +64,7 @@ Bring your agent:
 
 ## What is Second?
 
-Second is the infrastructure for human to agent work.
+Second is the infrastructure for human2agent work.
 
 Instead of managing agents in chat windows, **Second lets you orchestrate a team of agents inside custom apps you build around your team's actual needs.**
 
