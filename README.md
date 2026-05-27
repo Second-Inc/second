@@ -77,7 +77,7 @@ From one prompt, Second builds complete apps **that treat agents as first-class 
 Second is a single workspace.
 
 1. **You describe your app.** In a single prompt.
-2. **Second generates it.** The UI, agents, scoped tools, and real-time DB. Tools are presented for approval.
+2. **Second generates it.** The agents, scoped tools, and a beautiful UI, backed by a real-time DB.
 3. **Your team works alongside agents** in the same shared custom software.
 
 <table align="center" width="100%" cellpadding="16">
