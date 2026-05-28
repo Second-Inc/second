@@ -360,7 +360,7 @@ The worker endpoint only reports the current workspace filesystem. The web file 
 }
 ```
 
-Excludes `node_modules`, `.git`, and other ignored infrastructure folders. Snapshot collection enforces per-file and total-size guardrails (512KB per file, 12MB total hard limit). Returns `{ files: {} }` if the workspace doesn't exist.
+Excludes `node_modules`, `.git`, and other ignored infrastructure folders. Snapshot collection enforces per-file and total-size guardrails (1MB per file, 12MB total hard limit). Returns `{ files: {} }` if the workspace doesn't exist.
 
 ### `POST /sessions/:appId/agent-run`
 

@@ -96,7 +96,7 @@ Workspaces start `npm install --include=dev` in the background as soon as they a
 
 Snapshot persistence is deliberately bounded:
 
-- Per-file cap: `512KB`
+- Per-file cap: `1MB`
 - Warning threshold: `8MB` total snapshot size
 - Hard fail threshold: `12MB` total snapshot size
 - No silent truncation, no partial snapshot writes

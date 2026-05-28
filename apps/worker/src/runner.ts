@@ -357,7 +357,7 @@ const IGNORED_DIRS = new Set([
   ".claude",
   "attachments",
 ]);
-const MAX_FILE_SIZE = 512 * 1024; // 512KB per file
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB per file
 const SNAPSHOT_WARN_SIZE = 8 * 1024 * 1024; // 8MB warning
 const SNAPSHOT_MAX_SIZE = 12 * 1024 * 1024; // 12MB hard fail
 
