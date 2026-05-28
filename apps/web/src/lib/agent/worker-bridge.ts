@@ -658,6 +658,7 @@ export async function streamFromWorker(
       workerUrl: options.workerUrl,
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      disableBodyTimeout: true,
       body: JSON.stringify({
         prompt: options.prompt,
         systemPrompt: options.systemPrompt,
@@ -1202,7 +1203,11 @@ export async function streamAgentRunFromWorker(
 
   const response = await workerFetch(
     `/sessions/${options.workerAppId}/agent-run/${options.runId}/events`,
-    { workerUrl: options.workerUrl, signal: options.signal },
+    {
+      workerUrl: options.workerUrl,
+      signal: options.signal,
+      disableBodyTimeout: true,
+    },
   );
 
   if (!response.ok || !response.body) {
