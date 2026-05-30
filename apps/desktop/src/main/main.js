@@ -25,6 +25,7 @@ const DESKTOP_SECRET_PATTERNS = [
 let mainWindow = null;
 let runtime = null;
 let quitAfterRuntimeStop = false;
+let quitInProgress = false;
 let startPromise = null;
 let lastStatusEvent = null;
 
@@ -36,6 +37,7 @@ if (!gotLock) {
 }
 
 app.on("second-instance", () => {
+  if (quitInProgress) return;
   showMainWindow();
 });
 
@@ -57,6 +59,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("activate", () => {
+  if (quitInProgress) return;
   showMainWindow();
 });
 
@@ -69,25 +72,41 @@ app.on("window-all-closed", () => {
 app.on("before-quit", (event) => {
   if (quitAfterRuntimeStop || !runtime) return;
   event.preventDefault();
-  quitAfterRuntimeStop = true;
+  if (quitInProgress) return;
+
+  quitInProgress = true;
+  if (process.platform === "darwin") {
+    app.dock?.hide();
+  }
+  mainWindow?.destroy();
+  writeDesktopLog("quit requested; stopping runtime");
   runtime
     .stop()
+    .then(() => {
+      writeDesktopLog("runtime stopped for quit");
+    })
     .catch((err) => {
+      writeDesktopLog("runtime stop failed during quit", {
+        message: err.message,
+        code: err.code,
+        stack: err.stack,
+      });
       sendStatus({
         status: "error",
         step: "shutdown",
         message: err.message,
       });
     })
-    .finally(() => app.quit());
+    .finally(() => {
+      quitAfterRuntimeStop = true;
+      app.quit();
+    });
 });
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 820,
-    minWidth: 960,
-    minHeight: 640,
     title: "Second",
     show: false,
     ...(process.platform === "darwin"
@@ -110,7 +129,7 @@ function createMainWindow() {
   });
 
   mainWindow.on("close", (event) => {
-    if (process.platform !== "darwin" || quitAfterRuntimeStop) return;
+    if (process.platform !== "darwin" || quitAfterRuntimeStop || quitInProgress) return;
     event.preventDefault();
     mainWindow?.hide();
   });
@@ -123,6 +142,7 @@ function createMainWindow() {
 }
 
 function showMainWindow() {
+  if (quitInProgress) return;
   if (!mainWindow || mainWindow.isDestroyed()) {
     createMainWindow();
   }
@@ -176,6 +196,7 @@ function createRuntime() {
 
   return createSecondLocalSupervisor({
     port,
+    reuseExistingRuntime: false,
     entrypoint,
     nodePath,
     nodeEnv: {

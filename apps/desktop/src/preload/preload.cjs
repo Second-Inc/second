@@ -57,14 +57,34 @@ function filterStatusPayload(payload) {
 
 function markDesktopShell() {
   const apply = () => {
-    document.documentElement.dataset.secondDesktop = "true";
-    document.documentElement.dataset.secondDesktopPlatform = process.platform;
+    const root = document.documentElement;
+    if (!root) return;
+    if (root.dataset.secondDesktop !== "true") {
+      root.dataset.secondDesktop = "true";
+    }
+    if (root.dataset.secondDesktopPlatform !== process.platform) {
+      root.dataset.secondDesktopPlatform = process.platform;
+    }
   };
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", apply, { once: true });
-    return;
-  }
+  const start = () => {
+    const root = document.documentElement;
+    if (!root) return;
+    apply();
+    // Re-apply if a client framework (e.g. React hydration) strips the marker.
+    new MutationObserver(apply).observe(root, {
+      attributes: true,
+      attributeFilter: ["data-second-desktop", "data-second-desktop-platform"],
+    });
+  };
 
-  apply();
+  // The preload runs while the document may still be parsing, so
+  // document.documentElement can be null. Touching it then throws and aborts
+  // the entire preload, which silently disables every -webkit-app-region rule
+  // (the desktop marker attributes never get set). Wait until the DOM exists.
+  if (document.documentElement) {
+    start();
+  } else {
+    document.addEventListener("DOMContentLoaded", start, { once: true });
+  }
 }

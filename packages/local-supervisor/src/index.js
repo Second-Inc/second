@@ -32,6 +32,7 @@ export class SecondLocalSupervisor extends EventEmitter {
       options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     this.commandTimeoutMs =
       options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    this.reuseExistingRuntime = options.reuseExistingRuntime ?? true;
     this.child = null;
     this.ready = null;
   }
@@ -47,9 +48,13 @@ export class SecondLocalSupervisor extends EventEmitter {
       timeoutMs: 2500,
     });
     if (existing) {
-      this.ready = existing;
-      this.emitProgress("ready", "ready", "Second is already running");
-      return existing;
+      if (options.reuseExistingRuntime ?? this.reuseExistingRuntime) {
+        this.ready = existing;
+        this.emitProgress("ready", "ready", "Second is already running");
+        return existing;
+      }
+      this.emitProgress("stopping", "shutdown", "Stopping existing Second runtime");
+      await this.stop();
     }
 
     const entrypoint = this.resolveEntrypoint(options.entrypoint);

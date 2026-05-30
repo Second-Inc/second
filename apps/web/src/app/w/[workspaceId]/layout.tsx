@@ -24,6 +24,7 @@ import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { WorkspaceRealtimeProvider } from "@/components/workspace-realtime-provider";
 import { WorkspaceContentErrorBoundary } from "@/components/workspace-content-error-boundary";
 import { WorkspaceAnalyticsTracker } from "@/components/workspace-analytics-tracker";
+import { DesktopTitlebarDragRegion } from "@/components/desktop-titlebar-drag-region";
 
 type WorkspaceLayoutProps = {
   children: React.ReactNode;
@@ -149,7 +150,7 @@ export default async function WorkspaceLayout({
             }))}
           />
           <SidebarInset className="max-h-svh overflow-hidden">
-            <div data-second-desktop-titlebar-drag-region aria-hidden="true" />
+            <DesktopTitlebarDragRegion />
             <WorkspaceContentErrorBoundary>
               {children}
             </WorkspaceContentErrorBoundary>
