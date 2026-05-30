@@ -18,6 +18,7 @@ import {
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { awaitDependencyWarmup } from "./dep-warmup.js";
+import { resolveNpmCommand } from "./npm-command.js";
 import {
   approvalToolResultShouldStop,
   isBlockingApprovalToolName,
@@ -501,10 +502,12 @@ function runNpmCommand(
   args: string[],
   workingDirectory: string,
 ): { ok: true; output: string } | { ok: false; output: string } {
+  const npm = resolveNpmCommand();
   try {
-    const output = execFileSync("npm", args, {
+    const output = execFileSync(npm.command, args, {
       cwd: workingDirectory,
       encoding: "utf-8",
+      env: npm.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     return { ok: true, output };
@@ -528,24 +531,38 @@ function runNpmCommand(
 
     return {
       ok: false,
-      output: output || `npm ${args.join(" ")} failed.`,
+      output: output || `${npm.command} ${args.join(" ")} failed.`,
     };
   }
+}
+
+function runNpmCommandAsync(
+  args: string[],
+  cwd: string,
+): Promise<{ ok: true; output: string } | { ok: false; output: string }> {
+  const npm = resolveNpmCommand();
+  return runCommandAsync(npm.command, args, cwd, npm.env);
 }
 
 function runCommandAsync(
   command: string,
   args: string[],
   cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ ok: true; output: string } | { ok: false; output: string }> {
   return new Promise((resolve) => {
     execFile(command, args, {
       cwd,
       encoding: "utf-8",
+      env,
       maxBuffer: 10 * 1024 * 1024,
     }, (error, stdout, stderr) => {
       if (error) {
-        const output = [stdout?.trim(), stderr?.trim()]
+        const output = [
+          stdout?.trim(),
+          stderr?.trim(),
+          error.message?.trim(),
+        ]
           .filter(Boolean)
           .join("\n\n");
         resolve({ ok: false, output: output || `${command} ${args.join(" ")} failed.` });
@@ -655,9 +672,9 @@ export async function executeDoneBuildingTool(
     // proceed with build only
   }
 
-  const buildPromise = runCommandAsync("npm", ["run", "build"], workingDirectory);
+  const buildPromise = runNpmCommandAsync(["run", "build"], workingDirectory);
   const typecheckPromise = hasTypecheckScript
-    ? runCommandAsync("npm", ["run", "typecheck"], workingDirectory)
+    ? runNpmCommandAsync(["run", "typecheck"], workingDirectory)
     : null;
 
   const [buildResult, typecheckResult] = await Promise.all([
