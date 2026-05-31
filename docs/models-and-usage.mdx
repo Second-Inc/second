@@ -9,7 +9,7 @@ Second supports three builder runtimes:
 
 | Runtime | Runtime ID | Model format | Parameter controls |
 | --- | --- | --- | --- |
-| Claude Code | `claude-code` | Claude model IDs such as `claude-sonnet-4-6` | Effort and thinking |
+| Claude Code | `claude-code` | Claude model IDs such as `claude-opus-4-8` | Effort and thinking |
 | Codex CLI | `codex-cli` | OpenAI model IDs such as `gpt-5.4` | Reasoning effort and Codex sandbox |
 | OpenCode | `opencode` | OpenCode `provider/model` IDs such as `openai/gpt-5.4` | No extra controls yet |
 
@@ -42,8 +42,8 @@ Understanding model selection requires understanding what `query()` does at the 
 The Claude Agent SDK does not keep a long-running connection to the Anthropic API. Each `query()` call spawns a **brand new CLI process**:
 
 ```
-query({ prompt: "hello", options: { model: "claude-sonnet-4-6" } })
-  → child_process.spawn("node", ["cli.js", "--model", "claude-sonnet-4-6", ...])
+query({ prompt: "hello", options: { model: "claude-opus-4-8" } })
+  → child_process.spawn("node", ["cli.js", "--model", "claude-opus-4-8", ...])
 ```
 
 The CLI binary handles the entire agent loop internally:
@@ -83,11 +83,12 @@ Claude pricing metadata is available for cost display:
 
 | Display name | Model ID | Description | Input / MTok | Output / MTok | Cache read / MTok |
 |---|---|---|---|---|---|
-| Opus 4.6 | `claude-opus-4-6` | Most capable for ambitious work | $5 | $25 | $0.50 |
+| Opus 4.8 | `claude-opus-4-8` | Most capable for long-horizon agentic work | $5 | $25 | $0.50 |
+| Opus 4.6 | `claude-opus-4-6` | Previous Opus release, still available | $5 | $25 | $0.50 |
 | Sonnet 4.6 | `claude-sonnet-4-6` | Most efficient for everyday tasks | $3 | $15 | $0.30 |
 | Haiku 4.5 | `claude-haiku-4-5` | Fastest for quick answers | $1 | $5 | $0.10 |
 
-The default runtime is Claude Code with Sonnet 4.6. Runtime defaults and model display names are defined in `lib/agent/runtime-registry.ts`.
+The default runtime is Claude Code with Opus 4.8, `xhigh` effort, adaptive thinking, and summarized thinking display. Runtime defaults and model display names are defined in `lib/agent/runtime-registry.ts`.
 
 ### Model-specific capabilities
 
@@ -95,10 +96,14 @@ Some features are only available on certain models:
 
 | Feature | Available on | Fallback for other models |
 |---|---|---|
-| Effort: `max` | Opus 4.6 only | `high` |
-| Thinking: `adaptive` | Opus 4.6 only | `enabled` |
+| Effort: `xhigh` | Opus 4.8 | `high` |
+| Effort: `max` | Opus 4.8, Opus 4.6, Sonnet 4.6 | `high` |
+| Thinking: `adaptive` | Opus 4.8, Opus 4.6, Sonnet 4.6 | `disabled` |
+| Thinking: `enabled` | Opus 4.6, Sonnet 4.6 | `adaptive` on Opus 4.8 |
 
-The UI enforces these constraints — Opus-only options are disabled in the dropdown when a non-Opus model is selected. If the user switches from Opus to another model, any Opus-only selections are automatically downgraded.
+The UI enforces these constraints from the runtime registry. If the user switches models, unsupported parameter selections are automatically downgraded to a supported default.
+
+Opus 4.8 defaults provider thinking display to omitted, so the worker explicitly sends `display: "summarized"` with adaptive thinking. Without that flag, Claude may spend thinking tokens but return empty thinking text to the UI.
 
 ### How switching works
 
@@ -119,7 +124,7 @@ session.sendMessage(prompt, runtimeSettings)
 runtime adapter dispatches to Claude, Codex CLI, or OpenCode
 ```
 
-Switching from Sonnet to Opus mid-conversation means the **next** message spawns a new Claude CLI process with `--model claude-opus-4-6 --resume <sessionId>`. The CLI reads the session JSONL (which includes all previous Sonnet messages), sends the full history to the API with the new model, and continues the conversation. Effort and thinking settings take effect on the same call.
+Switching from Sonnet to Opus mid-conversation means the **next** message spawns a new Claude CLI process with `--model claude-opus-4-8 --resume <sessionId>`. The CLI reads the session JSONL (which includes all previous Sonnet messages), sends the full history to the API with the new model, and continues the conversation. Effort and thinking settings take effect on the same call.
 
 Second stores provider-native session state per runtime on the run document. When the user keeps using a runtime whose native session state is current, the next message sends only the latest user prompt plus that runtime's session state. When the user switches to another runtime, Second uses the persisted provider-agnostic `UIMessage[]` transcript as the handoff layer. The chat route builds a bounded neutral transcript for the messages that the target runtime has not already seen, then appends the latest user message. The target runtime receives that handoff as plain prompt context plus its own provider session state when one exists.
 
@@ -223,7 +228,7 @@ Claude emits a `result` message at the end of every SDK `query()` call:
   "duration_ms": 12400,
   "duration_api_ms": 8200,
   "modelUsage": {
-    "claude-opus-4-6": {
+    "claude-opus-4-8": {
       "inputTokens": 8420,
       "outputTokens": 1203,
       "cacheReadInputTokens": 6100,
@@ -374,7 +379,7 @@ Shows the accumulated `modelUsage` from all `result` messages in the run.
 The worker logs each request:
 
 ```
-[worker] appId=69c6f381... model=claude-opus-4-6
+[worker] appId=69c6f381... model=claude-opus-4-8
 ```
 
 ### 5. Browser Network tab

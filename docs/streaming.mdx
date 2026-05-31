@@ -104,9 +104,9 @@ data: [DONE]
 
 | Claude SDK event | AI SDK chunk |
 | --- | --- |
-| `content_block_start` + `thinking` | Closes any open text block |
+| `content_block_start` + `thinking` / `redacted_thinking` | Closes any open text block |
 | `content_block_delta` + `thinking_delta` | `reasoning-start` (first time) + `reasoning-delta` |
-| `content_block_stop` (thinking) | `reasoning-end` |
+| `content_block_stop` (thinking / redacted thinking) | `reasoning-end` |
 | `content_block_start` + `text` | Closes any open reasoning block |
 | `content_block_delta` + `text_delta` | `text-start` (first time) + `text-delta` |
 | `content_block_stop` (text) | `text-end` |
@@ -119,7 +119,7 @@ data: [DONE]
 
 Content blocks are properly tracked by type and index. Each `content_block_start` closes the previous block's open parts (text or reasoning), and each `content_block_stop` finalizes the current block. This prevents overlapping parts in the UIMessageStream.
 
-**Thinking mode handling:** When thinking is set to `enabled`, the SDK may not emit `stream_event` messages for thinking blocks. The bridge has a fallback path: if no `stream_event` messages were received for a turn, it processes the complete `assistant` message and emits reasoning blocks from `thinking` content blocks. When thinking is `adaptive` (Opus only), the model decides when and how much to think — stream events are emitted normally.
+**Thinking mode handling:** When thinking is set to `enabled`, the SDK may not emit `stream_event` messages for thinking blocks. The bridge has a fallback path: if no `stream_event` messages were received for a turn, it processes the complete `assistant` message and emits reasoning blocks from `thinking` content blocks. When thinking is `adaptive`, the model decides when and how much to think. Opus 4.8 is requested with summarized thinking display; if the SDK emits only `thinking_tokens` progress before the summary text arrives, the bridge opens a reasoning block with a small live placeholder instead of leaving the chat visually idle.
 
 ### Dynamic tool parts
 
@@ -133,8 +133,8 @@ Builder runs move through a small explicit state machine:
 | --- | --- |
 | `pending` | Run exists in MongoDB, but no worker query has been claimed yet |
 | `streaming` | One chat POST claimed the run and is responsible for the worker query + persistence |
-| `completed` | Final `UIMessage[]` was persisted and `activeStreamId` was cleared |
-| `failed` | Reserved for failed runs |
+| `completed` | Final `UIMessage[]` was persisted, `activeStreamId` was cleared, and the turn either reached a valid approval stop or any builder implementation that wrote files reached a successful `done_building` snapshot |
+| `failed` | Worker stream failed, a stale stream was recovered, the user stopped the run, or a builder implementation stopped outside an approval gate before a successful `done_building` snapshot |
 
 The first `POST .../chat` for a pending run calls `startRunStream()` with `{ workspaceId, appId, runId }`. That update is atomic and only succeeds when the run is pending, or when a completed/failed run is being extended with a longer message list. If a second tab, route remount, or back/forward navigation sends the same initial POST while the first request is still initializing the sandbox, the duplicate POST returns an empty successful stream and does not start another worker query. If stale browser history sends an old message list for a completed run, the claim is rejected so persisted conversation history is not overwritten.
 

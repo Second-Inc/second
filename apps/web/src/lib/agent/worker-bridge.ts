@@ -82,6 +82,8 @@ export type WorkerToolCallSummary = {
   inputAvailable: boolean;
   outputAvailable: boolean;
   flushedWithoutOutput: boolean;
+  /** True when this tool output intentionally stops the turn for user approval. */
+  approvalStop?: boolean;
   outputKind?: string;
 };
 
@@ -94,6 +96,49 @@ type WorkerStatusResponse = {
 type PendingToolCallMap = Map<string, { toolCallId: string; toolName: string }>;
 
 const TOOL_PROGRESS_OUTPUT_LIMIT = 20_000;
+const THINKING_PLACEHOLDER_TEXT = "Thinking...\n\n";
+const STREAM_INTERRUPTED_TOOL_ERROR =
+  "The agent stream ended before this tool finished.";
+const APPROVAL_STOP_TOOL_NAMES = new Set([
+  "mcp__second__present_plan",
+  "mcp__second__present_suggestions",
+]);
+
+function parseToolTextOutput(output: unknown): unknown {
+  if (typeof output === "string") {
+    try {
+      return JSON.parse(output);
+    } catch {
+      return output;
+    }
+  }
+
+  if (Array.isArray(output)) {
+    const textPart = output.find((item) => {
+      const record = asTraceRecord(item);
+      return record.type === "text" && typeof record.text === "string";
+    });
+    const text = asTraceRecord(textPart).text;
+    if (typeof text === "string") {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    }
+  }
+
+  return output;
+}
+
+function isApprovalStopToolOutput(toolName: string, output: unknown): boolean {
+  if (APPROVAL_STOP_TOOL_NAMES.has(toolName)) return true;
+  if (toolName !== "mcp__second__present_agents") return false;
+
+  const parsed = parseToolTextOutput(output);
+  const record = asTraceRecord(parsed);
+  return record.ok === true && record.status === "presented";
+}
 
 type BridgeTrace = (event: string, details?: Record<string, unknown>) => void;
 
@@ -212,6 +257,17 @@ function trimStreamingToolOutput(output: string): string {
   return `[output truncated]\n${output.slice(-TOOL_PROGRESS_OUTPUT_LIMIT)}`;
 }
 
+function isThinkingContentBlockType(value: unknown): boolean {
+  return value === "thinking" || value === "redacted_thinking";
+}
+
+function thinkingDeltaText(delta: Record<string, unknown> | undefined): string {
+  if (!delta) return "";
+  if (typeof delta.thinking === "string") return delta.thinking;
+  if (typeof delta.text === "string") return delta.text;
+  return "";
+}
+
 function writeToolOutputProgress(
   writer: UIMessageStreamWriter,
   msg: Record<string, unknown>,
@@ -263,6 +319,7 @@ function createAgentRunSdkTranslator(
   let toolInputBuffer = "";
   let textId: string | null = null;
   let reasoningId: string | null = null;
+  let reasoningPlaceholderWritten = false;
   const pendingToolCalls: PendingToolCallMap = new Map();
   const resolvedToolCalls = new Set<string>();
 
@@ -314,6 +371,26 @@ function createAgentRunSdkTranslator(
       writer.write({ type: "reasoning-end", id: reasoningId });
       reasoningId = null;
     }
+    reasoningPlaceholderWritten = false;
+  }
+
+  function ensureReasoningStarted() {
+    if (!reasoningId) {
+      reasoningId = generateId();
+      writer.write({ type: "reasoning-start", id: reasoningId });
+    }
+  }
+
+  function writeThinkingPlaceholder() {
+    ensureReasoningStarted();
+    if (!reasoningPlaceholderWritten) {
+      writer.write({
+        type: "reasoning-delta",
+        id: reasoningId!,
+        delta: THINKING_PLACEHOLDER_TEXT,
+      });
+      reasoningPlaceholderWritten = true;
+    }
   }
 
   function closeOpenBlocks() {
@@ -334,6 +411,15 @@ function createAgentRunSdkTranslator(
       return false;
     }
 
+    if (msg.type === "system" && msg.subtype === "thinking_tokens") {
+      writeThinkingPlaceholder();
+      trace?.("ui.reasoning-thinking-tokens", {
+        estimatedTokens: msg.estimated_tokens,
+        estimatedTokensDelta: msg.estimated_tokens_delta,
+      });
+      return true;
+    }
+
     if (msg.type === "stream_event") {
       turnHadStreamEvents = true;
       const event = msg.event as Record<string, unknown>;
@@ -349,7 +435,7 @@ function createAgentRunSdkTranslator(
           | Record<string, unknown>
           | undefined;
         currentBlockType = String(block?.type ?? "");
-        if (block?.type === "thinking") closeText();
+        if (isThinkingContentBlockType(block?.type)) closeText();
         if (block?.type === "text") closeReasoning();
         if (block?.type === "tool_use") {
           closeText();
@@ -398,7 +484,7 @@ function createAgentRunSdkTranslator(
           currentToolName = null;
           toolInputBuffer = "";
         }
-        if (currentBlockType === "thinking") closeReasoning();
+        if (isThinkingContentBlockType(currentBlockType)) closeReasoning();
         if (currentBlockType === "text") closeText();
         currentBlockType = null;
       }
@@ -422,15 +508,17 @@ function createAgentRunSdkTranslator(
         event.type === "content_block_delta" &&
         delta?.type === "thinking_delta"
       ) {
-        if (!reasoningId) {
-          reasoningId = generateId();
-          writer.write({ type: "reasoning-start", id: reasoningId });
+        const text = thinkingDeltaText(delta);
+        if (!text) {
+          writeThinkingPlaceholder();
+        } else {
+          ensureReasoningStarted();
+          writer.write({
+            type: "reasoning-delta",
+            id: reasoningId!,
+            delta: text,
+          });
         }
-        writer.write({
-          type: "reasoning-delta",
-          id: reasoningId,
-          delta: String(delta.thinking ?? ""),
-        });
       }
 
       if (
@@ -460,14 +548,17 @@ function createAgentRunSdkTranslator(
           typeof block.thinking === "string" &&
           block.thinking
         ) {
-          const id = generateId();
-          writer.write({ type: "reasoning-start", id });
+          ensureReasoningStarted();
           writer.write({
             type: "reasoning-delta",
-            id,
+            id: reasoningId!,
             delta: block.thinking as string,
           });
-          writer.write({ type: "reasoning-end", id });
+          closeReasoning();
+        }
+        if (block.type === "redacted_thinking") {
+          writeThinkingPlaceholder();
+          closeReasoning();
         }
         if (
           block.type === "text" &&
@@ -710,6 +801,7 @@ export async function streamFromWorker(
   let toolInputBuffer = "";
   let textId: string | null = null;
   let reasoningId: string | null = null;
+  let reasoningPlaceholderWritten = false;
 
   // Track tool calls that have been sent as input-available but not yet resolved
   const pendingToolCalls = new Map<
@@ -731,6 +823,7 @@ export async function streamFromWorker(
       inputAvailable: existing?.inputAvailable || inputAvailable,
       outputAvailable: existing?.outputAvailable ?? false,
       flushedWithoutOutput: existing?.flushedWithoutOutput ?? false,
+      approvalStop: existing?.approvalStop ?? false,
       outputKind: existing?.outputKind,
     });
   }
@@ -742,13 +835,17 @@ export async function streamFromWorker(
   ) {
     const pending = pendingToolCalls.get(toolCallId);
     const existing = observedToolCalls.get(toolCallId);
+    const toolName = pending?.toolName ?? existing?.toolName ?? "unknown";
     observedToolCalls.set(toolCallId, {
       toolCallId,
-      toolName: pending?.toolName ?? existing?.toolName ?? "unknown",
+      toolName,
       inputAvailable: existing?.inputAvailable ?? true,
       outputAvailable: !flushedWithoutOutput,
       flushedWithoutOutput:
         (existing?.flushedWithoutOutput ?? false) || flushedWithoutOutput,
+      approvalStop:
+        (existing?.approvalStop ?? false) ||
+        (!flushedWithoutOutput && isApprovalStopToolOutput(toolName, output)),
       outputKind: typeof output,
     });
   }
@@ -791,6 +888,53 @@ export async function streamFromWorker(
     pendingToolCalls.clear();
   }
 
+  function failCurrentToolInput(errorText: string) {
+    if (!currentToolCallId) return;
+
+    let input: unknown = {};
+    try {
+      input = toolInputBuffer ? JSON.parse(toolInputBuffer) : {};
+    } catch {
+      // Keep the card visible as interrupted even if the partial JSON was invalid.
+    }
+
+    const toolCallId = currentToolCallId;
+    const toolName = currentToolName ?? "unknown";
+    rememberToolCall(toolCallId, toolName, Boolean(toolInputBuffer));
+    rememberToolOutput(toolCallId, errorText, true);
+    trace("ui.tool-input-error", { toolCallId, toolName });
+    writer.write({
+      type: "tool-input-error",
+      toolCallId,
+      toolName,
+      input,
+      errorText,
+      dynamic: true,
+    });
+    resolvedToolCalls.add(toolCallId);
+    currentToolCallId = null;
+    currentToolName = null;
+    toolInputBuffer = "";
+  }
+
+  function failPendingTools(errorText: string) {
+    for (const [, pending] of pendingToolCalls) {
+      rememberToolOutput(pending.toolCallId, errorText, true);
+      trace("ui.tool-output-error", {
+        toolCallId: pending.toolCallId,
+        toolName: pending.toolName,
+      });
+      writer.write({
+        type: "tool-output-error",
+        toolCallId: pending.toolCallId,
+        errorText,
+        dynamic: true,
+      });
+      resolvedToolCalls.add(pending.toolCallId);
+    }
+    pendingToolCalls.clear();
+  }
+
   function closeText() {
     if (textId) {
       writer.write({ type: "text-end", id: textId });
@@ -803,6 +947,26 @@ export async function streamFromWorker(
       writer.write({ type: "reasoning-end", id: reasoningId });
       reasoningId = null;
     }
+    reasoningPlaceholderWritten = false;
+  }
+
+  function ensureReasoningStarted() {
+    if (!reasoningId) {
+      reasoningId = generateId();
+      writer.write({ type: "reasoning-start", id: reasoningId });
+    }
+  }
+
+  function writeThinkingPlaceholder() {
+    ensureReasoningStarted();
+    if (!reasoningPlaceholderWritten) {
+      writer.write({
+        type: "reasoning-delta",
+        id: reasoningId!,
+        delta: THINKING_PLACEHOLDER_TEXT,
+      });
+      reasoningPlaceholderWritten = true;
+    }
   }
 
   function closeOpenBlocks() {
@@ -811,12 +975,21 @@ export async function streamFromWorker(
     flushPendingTools();
   }
 
+  function interruptOpenBlocks(errorText: string) {
+    closeText();
+    closeReasoning();
+    failCurrentToolInput(errorText);
+    failPendingTools(errorText);
+  }
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let sseBuffer = "";
+  let sawDone = false;
 
   outer: while (true) {
     if (options.signal?.aborted) {
+      interruptOpenBlocks(STREAM_INTERRUPTED_TOOL_ERROR);
       await reader.cancel().catch(() => {});
       throw new Error("Worker stream cancelled");
     }
@@ -824,6 +997,7 @@ export async function streamFromWorker(
     try {
       readResult = await reader.read();
     } catch (error) {
+      interruptOpenBlocks(STREAM_INTERRUPTED_TOOL_ERROR);
       throw new Error("Lost connection to the agent worker stream.", {
         cause: error,
       });
@@ -839,6 +1013,11 @@ export async function streamFromWorker(
       if (!line.startsWith("data: ")) continue;
       const data = line.slice(6);
       if (data === "[DONE]") {
+        if (currentToolCallId) {
+          interruptOpenBlocks(STREAM_INTERRUPTED_TOOL_ERROR);
+          throw new Error("Agent worker stream ended during a tool call.");
+        }
+        sawDone = true;
         closeOpenBlocks();
         break outer;
       }
@@ -853,8 +1032,18 @@ export async function streamFromWorker(
       if (workerSummary) trace("worker.msg", workerSummary);
 
       if (msg.type === "error") {
-        closeOpenBlocks();
-        throw new Error(String(msg.error ?? "Unknown worker error"));
+        const errorText = String(msg.error ?? "Unknown worker error");
+        interruptOpenBlocks(errorText);
+        throw new Error(errorText);
+      }
+
+      if (msg.type === "system" && msg.subtype === "thinking_tokens") {
+        writeThinkingPlaceholder();
+        trace("ui.reasoning-thinking-tokens", {
+          estimatedTokens: msg.estimated_tokens,
+          estimatedTokensDelta: msg.estimated_tokens_delta,
+        });
+        continue;
       }
 
       // Translate Claude SDK stream_event → UIMessage chunks
@@ -879,7 +1068,7 @@ export async function streamFromWorker(
             | undefined;
           currentBlockType = String(block?.type ?? "");
 
-          if (block?.type === "thinking") {
+          if (isThinkingContentBlockType(block?.type)) {
             // Close any open text block before reasoning starts
             closeText();
           }
@@ -941,7 +1130,7 @@ export async function streamFromWorker(
             toolInputBuffer = "";
           }
 
-          if (currentBlockType === "thinking") {
+          if (isThinkingContentBlockType(currentBlockType)) {
             closeReasoning();
           }
 
@@ -973,15 +1162,17 @@ export async function streamFromWorker(
           event.type === "content_block_delta" &&
           delta?.type === "thinking_delta"
         ) {
-          if (!reasoningId) {
-            reasoningId = generateId();
-            writer.write({ type: "reasoning-start", id: reasoningId });
+          const text = thinkingDeltaText(delta);
+          if (!text) {
+            writeThinkingPlaceholder();
+          } else {
+            ensureReasoningStarted();
+            writer.write({
+              type: "reasoning-delta",
+              id: reasoningId!,
+              delta: text,
+            });
           }
-          writer.write({
-            type: "reasoning-delta",
-            id: reasoningId,
-            delta: String(delta.thinking ?? ""),
-          });
         }
 
         // Tool input accumulation
@@ -1012,10 +1203,14 @@ export async function streamFromWorker(
 
         for (const block of content) {
           if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
-            const id = generateId();
-            writer.write({ type: "reasoning-start", id });
-            writer.write({ type: "reasoning-delta", id, delta: block.thinking as string });
-            writer.write({ type: "reasoning-end", id });
+            ensureReasoningStarted();
+            writer.write({ type: "reasoning-delta", id: reasoningId!, delta: block.thinking as string });
+            closeReasoning();
+          }
+
+          if (block.type === "redacted_thinking") {
+            writeThinkingPlaceholder();
+            closeReasoning();
           }
 
           if (block.type === "text" && typeof block.text === "string" && block.text) {
@@ -1141,8 +1336,10 @@ export async function streamFromWorker(
     }
   }
 
-  // Clean up any remaining open blocks (if stream ended without [DONE])
-  closeOpenBlocks();
+  if (!sawDone) {
+    interruptOpenBlocks(STREAM_INTERRUPTED_TOOL_ERROR);
+    throw new Error("Agent worker stream ended before completion.");
+  }
 
   // Fetch the session file for persistence (cross-container resume)
   const sessionState = await fetchSessionState(options.workerUrl, options.appId);

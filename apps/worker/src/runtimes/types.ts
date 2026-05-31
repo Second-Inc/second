@@ -56,11 +56,12 @@ export function normalizeRuntimeSettings(
   settings: AgentRuntimeSettings,
 ): AgentRuntimeSettings {
   if (settings.runtimeId === "claude-code") {
+    const model = settings.model || "claude-opus-4-8";
     return {
       runtimeId: "claude-code",
-      model: settings.model || "claude-opus-4-6",
+      model,
       params: {
-        effort: settings.params.effort ?? "max",
+        effort: normalizeClaudeEffortForModel(model, settings.params.effort),
         thinking: settings.params.thinking ?? "adaptive",
       },
     };
@@ -86,6 +87,20 @@ export function normalizeRuntimeSettings(
   }
 
   throw new Error(`Unsupported runtime: ${(settings as AgentRuntimeSettings).runtimeId}`);
+}
+
+function normalizeClaudeEffortForModel(
+  model: string,
+  effort: string | undefined,
+): string {
+  const normalizedModel = model.trim().replace(/^anthropic\//, "");
+  const isOpus48 = normalizedModel === "claude-opus-4-8" ||
+    normalizedModel.startsWith("claude-opus-4-8-");
+
+  if (!effort) return isOpus48 ? "xhigh" : "high";
+  if (effort === "xhigh" && !isOpus48) return "high";
+
+  return effort;
 }
 
 export function isAgentRuntimeId(value: unknown): value is AgentRuntimeId {

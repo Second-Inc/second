@@ -129,6 +129,7 @@ tenant boundary or granting same-origin access.
 Build-complete UI transitions are triggered only when `done_building` returns a successful structured payload (`status: "complete"`).
 
 Failed tool outputs no longer flip the workspace into a false "ready" state.
+If a builder run writes app files or attempts `done_building` but the stream ends outside a valid approval stop before a successful snapshot is available, the run is marked failed instead of completed so the chat cannot sit forever on a stale "creating" tool card.
 
 ## Persistence and conditional hydration
 

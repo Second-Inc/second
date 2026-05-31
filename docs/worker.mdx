@@ -441,9 +441,9 @@ import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk"
 const q = query({
   prompt: "Build a dashboard",
   options: {
-    model: "claude-sonnet-4-6",           // per-message model selection
-    effort: "high",                        // "low" | "medium" | "high" | "max" (Opus only)
-    thinking: { type: "adaptive" },        // adaptive (Opus), enabled, or disabled
+    model: "claude-opus-4-8",             // per-message model selection
+    effort: "xhigh",                       // "low" | "medium" | "high" | "xhigh" | "max"
+    thinking: { type: "adaptive", display: "summarized" },
     systemPrompt: "You are Second...",
     cwd: "/tmp/second-workspaces/abc123",
     allowedTools: ["Read", "Write", "Edit", "Bash", "mcp__second__present_plan"],
@@ -463,9 +463,9 @@ Key options:
 
 | Option | Purpose |
 | --- | --- |
-| `model` | Claude model ID (`claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`). Can differ per call — see [Models & Usage](/models-and-usage) |
-| `effort` | `"low"`, `"medium"`, `"high"` (default), or `"max"` (Opus only). Controls reasoning depth |
-| `thinking` | `{ type: "adaptive" }` (Opus only, default for supported models), `{ type: "enabled" }`, or `{ type: "disabled" }`. Controls extended thinking. See [Thinking mapping](#thinking-mapping) below |
+| `model` | Claude model ID (`claude-opus-4-8`, `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`). Can differ per call — see [Models & Usage](/models-and-usage) |
+| `effort` | `"low"`, `"medium"`, `"high"`, `"xhigh"` (default for Opus 4.8), or `"max"` (supported high-capability 4.6+ models). Controls reasoning depth |
+| `thinking` | `{ type: "adaptive", display: "summarized" }` (default for supported models), `{ type: "enabled", display: "summarized" }` (legacy 4.6 thinking), or `{ type: "disabled" }`. Controls extended thinking. See [Thinking mapping](#thinking-mapping) below |
 | `systemPrompt` | Custom system prompt (replaces default) |
 | `cwd` | Working directory — all file/Bash operations happen here |
 | `allowedTools` | Which tools the agent can use (built-in + MCP tool names) |
@@ -478,19 +478,12 @@ Key options:
 
 The UI and transport layer pass thinking as a simple string (`"adaptive"`, `"enabled"`, `"disabled"`). The runner in `runner.ts` maps this to the SDK's typed object format:
 
-```typescript
-// runner.ts — string → SDK object mapping
-thinking: thinking === "adaptive"
-  ? { type: "adaptive" as const }        // model decides when/how much to think (Opus only)
-  : thinking === "enabled"
-    ? { type: "enabled" as const }        // always think with SDK default budget
-    : { type: "disabled" as const }       // no extended thinking
-```
+`runner.ts` normalizes stale or unsupported combinations before calling the SDK. Opus 4.8 uses adaptive thinking only, so an old `"enabled"` value for Opus 4.8 is treated as `"adaptive"` rather than sending a fixed-budget request that the API rejects. Opus 4.8 also defaults API thinking display to omitted, so the runner explicitly sets `display: "summarized"` whenever thinking is enabled.
 
 | UI string | SDK object | Behavior | Models |
 |---|---|---|---|
-| `"adaptive"` | `{ type: "adaptive" }` | Model decides when and how much to reason | Opus 4.6+ only |
-| `"enabled"` | `{ type: "enabled" }` | Fixed thinking budget (SDK default) | All models |
+| `"adaptive"` | `{ type: "adaptive", display: "summarized" }` | Model decides when and how much to reason | Opus 4.8, Opus 4.6, Sonnet 4.6 |
+| `"enabled"` | `{ type: "enabled", display: "summarized" }` | Legacy fixed thinking | Opus 4.6, Sonnet 4.6 |
 | `"disabled"` | `{ type: "disabled" }` | No extended thinking | All models |
 
 The string format keeps the HTTP API and transport simple — only the runner needs to know about the SDK's type system.

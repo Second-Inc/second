@@ -71,9 +71,9 @@ type ContextDraft = {
   userContext: string;
 };
 
-const ONBOARDING_CLAUDE_MODEL = "claude-opus-4-6";
+const ONBOARDING_CLAUDE_MODEL = "claude-opus-4-8";
 const ONBOARDING_CLAUDE_PARAMS = {
-  effort: "high",
+  effort: "xhigh",
   thinking: "adaptive",
 };
 const THATS_ENOUGH_DELAY_MS = 20 * 60 * 1000;
