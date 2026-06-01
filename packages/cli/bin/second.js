@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { arch as osArch, platform as osPlatform } from "node:os";
+import { arch as osArch, homedir as osHomedir, platform as osPlatform } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,9 +58,8 @@ const payloadBinPath = await preparePayloadBinary();
 spinner.stop("Payload ready. Switching to the local runtime...");
 leaveFullscreen();
 
-const child = spawn(payloadBinPath, args, {
+const child = spawn(process.execPath, [payloadBinPath, ...args], {
   stdio: "inherit",
-  shell: process.platform === "win32",
   env: {
     ...process.env,
     SECOND_CLI_RELEASE_PACKAGE: PUBLIC_PACKAGE_NAME,
@@ -161,32 +160,40 @@ function readPackageVersion() {
 }
 
 async function preparePayloadBinary() {
-  const npmArgs = [
-    "exec",
-    "--yes",
-    "--loglevel=error",
-    "--package",
-    payloadPackageSpec,
-    "--",
-    "node",
-    "-e",
-    payloadBinResolverScript(),
-    payload.packageName,
-    payload.binName,
-  ];
+  const installDir = payloadInstallDir();
+  const packageJsonPath = join(
+    installDir,
+    "node_modules",
+    ...payload.packageName.split("/"),
+    "package.json",
+  );
 
-  const npm = npmInvocation(npmArgs);
+  if (!existsSync(packageJsonPath)) {
+    await installPayload(installDir);
+  }
+
+  return resolvePayloadBinary(packageJsonPath);
+}
+
+async function installPayload(installDir) {
+  mkdirSync(installDir, { recursive: true });
+  const npm = npmInvocation([
+    "install",
+    "--prefix",
+    installDir,
+    "--omit=dev",
+    "--no-audit",
+    "--no-fund",
+    "--loglevel=error",
+    payloadPackageSpec,
+  ]);
   const child = spawn(npm.command, npm.args, {
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
     shell: npm.shell,
   });
 
-  let stdout = "";
   let stderr = "";
-  child.stdout.on("data", (chunk) => {
-    stdout += chunk;
-  });
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
@@ -207,16 +214,25 @@ async function preparePayloadBinary() {
     console.error(`\n${message}\n`);
     process.exit(code ?? 1);
   }
+}
 
-  const binPath = stdout.trim().split(/\r?\n/).at(-1)?.trim();
-  if (!binPath) {
+function resolvePayloadBinary(packageJsonPath) {
+  const packageDir = dirname(packageJsonPath);
+  const manifest = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[payload.binName];
+  const binPath = bin ? join(packageDir, bin) : "";
+  if (!binPath || !existsSync(binPath)) {
     spinner.fail("Could not find the local runtime executable.");
     leaveFullscreen();
-    console.error("\nThe payload installed, but npm did not expose second-local.\n");
+    console.error(`\nThe payload installed, but ${payload.binName} was not found in ${payload.packageName}.\n`);
     process.exit(1);
   }
-
   return binPath;
+}
+
+function payloadInstallDir() {
+  const cacheKey = payloadPackageSpec.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return join(osHomedir(), ".second", "cli-payloads", cacheKey);
 }
 
 function npmInvocation(args) {
@@ -233,38 +249,6 @@ function npmInvocation(args) {
     args,
     shell: process.platform === "win32",
   };
-}
-
-function payloadBinResolverScript() {
-  return `
-const fs = require("node:fs");
-const path = require("node:path");
-const packageName = process.argv[1];
-const binName = process.argv[2];
-const packageJsonPath = require.resolve(packageName + "/package.json");
-const packageDir = path.dirname(packageJsonPath);
-const manifest = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[binName];
-if (!bin) {
-  console.error("Package " + packageName + " does not expose " + binName + ".");
-  process.exit(1);
-}
-const candidate = path.resolve(packageDir, bin);
-if (fs.existsSync(candidate)) {
-  process.stdout.write(candidate);
-  process.exit(0);
-}
-if (process.platform === "win32") {
-  for (const suffix of [".cmd", ".exe", ".ps1"]) {
-    if (fs.existsSync(candidate + suffix)) {
-      process.stdout.write(candidate + suffix);
-      process.exit(0);
-    }
-  }
-}
-console.error("Could not find " + binName + " in " + packageName + ".");
-process.exit(1);
-`;
 }
 
 function waitForExit(child) {
