@@ -4,6 +4,7 @@ import {
   type UIMessage,
   type UIMessageStreamWriter,
 } from "ai";
+import { isApprovalStopToolOutput } from "./approval-stop";
 import { isDoneBuildingSuccessOutput } from "./done-building";
 import { workerFetch } from "@/lib/worker-client";
 import type { AgentRuntimeSettings } from "@/lib/agent/runtime-registry";
@@ -99,46 +100,6 @@ const TOOL_PROGRESS_OUTPUT_LIMIT = 20_000;
 const THINKING_PLACEHOLDER_TEXT = "Thinking...\n\n";
 const STREAM_INTERRUPTED_TOOL_ERROR =
   "The agent stream ended before this tool finished.";
-const APPROVAL_STOP_TOOL_NAMES = new Set([
-  "mcp__second__present_plan",
-  "mcp__second__present_suggestions",
-]);
-
-function parseToolTextOutput(output: unknown): unknown {
-  if (typeof output === "string") {
-    try {
-      return JSON.parse(output);
-    } catch {
-      return output;
-    }
-  }
-
-  if (Array.isArray(output)) {
-    const textPart = output.find((item) => {
-      const record = asTraceRecord(item);
-      return record.type === "text" && typeof record.text === "string";
-    });
-    const text = asTraceRecord(textPart).text;
-    if (typeof text === "string") {
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
-      }
-    }
-  }
-
-  return output;
-}
-
-function isApprovalStopToolOutput(toolName: string, output: unknown): boolean {
-  if (APPROVAL_STOP_TOOL_NAMES.has(toolName)) return true;
-  if (toolName !== "mcp__second__present_agents") return false;
-
-  const parsed = parseToolTextOutput(output);
-  const record = asTraceRecord(parsed);
-  return record.ok === true && record.status === "presented";
-}
 
 type BridgeTrace = (event: string, details?: Record<string, unknown>) => void;
 
