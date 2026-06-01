@@ -44,6 +44,7 @@ jobs:
       - name: Set package versions
         shell: bash
         run: |
+          npm --prefix packages/cli pkg set version="${{ steps.release.outputs.version }}"
           npm --prefix packages/cli-local-win32-x64 pkg set version="${{ steps.release.outputs.version }}"
 
       - name: Install dependencies
@@ -60,6 +61,7 @@ jobs:
         shell: bash
         run: |
           cd packages/cli-local-win32-x64 && npm pack --dry-run --ignore-scripts
+          cd ../../packages/cli && npm pack --dry-run --ignore-scripts
 
       - name: Publish Windows payload
         shell: bash
@@ -67,8 +69,14 @@ jobs:
           cd packages/cli-local-win32-x64
           npm publish --access public --tag "${{ steps.release.outputs.npm_tag }}" --ignore-scripts
 
+      - name: Publish CLI launcher
+        shell: bash
+        run: |
+          cd packages/cli
+          npm publish --access public --tag "${{ steps.release.outputs.npm_tag }}" --ignore-scripts
+
       - name: Print test command
         shell: bash
         run: |
           echo "Run on Windows:"
-          echo '$env:SECOND_CLI_PAYLOAD_PACKAGE="@second-inc/cli-local-win32-x64@${{ steps.release.outputs.version }}"; npx --yes @second-inc/cli@latest'
+          echo "npx --yes @second-inc/cli@${{ steps.release.outputs.npm_tag }}"
