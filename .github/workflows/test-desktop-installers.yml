@@ -79,7 +79,7 @@ jobs:
             payload_dir: packages/cli-local-darwin-arm64
             builder_args: --mac dmg --arm64
             expected_ext: dmg
-            signing: none
+            signing: mac
           - artifact_platform: windows-x64
             runner: windows-latest
             runtime_id: linux-x64
@@ -157,7 +157,6 @@ jobs:
             echo "CSC_KEY_PASSWORD=$MACOS_CERTIFICATE_PASSWORD" >> "$GITHUB_ENV"
           else
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
-            echo "SECOND_DESKTOP_SKIP_NOTARIZE=1" >> "$GITHUB_ENV"
           fi
 
       - name: Validate desktop shell

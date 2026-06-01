@@ -10,6 +10,7 @@ import { waitForRuntimeReady } from "@second-inc/local-supervisor";
 const DEFAULT_DISTRIBUTION_NAME = "Second";
 const DEFAULT_PORT = 3030;
 const WSL_COMMAND_TIMEOUT_MS = 120_000;
+const WSL_INSTALL_TIMEOUT_MS = 15 * 60_000;
 const WSL_IMPORT_TIMEOUT_MS = 15 * 60_000;
 
 export class ManagedWslSecondRuntime extends EventEmitter {
@@ -133,22 +134,36 @@ export class ManagedWslSecondRuntime extends EventEmitter {
   }
 
   async assertWslAvailable() {
-    try {
-      await runCommand("wsl.exe", ["--status"], {
-        timeoutMs: WSL_COMMAND_TIMEOUT_MS,
-      });
-    } catch (err) {
-      const wrapped = new Error(
+    const status = await runCommand("wsl.exe", ["--status"], {
+      allowFailure: true,
+      timeoutMs: WSL_COMMAND_TIMEOUT_MS,
+    });
+    if (status.code === 0) return;
+
+    this.emitProgress("starting", "wsl", "Installing Windows Linux runtime");
+    const install = await installWindowsWsl();
+    if (install.code !== 0) {
+      const err = new Error(
         [
-          "WSL2 is required for Second on Windows.",
-          "Windows must enable the built-in Linux runtime before Second can start.",
+          "Second could not enable WSL2 automatically.",
           "If this computer is managed by an organization, IT may need to allow WSL2 and virtualization.",
         ].join(" "),
       );
-      wrapped.code = "SECOND_WSL_UNAVAILABLE";
-      wrapped.cause = err;
-      throw wrapped;
+      err.code = "SECOND_WSL_UNAVAILABLE";
+      throw err;
     }
+
+    const afterInstall = await runCommand("wsl.exe", ["--status"], {
+      allowFailure: true,
+      timeoutMs: WSL_COMMAND_TIMEOUT_MS,
+    });
+    if (afterInstall.code === 0) return;
+
+    const err = new Error(
+      "Initialization is complete. Restart Windows to finish setting up Second.",
+    );
+    err.code = "SECOND_REBOOT_REQUIRED";
+    throw err;
   }
 
   async ensureDistroImported() {
@@ -223,7 +238,42 @@ export class ManagedWslSecondRuntime extends EventEmitter {
   }
 }
 
-function runCommand(command, args, { timeoutMs }) {
+function installWindowsWsl() {
+  return runCommand(
+    "wsl.exe",
+    ["--install", "--no-distribution", "--web-download"],
+    {
+      allowFailure: true,
+      timeoutMs: WSL_INSTALL_TIMEOUT_MS,
+    },
+  ).then((result) => {
+    if (result.code === 0) return result;
+    return runElevatedWindowsWslInstall();
+  });
+}
+
+function runElevatedWindowsWslInstall() {
+  const command = [
+    "Start-Process",
+    "-FilePath",
+    "wsl.exe",
+    "-ArgumentList",
+    "'--install --no-distribution --web-download'",
+    "-Verb",
+    "RunAs",
+    "-Wait",
+  ].join(" ");
+  return runCommand(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+    {
+      allowFailure: true,
+      timeoutMs: WSL_INSTALL_TIMEOUT_MS,
+    },
+  );
+}
+
+function runCommand(command, args, { allowFailure = false, timeoutMs }) {
   return new Promise((resolveRun, reject) => {
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -250,10 +300,11 @@ function runCommand(command, args, { timeoutMs }) {
       settled = true;
       clearTimeout(timeout);
       const result = {
+        code: code ?? 1,
         stdout: Buffer.concat(stdout),
         stderr: Buffer.concat(stderr),
       };
-      if (code === 0) {
+      if (result.code === 0 || allowFailure) {
         resolveRun(result);
         return;
       }

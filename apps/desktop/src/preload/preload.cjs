@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld("secondDesktop", {
   restart() {
     return ipcRenderer.invoke("second:restart");
   },
+  restartComputer() {
+    return ipcRenderer.invoke("second:restartComputer");
+  },
   reset() {
     return ipcRenderer.invoke("second:reset");
   },

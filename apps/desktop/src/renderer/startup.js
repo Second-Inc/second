@@ -11,6 +11,7 @@ const message = document.getElementById("message");
 const progress = document.getElementById("progress");
 const percent = document.getElementById("percent");
 const developerDetails = document.getElementById("developer-details");
+const primaryActionButton = document.getElementById("primary-action");
 const restartButton = document.getElementById("restart");
 const logsButton = document.getElementById("logs");
 const diagnosticsButton = document.getElementById("diagnostics");
@@ -18,21 +19,44 @@ const diagnosticsButton = document.getElementById("diagnostics");
 let currentStep = "runtime";
 let currentProgress = 8;
 let hasRuntimeError = false;
+let needsWindowsRestart = false;
 
 for (const item of document.querySelectorAll("[data-step]")) {
   const step = item.getAttribute("data-step");
   if (!orderedSteps.includes(step)) item.remove();
 }
 
-restartButton?.addEventListener("click", async () => {
+primaryActionButton?.addEventListener("click", () => {
+  void runRestartAction();
+});
+
+restartButton?.addEventListener("click", () => {
+  void runRestartAction();
+});
+
+async function runRestartAction() {
   hasRuntimeError = false;
+  if (needsWindowsRestart) {
+    updateCopy({
+      status: "restart-required",
+      step: "wsl",
+      message: "Restarting Windows. Second will open again after sign-in.",
+      code: "SECOND_REBOOT_REQUIRED",
+    });
+    if (previewMode) {
+      return;
+    }
+    await window.secondDesktop?.restartComputer();
+    return;
+  }
+
   setBusy("Restarting Second");
   if (previewMode) {
     applyPreviewState("runtime");
     return;
   }
   await window.secondDesktop?.restart();
-});
+}
 
 logsButton?.addEventListener("click", async () => {
   if (previewMode) return;
@@ -77,10 +101,16 @@ if (previewMode) {
 
 function applyStatusEvent(event) {
   if (!event || !event.step) return;
-  if (hasRuntimeError && event.status !== "error" && event.status !== "ready") {
+  if (
+    (hasRuntimeError || needsWindowsRestart) &&
+    event.status !== "error" &&
+    event.status !== "ready" &&
+    event.status !== "restart-required"
+  ) {
     return;
   }
   hasRuntimeError = event.status === "error";
+  needsWindowsRestart = event.status === "restart-required";
   currentStep = displayStepFor(event.step);
   updateSteps(event);
   updateCopy(event);
@@ -89,33 +119,56 @@ function applyStatusEvent(event) {
 function updateSteps(event) {
   const displayStep = displayStepFor(event.step);
   const activeIndex = Math.max(0, orderedSteps.indexOf(displayStep));
+  const restartRequired = event.status === "restart-required";
   for (const item of document.querySelectorAll("[data-step]")) {
     const step = item.getAttribute("data-step");
     const index = orderedSteps.indexOf(step);
-    item.classList.toggle("done", index < activeIndex || event.status === "ready");
-    item.classList.toggle("active", step === displayStep && event.status !== "error");
+    item.classList.toggle(
+      "done",
+      index < activeIndex || event.status === "ready" || (restartRequired && index <= activeIndex),
+    );
+    item.classList.toggle(
+      "active",
+      step === displayStep && event.status !== "error" && !restartRequired,
+    );
     item.classList.toggle("error", step === displayStep && event.status === "error");
   }
 }
 
 function updateCopy(event) {
   const isError = event.status === "error";
+  const restartRequired = event.status === "restart-required";
   const nextProgress = progressFor(event);
   currentProgress = Math.max(currentProgress, nextProgress);
 
-  headline.textContent = isError ? "Second needs attention" : "Loading Second";
+  headline.textContent = isError
+    ? "Second needs attention"
+    : restartRequired
+      ? "Restart required"
+      : "Loading Second";
   statusTitle.textContent = isError
     ? "Second needs attention"
-    : headlineFor(displayStepFor(event.step));
+    : restartRequired
+      ? "Restart Windows to finish"
+      : headlineFor(displayStepFor(event.step));
   statusLine.textContent = isError
     ? (event.message || "Something went wrong")
-    : stepTitleFor(displayStepFor(event.step));
+    : restartRequired
+      ? "Initialization complete. Restart required."
+      : stepTitleFor(displayStepFor(event.step));
   message.textContent = event.message || "Starting Second";
   progress.value = currentProgress;
   percent.textContent = `${currentProgress}%`;
   developerDetails.open = developerDetails.open || isError;
   document.body.classList.toggle("has-error", isError);
+  document.body.classList.toggle("requires-restart", restartRequired);
   message.classList.toggle("error", isError);
+  if (primaryActionButton) {
+    primaryActionButton.hidden = !restartRequired;
+  }
+  if (restartButton) {
+    restartButton.textContent = restartRequired ? "Restart Windows" : "Restart";
+  }
 }
 
 function headlineFor(step) {
@@ -129,6 +182,7 @@ function headlineFor(step) {
 
 function progressFor(event) {
   if (event.status === "ready") return 100;
+  if (event.status === "restart-required") return 100;
   if (event.status === "error") return currentProgress;
   const displayStep = displayStepFor(event.step);
 
@@ -185,7 +239,7 @@ function createPreviewControls() {
   title.textContent = "Preview";
   controls.append(title);
 
-  for (const state of ["runtime", "data", "web", "agents", "error", "ready"]) {
+  for (const state of ["runtime", "data", "web", "agents", "reboot", "error", "ready"]) {
     if (state === "data" && orderedSteps.includes("wsl")) {
       addPreviewButton(controls, "wsl", "WSL");
     }
@@ -249,6 +303,12 @@ function previewEventFor(state) {
       status: "ready",
       step: "ready",
       message: "Opening workspace",
+    },
+    reboot: {
+      status: "restart-required",
+      step: "wsl",
+      message: "Initialization is complete. Restart Windows to finish setting up Second.",
+      code: "SECOND_REBOOT_REQUIRED",
     },
     error: {
       status: "error",

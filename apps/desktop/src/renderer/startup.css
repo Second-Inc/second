@@ -438,6 +438,34 @@ button:hover {
   border-color: var(--muted-foreground);
 }
 
+.primary-action {
+  display: none;
+  height: 32px;
+  margin-top: 24px;
+  padding: 0 14px;
+  border-color: var(--foreground);
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.requires-restart .primary-action:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.requires-restart .loader-dot {
+  animation: none;
+  opacity: 0.8;
+  transform: scale(1);
+}
+
+.requires-restart #status-line {
+  background-image: none;
+  color: var(--foreground);
+  animation: none;
+}
+
 /* ── Error state ── */
 
 .has-error .loader-dot {

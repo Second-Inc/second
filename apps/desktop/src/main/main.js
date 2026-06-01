@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
+import { spawn } from "node:child_process";
 import {
   createSecondLocalSupervisor,
   currentRuntimeId,
@@ -12,6 +13,7 @@ import { ManagedWslSecondRuntime } from "./windows-wsl-runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PORT = 3030;
+const RESUME_AFTER_RESTART_ARG = "--second-resume-after-restart";
 const DESKTOP_LOG_FILE = join(homedir(), ".second", "logs", "desktop.log");
 const DESKTOP_SECRET_PATTERNS = [
   /SECOND_LOCAL_CLI_TOKEN=[^\s]+/gi,
@@ -42,6 +44,7 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(async () => {
+  clearWindowsRestartResumeRegistration();
   writeDesktopLog("app ready", {
     appPath: app.getAppPath(),
     isPackaged: app.isPackaged,
@@ -264,14 +267,27 @@ async function startRuntime() {
       code: err.code,
       stack: err.stack,
     });
-    sendStatus({
-      status: "error",
-      step: "runtime",
-      message: err.message,
-      code: err.code,
-    });
+    sendStatus(statusEventForRuntimeError(err));
     await mainWindow?.loadFile(join(__dirname, "..", "renderer", "startup.html"));
   }
+}
+
+function statusEventForRuntimeError(err) {
+  if (err?.code === "SECOND_REBOOT_REQUIRED") {
+    return {
+      status: "restart-required",
+      step: "wsl",
+      message: err.message,
+      code: err.code,
+    };
+  }
+
+  return {
+    status: "error",
+    step: "runtime",
+    message: err.message,
+    code: err.code,
+  };
 }
 
 function registerIpc() {
@@ -297,6 +313,82 @@ function registerIpc() {
     clipboard.writeText(JSON.stringify(runtime.diagnostics(), null, 2));
     return true;
   });
+  ipcMain.handle("second:restartComputer", async () => {
+    if (process.platform !== "win32") return false;
+    scheduleLaunchAfterWindowsRestart();
+    sendStatus({
+      status: "restart-required",
+      step: "wsl",
+      message: "Restarting Windows. Second will open again after sign-in.",
+      code: "SECOND_REBOOT_REQUIRED",
+    });
+    const child = spawn(
+      "shutdown.exe",
+      [
+        "/r",
+        "/t",
+        "5",
+        "/c",
+        "Second will open again after restart to finish setup.",
+      ],
+      {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
+    child.once("error", (err) => {
+      writeDesktopLog("failed to restart Windows", {
+        message: err.message,
+        code: err.code,
+      });
+      sendStatus({
+        status: "restart-required",
+        step: "wsl",
+        message: "Windows did not accept the restart request. Restart this PC manually, then open Second again.",
+        code: "SECOND_REBOOT_REQUIRED",
+      });
+    });
+    child.unref();
+    return true;
+  });
+}
+
+function scheduleLaunchAfterWindowsRestart() {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: process.execPath,
+      args: [RESUME_AFTER_RESTART_ARG],
+    });
+  } catch (err) {
+    writeDesktopLog("failed to schedule restart resume", {
+      message: err.message,
+      code: err.code,
+    });
+  }
+}
+
+function clearWindowsRestartResumeRegistration() {
+  if (
+    process.platform !== "win32" ||
+    !process.argv.includes(RESUME_AFTER_RESTART_ARG)
+  ) {
+    return;
+  }
+
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: false,
+      path: process.execPath,
+      args: [RESUME_AFTER_RESTART_ARG],
+    });
+  } catch (err) {
+    writeDesktopLog("failed to clear restart resume", {
+      message: err.message,
+      code: err.code,
+    });
+  }
 }
 
 function writeDesktopLog(message, details) {
