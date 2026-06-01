@@ -47,15 +47,13 @@ async function ensureWslAvailable() {
     { allowFailure: true, timeoutMs: WSL_TIMEOUT_MS, inherit: true },
   );
   if (install.code === 0) {
-    throw new Error(
-      "WSL was installed. Restart Windows if it asks, then run `npx --yes @second-inc/cli` again.",
-    );
+    printRestartRequired();
+    process.exit(0);
   }
 
   await runElevatedWslInstall();
-  throw new Error(
-    "WSL installation was started as Administrator. Restart Windows if it asks, then run `npx --yes @second-inc/cli` again.",
-  );
+  printRestartRequired();
+  process.exit(0);
 }
 
 async function runElevatedWslInstall() {
@@ -76,7 +74,7 @@ async function runElevatedWslInstall() {
   );
   if (result.code !== 0) {
     throw new Error(
-      "Could not install WSL automatically. Open PowerShell as Administrator, run `wsl --install --no-distribution --web-download`, restart if asked, then rerun Second.",
+      `Could not install WSL automatically. Open PowerShell as Administrator, run \`wsl --install --no-distribution --web-download\`, restart if asked, then run \`${rerunCommand()}\` again.`,
     );
   }
 }
@@ -262,6 +260,33 @@ function readPort(argv) {
   if (index === -1) return DEFAULT_PORT;
   const port = Number(argv[index + 1]);
   return Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_PORT;
+}
+
+function printRestartRequired() {
+  const command = rerunCommand();
+  const lines = [
+    "RESTART WINDOWS",
+    "",
+    "Second installed the Windows Linux runtime.",
+    "Windows says a restart is required before it can run.",
+    "",
+    "1. Restart this PC now.",
+    "2. Open PowerShell again.",
+    `3. Run: ${command}`,
+  ];
+  const width = Math.max(...lines.map((line) => line.length), 24);
+  const border = `+${"-".repeat(width + 2)}+`;
+  console.log("");
+  console.log(border);
+  for (const line of lines) {
+    console.log(`| ${line.padEnd(width, " ")} |`);
+  }
+  console.log(border);
+  console.log("");
+}
+
+function rerunCommand() {
+  return `npx --yes "${CLI_PACKAGE_NAME}@${CLI_PACKAGE_VERSION}"`;
 }
 
 function runCommand(command, commandArgs, options = {}) {
