@@ -16,6 +16,13 @@ const DEFAULT_DISTRO = "Ubuntu";
 const DEFAULT_PORT = 3030;
 const WSL_TIMEOUT_MS = 15 * 60_000;
 const SETUP_TIMEOUT_MS = 20 * 60_000;
+const ANSI_ENABLED = process.env.NO_COLOR !== "1";
+const ANSI = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  red: "\x1b[31m",
+  cyan: "\x1b[36m",
+};
 const args = process.argv.slice(2);
 
 if (platform() !== "win32" || arch() !== "x64") {
@@ -277,16 +284,26 @@ function printRestartRequired() {
   const width = Math.max(...lines.map((line) => line.length), 24);
   const border = `+${"-".repeat(width + 2)}+`;
   console.log("");
-  console.log(border);
+  console.log(color(ANSI.red, border));
   for (const line of lines) {
-    console.log(`| ${line.padEnd(width, " ")} |`);
+    const padded = line.padEnd(width, " ");
+    const output = line === "RESTART WINDOWS"
+      ? color(ANSI.bold + ANSI.red, padded)
+      : line.includes(command)
+        ? padded.replace(command, color(ANSI.bold + ANSI.cyan, command))
+        : padded;
+    console.log(`${color(ANSI.red, "|")} ${output} ${color(ANSI.red, "|")}`);
   }
-  console.log(border);
+  console.log(color(ANSI.red, border));
   console.log("");
 }
 
 function rerunCommand() {
-  return `npx --yes "${CLI_PACKAGE_NAME}@${CLI_PACKAGE_VERSION}"`;
+  return "npx --yes @second-inc/cli";
+}
+
+function color(code, text) {
+  return ANSI_ENABLED ? `${code}${text}${ANSI.reset}` : text;
 }
 
 function runCommand(command, commandArgs, options = {}) {
