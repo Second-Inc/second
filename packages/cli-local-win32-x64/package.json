@@ -12,7 +12,7 @@
   },
   "homepage": "https://github.com/Second-Inc/second#readme",
   "bin": {
-    "second-local": "./bin/second-local.js"
+    "second-local": "bin/second-local.js"
   },
   "os": [
     "win32"
