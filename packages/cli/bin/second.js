@@ -60,6 +60,7 @@ leaveFullscreen();
 
 const child = spawn(payloadBinPath, args, {
   stdio: "inherit",
+  shell: process.platform === "win32",
   env: {
     ...process.env,
     SECOND_CLI_RELEASE_PACKAGE: PUBLIC_PACKAGE_NAME,
@@ -173,7 +174,7 @@ async function preparePayloadBinary() {
     payload.binName,
   ];
 
-  const child = spawn("npm", npmArgs, {
+  const child = spawn(npmCommand(), npmArgs, {
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
@@ -213,6 +214,10 @@ async function preparePayloadBinary() {
   }
 
   return binPath;
+}
+
+function npmCommand() {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
 }
 
 function payloadBinResolverScript() {
