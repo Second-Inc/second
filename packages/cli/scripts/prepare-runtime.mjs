@@ -184,11 +184,58 @@ async function prepareRedisBinary() {
   if (runtime.platform === "darwin") {
     await bundleDarwinRedisLibraries({ redisServer: redisTarget, bottleKey });
   } else if (runtime.platform === "linux") {
+    await bundleLinuxRedisLibraries({ redisServer: redisTarget, bottleKey, formula });
     await patchLinuxRedisRuntime(redisTarget);
   }
 
   console.log(`Redis ${version}: packaged`);
   return { path: redisTarget, version, bottleKey };
+}
+
+async function bundleLinuxRedisLibraries({ redisServer, bottleKey, formula }) {
+  if (hostPlatform() !== "linux") {
+    console.warn(
+      "Redis: Linux library bundling skipped because this build is not running on Linux.",
+    );
+    return;
+  }
+
+  const needed = await linuxNeededLibraries(redisServer);
+  const sslName = needed.find((name) => /^libssl\.so\.\d+$/.test(name));
+  const cryptoName = needed.find((name) => /^libcrypto\.so\.\d+$/.test(name));
+  if (!sslName && !cryptoName) return;
+  if (!sslName || !cryptoName) {
+    throw new Error("Redis Linux bottle has an incomplete OpenSSL dependency set.");
+  }
+
+  const formulaName = formula.dependencies?.find((name) =>
+    name.startsWith("openssl@"),
+  );
+  if (!formulaName) {
+    throw new Error("Redis Linux bottle needs OpenSSL, but the formula has no OpenSSL dependency.");
+  }
+
+  console.log(`Redis: bundling ${formulaName} Linux libraries...`);
+  const opensslDir = await prepareHomebrewFormulaBottle({
+    formulaName,
+    bottleKey,
+  });
+  const sslSo = findFile(opensslDir, sslName);
+  const cryptoSo = findFile(opensslDir, cryptoName);
+  if (!sslSo || !cryptoSo) {
+    throw new Error("Managed OpenSSL bottle did not contain expected Linux libraries.");
+  }
+
+  const bundledSslSo = join(binDir, sslName);
+  const bundledCryptoSo = join(binDir, cryptoName);
+  copyFileSync(sslSo, bundledSslSo);
+  copyFileSync(cryptoSo, bundledCryptoSo);
+  chmodSync(bundledSslSo, 0o755);
+  chmodSync(bundledCryptoSo, 0o755);
+
+  await setLinuxRPath(redisServer, "$ORIGIN");
+  await setLinuxRPath(bundledSslSo, "$ORIGIN");
+  await setLinuxRPath(bundledCryptoSo, "$ORIGIN");
 }
 
 async function patchLinuxRedisRuntime(redisServer) {
@@ -215,13 +262,6 @@ async function patchLinuxRedisRuntime(redisServer) {
       ["--set-interpreter", interpreter, redisServer],
       { timeoutMs: 5000 },
     );
-    try {
-      await runWithOutput("patchelf", ["--remove-rpath", redisServer], {
-        timeoutMs: 5000,
-      });
-    } catch {
-      // Some Redis bottles do not carry an rpath.
-    }
     const after = await runWithOutput(
       "patchelf",
       ["--print-interpreter", redisServer],
@@ -238,6 +278,31 @@ async function patchLinuxRedisRuntime(redisServer) {
     }
     throw err;
   }
+}
+
+async function linuxNeededLibraries(binary) {
+  try {
+    const { stdout } = await runWithOutput("patchelf", ["--print-needed", binary], {
+      timeoutMs: 5000,
+    });
+    return stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      throw new Error(
+        "patchelf is required to inspect the Linux Redis bottle. Install patchelf before running this build.",
+      );
+    }
+    throw err;
+  }
+}
+
+async function setLinuxRPath(binary, rpath) {
+  await runWithOutput("patchelf", ["--set-rpath", rpath, binary], {
+    timeoutMs: 5000,
+  });
 }
 
 async function bundleDarwinRedisLibraries({ redisServer, bottleKey }) {
