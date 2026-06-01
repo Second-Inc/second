@@ -174,9 +174,11 @@ async function preparePayloadBinary() {
     payload.binName,
   ];
 
-  const child = spawn(npmCommand(), npmArgs, {
+  const npm = npmInvocation(npmArgs);
+  const child = spawn(npm.command, npm.args, {
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
+    shell: npm.shell,
   });
 
   let stdout = "";
@@ -216,8 +218,20 @@ async function preparePayloadBinary() {
   return binPath;
 }
 
-function npmCommand() {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+function npmInvocation(args) {
+  const npmExecPath = process.env.npm_execpath?.trim();
+  if (npmExecPath) {
+    return {
+      command: process.env.npm_node_execpath || process.execPath,
+      args: [npmExecPath, ...args],
+      shell: false,
+    };
+  }
+  return {
+    command: "npm",
+    args,
+    shell: process.platform === "win32",
+  };
 }
 
 function payloadBinResolverScript() {
