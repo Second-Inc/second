@@ -1,0 +1,189 @@
+name: Test Desktop Installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/add-windows-support"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-desktop-installers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  build-wsl-rootfs:
+    name: Build managed WSL2 rootfs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Derive version
+        id: release
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./apps/desktop/package.json').version.split('-')[0]")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          npm ci --prefix apps/web
+          npm ci --prefix apps/worker
+          npm ci --prefix packages/cli
+
+      - name: Build Linux payload
+        shell: bash
+        run: |
+          npm --prefix packages/cli-local-linux-x64 pkg set version="${{ steps.release.outputs.version }}"
+          npm --prefix packages/cli-local-linux-x64 run build
+
+      - name: Build managed WSL2 rootfs
+        shell: bash
+        run: node apps/desktop/scripts/build-wsl-rootfs.mjs
+
+      - name: Upload managed WSL2 rootfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-wsl2-rootfs
+          path: apps/desktop/resources/wsl/second-wsl-rootfs.tar
+          if-no-files-found: error
+
+  build-installers:
+    name: Build ${{ matrix.artifact_platform }}
+    needs: build-wsl-rootfs
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact_platform: mac-arm64
+            runner: macos-15
+            runtime_id: darwin-arm64
+            payload_dir: packages/cli-local-darwin-arm64
+            builder_args: --mac dmg --arm64
+            expected_ext: dmg
+            signing: mac
+          - artifact_platform: windows-x64
+            runner: windows-latest
+            runtime_id: linux-x64
+            payload_dir: packages/cli-local-linux-x64
+            builder_args: --win nsis --x64
+            expected_ext: exe
+            signing: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Derive version
+        id: release
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./apps/desktop/package.json').version.split('-')[0]")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download managed WSL2 rootfs
+        if: matrix.artifact_platform == 'windows-x64'
+        uses: actions/download-artifact@v4
+        with:
+          name: managed-wsl2-rootfs
+          path: apps/desktop/resources/wsl
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          npm ci --prefix apps/web
+          npm ci --prefix apps/worker
+          npm ci --prefix packages/cli
+          npm ci --prefix apps/desktop
+
+      - name: Build local payload
+        shell: bash
+        run: |
+          npm --prefix "${{ matrix.payload_dir }}" pkg set version="${{ steps.release.outputs.version }}"
+          npm --prefix "${{ matrix.payload_dir }}" run build
+
+      - name: Set desktop package version
+        shell: bash
+        run: npm --prefix apps/desktop pkg set version="${{ steps.release.outputs.version }}"
+
+      - name: Validate macOS signing configuration
+        if: matrix.signing == 'mac'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$MACOS_CERTIFICATE" || { echo "Missing MACOS_CERTIFICATE" >&2; exit 1; }
+          test -n "$MACOS_CERTIFICATE_PASSWORD" || { echo "Missing MACOS_CERTIFICATE_PASSWORD" >&2; exit 1; }
+          test -n "$APPLE_ID" || { echo "Missing APPLE_ID" >&2; exit 1; }
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD" || { echo "Missing APPLE_APP_SPECIFIC_PASSWORD" >&2; exit 1; }
+          test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID" >&2; exit 1; }
+
+      - name: Export signing environment
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [[ "${{ matrix.signing }}" == "mac" ]]; then
+            echo "CSC_LINK=$MACOS_CERTIFICATE" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$MACOS_CERTIFICATE_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Validate desktop shell
+        shell: bash
+        env:
+          SECOND_DESKTOP_RUNTIME_ID: ${{ matrix.runtime_id }}
+          SECOND_DESKTOP_ARTIFACT_PLATFORM: ${{ matrix.artifact_platform }}
+        run: npm --prefix apps/desktop run build
+
+      - name: Build installer
+        shell: bash
+        env:
+          SECOND_DESKTOP_RUNTIME_ID: ${{ matrix.runtime_id }}
+          SECOND_DESKTOP_ARTIFACT_PLATFORM: ${{ matrix.artifact_platform }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm --prefix apps/desktop run make -- ${{ matrix.builder_args }}
+
+      - name: Collect installer
+        id: collect
+        shell: bash
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          ARTIFACT="Second-${VERSION}-${{ matrix.artifact_platform }}.${{ matrix.expected_ext }}"
+          mkdir -p desktop-artifacts
+          cp "apps/desktop/release/${ARTIFACT}" "desktop-artifacts/${ARTIFACT}"
+          echo "artifact=${ARTIFACT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.artifact_platform }}
+          path: desktop-artifacts/${{ steps.collect.outputs.artifact }}
+          if-no-files-found: error
