@@ -30,6 +30,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Install Linux binary patcher
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y patchelf
+
       - name: Derive version
         id: release
         shell: bash
@@ -116,6 +120,7 @@ jobs:
           npm ci --prefix apps/desktop
 
       - name: Build local payload
+        if: matrix.artifact_platform != 'windows-x64'
         shell: bash
         run: |
           npm --prefix "${{ matrix.payload_dir }}" pkg set version="${{ steps.release.outputs.version }}"

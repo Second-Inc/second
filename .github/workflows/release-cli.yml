@@ -45,6 +45,11 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
+      - name: Install Linux binary patcher
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y patchelf
+
       - name: Derive version
         id: release
         shell: bash

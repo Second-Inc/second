@@ -22,18 +22,18 @@ if (!existsSync(payloadDir)) {
   throw new Error(`Missing desktop payload directory: ${payloadDir}`);
 }
 
-const extraResources = [
-  {
-    from: payloadDir,
-    to: `payloads/${runtimeId}`,
-    filter: ["package.json", "bin/**", "dist/**"],
-  },
-];
+const extraResources = [];
 
 if (artifactPlatform === "windows-x64") {
   extraResources.push({
     from: wslRootfsPath,
     to: "wsl/second-wsl-rootfs.tar",
+  });
+} else {
+  extraResources.push({
+    from: payloadDir,
+    to: `payloads/${runtimeId}`,
+    filter: ["package.json", "bin/**", "dist/**"],
   });
 }
 

@@ -183,10 +183,61 @@ async function prepareRedisBinary() {
 
   if (runtime.platform === "darwin") {
     await bundleDarwinRedisLibraries({ redisServer: redisTarget, bottleKey });
+  } else if (runtime.platform === "linux") {
+    await patchLinuxRedisRuntime(redisTarget);
   }
 
   console.log(`Redis ${version}: packaged`);
   return { path: redisTarget, version, bottleKey };
+}
+
+async function patchLinuxRedisRuntime(redisServer) {
+  if (hostPlatform() !== "linux") {
+    console.warn(
+      "Redis: Linux relocation patch skipped because this build is not running on Linux.",
+    );
+    return;
+  }
+
+  const interpreter =
+    runtime.arch === "arm64"
+      ? "/lib/ld-linux-aarch64.so.1"
+      : "/lib64/ld-linux-x86-64.so.2";
+
+  try {
+    const before = await runWithOutput(
+      "patchelf",
+      ["--print-interpreter", redisServer],
+      { timeoutMs: 5000 },
+    );
+    await runWithOutput(
+      "patchelf",
+      ["--set-interpreter", interpreter, redisServer],
+      { timeoutMs: 5000 },
+    );
+    try {
+      await runWithOutput("patchelf", ["--remove-rpath", redisServer], {
+        timeoutMs: 5000,
+      });
+    } catch {
+      // Some Redis bottles do not carry an rpath.
+    }
+    const after = await runWithOutput(
+      "patchelf",
+      ["--print-interpreter", redisServer],
+      { timeoutMs: 5000 },
+    );
+    console.log(
+      `Redis: Linux loader ${before.stdout.trim()} -> ${after.stdout.trim()}`,
+    );
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      throw new Error(
+        "patchelf is required to package the Linux Redis bottle. Install patchelf before running this build.",
+      );
+    }
+    throw err;
+  }
 }
 
 async function bundleDarwinRedisLibraries({ redisServer, bottleKey }) {
