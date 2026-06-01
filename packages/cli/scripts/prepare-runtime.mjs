@@ -122,6 +122,7 @@ async function prepareMongoBinary() {
     downloadDir: cacheDir,
     platform: runtime.platform,
     arch: runtime.arch,
+    os: mongoBinaryTargetOs(),
   });
 
   const target = join(binDir, runtime.platform === "win32" ? "mongod.exe" : "mongod");
@@ -129,6 +130,17 @@ async function prepareMongoBinary() {
   chmodSync(target, 0o755);
   console.log(`MongoDB ${MONGODB_BINARY_VERSION}: packaged`);
   return target;
+}
+
+function mongoBinaryTargetOs() {
+  if (runtime.platform !== "linux") return undefined;
+  return {
+    os: "linux",
+    dist: "debian",
+    release: "12",
+    codename: "bookworm",
+    id_like: [],
+  };
 }
 
 async function prepareRedisBinary() {
