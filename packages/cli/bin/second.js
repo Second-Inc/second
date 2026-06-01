@@ -171,6 +171,7 @@ async function preparePayloadBinary() {
     "node",
     "-e",
     payloadBinResolverScript(),
+    payload.packageName,
     payload.binName,
   ];
 
@@ -238,19 +239,30 @@ function payloadBinResolverScript() {
   return `
 const fs = require("node:fs");
 const path = require("node:path");
-const binName = process.argv[1];
-const suffixes = process.platform === "win32" ? [".cmd", ".exe", ".ps1", ""] : [""];
-for (const dir of (process.env.PATH || "").split(path.delimiter)) {
-  if (!dir) continue;
-  for (const suffix of suffixes) {
-    const candidate = path.join(dir, binName + suffix);
-    if (fs.existsSync(candidate)) {
-      process.stdout.write(candidate);
+const packageName = process.argv[1];
+const binName = process.argv[2];
+const packageJsonPath = require.resolve(packageName + "/package.json");
+const packageDir = path.dirname(packageJsonPath);
+const manifest = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[binName];
+if (!bin) {
+  console.error("Package " + packageName + " does not expose " + binName + ".");
+  process.exit(1);
+}
+const candidate = path.resolve(packageDir, bin);
+if (fs.existsSync(candidate)) {
+  process.stdout.write(candidate);
+  process.exit(0);
+}
+if (process.platform === "win32") {
+  for (const suffix of [".cmd", ".exe", ".ps1"]) {
+    if (fs.existsSync(candidate + suffix)) {
+      process.stdout.write(candidate + suffix);
       process.exit(0);
     }
   }
 }
-console.error("Could not find " + binName + " in npm exec PATH.");
+console.error("Could not find " + binName + " in " + packageName + ".");
 process.exit(1);
 `;
 }
