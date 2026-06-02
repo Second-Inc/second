@@ -1,6 +1,7 @@
 ---
 title: "App Preview"
 description: "How Second builds, previews, and persists Vite artifacts using done_building."
+icon: "monitor"
 ---
 
 Second's app preview system renders compiled artifacts in a sandboxed iframe. The agent edits a Vite + React + TypeScript workspace, calls `done_building`, the worker runs a real build, and the frontend renders `dist/index.html` plus built assets.
@@ -96,7 +97,7 @@ Workspaces start `npm install --include=dev` in the background as soon as they a
 
 Snapshot persistence is deliberately bounded:
 
-- Per-file cap: `512KB`
+- Per-file cap: `1MB`
 - Warning threshold: `8MB` total snapshot size
 - Hard fail threshold: `12MB` total snapshot size
 - No silent truncation, no partial snapshot writes
@@ -129,6 +130,7 @@ tenant boundary or granting same-origin access.
 Build-complete UI transitions are triggered only when `done_building` returns a successful structured payload (`status: "complete"`).
 
 Failed tool outputs no longer flip the workspace into a false "ready" state.
+If a builder run writes app files or attempts `done_building` but the stream ends outside a valid approval stop before a successful snapshot is available, the run is marked failed instead of completed so the chat cannot sit forever on a stale "creating" tool card.
 
 ## Persistence and conditional hydration
 

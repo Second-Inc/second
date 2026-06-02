@@ -1,6 +1,7 @@
 ---
 title: "App Agents"
 description: "How apps trigger approved AI agents with scoped tools, streaming, and background execution."
+icon: "users-round"
 ---
 
 Apps built on Second can trigger AI agents defined in an `agents.json` file. Each agent has its own system prompt, scoped tools (built-in or custom HTTP), and optional write access to the app's data. The same governed file can also define top-level `appTools`: custom HTTP actions callable directly from app code through the SDK for the narrow deterministic backend-function exception, such as bounded bulk fetches followed by app-side post-processing. Live runtime uses the approved configuration for that app version, so draft changes cannot quietly expand what an agent or app action can call.

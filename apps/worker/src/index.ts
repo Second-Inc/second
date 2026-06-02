@@ -21,7 +21,13 @@ import {
   defaultAllowedToolsForRuntimeMode,
   type AgentConfig,
 } from "./runner.js";
-import { encodeMessage, encodeDone, encodeError, SSE_HEADERS } from "./event-stream.js";
+import {
+  encodeMessage,
+  encodeDone,
+  encodeError,
+  encodeHeartbeat,
+  SSE_HEADERS,
+} from "./event-stream.js";
 import { WORKSPACE_TEMPLATE } from "./workspace-template.js";
 import { startDependencyWarmup } from "./dep-warmup.js";
 import { AgentRunManager, type AgentRunConfig } from "./agent-run-manager.js";
@@ -147,6 +153,7 @@ function readSessionJsonl(cwd: string, sessionId: string): string | null {
 const app = new Hono();
 const sessionManager = new SessionManager();
 const agentRunManager = new AgentRunManager();
+const SSE_HEARTBEAT_MS = 30_000;
 
 function getWorkerBaseUrl(): string {
   return process.env.WORKER_URL ?? `http://127.0.0.1:${process.env.PORT ?? "3001"}`;
@@ -306,6 +313,12 @@ app.post("/sessions/:appId/messages", async (c) => {
   });
 
   let streamClosed = false;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  const clearHeartbeat = () => {
+    if (!heartbeatTimer) return;
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  };
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -330,6 +343,11 @@ app.post("/sessions/:appId/messages", async (c) => {
       };
 
       try {
+        heartbeatTimer = setInterval(() => {
+          enqueue(encodeHeartbeat());
+        }, SSE_HEARTBEAT_MS);
+        heartbeatTimer.unref?.();
+
         for await (const msg of session.sendMessage(
           body.prompt,
           runtimeSettings,
@@ -348,10 +366,12 @@ app.post("/sessions/:appId/messages", async (c) => {
         );
         enqueue(encodeError(message));
       } finally {
+        clearHeartbeat();
         close();
       }
     },
     cancel() {
+      clearHeartbeat();
       streamClosed = true;
       session.cancelCurrentRun("stream_cancelled");
     },
@@ -761,6 +781,13 @@ app.get("/sessions/:appId/agent-run/:runId/events", async (c) => {
   }
 
   let closed = false;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  const clearHeartbeat = () => {
+    if (!heartbeatTimer) return;
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  };
+
   const stream = new ReadableStream({
     async start(controller) {
       const enqueue = (chunk: Uint8Array) => {
@@ -775,6 +802,11 @@ app.get("/sessions/:appId/agent-run/:runId/events", async (c) => {
       };
 
       try {
+        heartbeatTimer = setInterval(() => {
+          enqueue(encodeHeartbeat());
+        }, SSE_HEARTBEAT_MS);
+        heartbeatTimer.unref?.();
+
         for await (const msg of agentRunManager.events(runId)) {
           if (!enqueue(encodeMessage(msg))) return;
         }
@@ -785,6 +817,7 @@ app.get("/sessions/:appId/agent-run/:runId/events", async (c) => {
         console.error(`[worker] agent-run event stream failed runId=${runId}: ${message}`);
         enqueue(encodeError(message));
       } finally {
+        clearHeartbeat();
         if (!closed) {
           try {
             controller.close();
@@ -797,6 +830,7 @@ app.get("/sessions/:appId/agent-run/:runId/events", async (c) => {
       }
     },
     cancel() {
+      clearHeartbeat();
       closed = true;
     },
   });

@@ -4,7 +4,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates git curl ripgrep poppler-utils bubblewrap \
   && rm -rf /var/lib/apt/lists/*
 
-ARG CLAUDE_CODE_VERSION=2.1.119
+ARG CLAUDE_CODE_VERSION=2.1.154
 ARG CODEX_CLI_VERSION=0.125.0
 ARG OPENCODE_VERSION=1.14.24
 # Claude Agent SDK currently uses its embedded Claude Code executable for runs.

@@ -346,6 +346,7 @@ export type AgentRunRecoveryContext = {
 
 export type AgentRunFailureCode =
   | "worker_stream_failed"
+  | "build_incomplete"
   | "claim_rejected"
   | "stale_stream_recovered"
   | "stale_input"

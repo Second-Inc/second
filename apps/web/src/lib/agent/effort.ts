@@ -10,4 +10,4 @@ export const DEFAULT_EFFORT: string =
   DEFAULT_RUNTIME_SETTINGS.params.effort ?? "high";
 
 /** Effort levels that require a specific model */
-export const OPUS_ONLY_EFFORT = new Set(["max"]);
+export const OPUS_ONLY_EFFORT = new Set(["xhigh"]);

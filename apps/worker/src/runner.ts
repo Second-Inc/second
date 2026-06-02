@@ -358,7 +358,7 @@ const IGNORED_DIRS = new Set([
   ".claude",
   "attachments",
 ]);
-const MAX_FILE_SIZE = 512 * 1024; // 512KB per file
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB per file
 const SNAPSHOT_WARN_SIZE = 8 * 1024 * 1024; // 8MB warning
 const SNAPSHOT_MAX_SIZE = 12 * 1024 * 1024; // 12MB hard fail
 
@@ -2968,7 +2968,8 @@ export async function* runAgent(
     delete sanitizedEnv[key];
   }
 
-  const resolvedModel = resolveClaudeModelForProvider(model ?? config.model);
+  const requestedModel = model ?? config.model;
+  const resolvedModel = resolveClaudeModelForProvider(requestedModel);
   const claudeExecutable = resolveClaudeExecutable();
   if (!claudeExecutable) {
     throw new Error(
@@ -3027,12 +3028,8 @@ export async function* runAgent(
     prompt,
     options: {
       ...(resolvedModel ? { model: resolvedModel } : {}),
-      effort: (effort as "low" | "medium" | "high" | "max") ?? "high",
-      thinking: thinking === "adaptive"
-        ? { type: "adaptive" as const }
-        : thinking === "enabled"
-          ? { type: "enabled" as const }
-          : { type: "disabled" as const },
+      effort: normalizeClaudeEffort(requestedModel, effort),
+      thinking: normalizeClaudeThinking(requestedModel, thinking),
       systemPrompt: config.systemPrompt,
       cwd: config.workingDirectory,
       settingSources: ["project"],
@@ -3083,11 +3080,62 @@ export async function* runAgent(
   }
 }
 
+type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+function normalizeClaudeEffort(
+  model: string | undefined,
+  effort: string | undefined,
+): ClaudeEffort {
+  const isOpus48 = isClaudeOpus48Model(model);
+
+  if (
+    effort === "low" ||
+    effort === "medium" ||
+    effort === "high" ||
+    effort === "max"
+  ) {
+    return effort;
+  }
+  if (effort === "xhigh") {
+    return isOpus48 ? "xhigh" : "high";
+  }
+
+  return isOpus48 ? "xhigh" : "high";
+}
+
+function normalizeClaudeThinking(
+  model: string | undefined,
+  thinking: string | undefined,
+):
+  | { type: "adaptive"; display: "summarized" }
+  | { type: "enabled"; display: "summarized" }
+  | { type: "disabled" } {
+  if (thinking === "disabled") return { type: "disabled" };
+  if (thinking === "enabled" && !isClaudeOpus48Model(model)) {
+    return { type: "enabled", display: "summarized" };
+  }
+  return { type: "adaptive", display: "summarized" };
+}
+
+function isClaudeOpus48Model(model: string | undefined): boolean {
+  const normalized = model?.trim().replace(/^anthropic\//, "");
+  return normalized === "claude-opus-4-8" ||
+    Boolean(normalized?.startsWith("claude-opus-4-8-"));
+}
+
 function resolveClaudeModelForProvider(model: string | undefined): string | undefined {
   if (!process.env.CLAUDE_CODE_USE_BEDROCK || !model) return model;
 
   const normalized = model.trim();
   if (!normalized) return model;
+
+  if (
+    normalized === "claude-opus-4-8" ||
+    normalized.startsWith("claude-opus-4-8-")
+  ) {
+    return process.env.ANTHROPIC_DEFAULT_OPUS_MODEL ||
+      "us.anthropic.claude-opus-4-8";
+  }
 
   if (
     normalized === "claude-opus-4-6" ||
