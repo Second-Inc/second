@@ -10,6 +10,8 @@ export type RuntimeParamOption = {
   id: string;
   name: string;
   description: string;
+  supportedModelIds?: string[];
+  disabledForModelIds?: string[];
 };
 
 export type RuntimeParamControl = {
@@ -42,7 +44,11 @@ export type RuntimeRegistryEntry = {
   params: readonly RuntimeParamControl[];
 };
 
-const CLAUDE_DEFAULT_MODEL = "claude-opus-4-6";
+const CLAUDE_OPUS_4_8_MODEL = "claude-opus-4-8";
+const CLAUDE_OPUS_4_6_MODEL = "claude-opus-4-6";
+const CLAUDE_SONNET_4_6_MODEL = "claude-sonnet-4-6";
+const CLAUDE_HAIKU_4_5_MODEL = "claude-haiku-4-5";
+const CLAUDE_DEFAULT_MODEL = CLAUDE_OPUS_4_8_MODEL;
 
 export const AGENT_RUNTIMES = [
   {
@@ -55,9 +61,10 @@ export const AGENT_RUNTIMES = [
     detectionKey: "claudeCli",
     defaultModel: CLAUDE_DEFAULT_MODEL,
     models: [
-      { id: "claude-opus-4-6", name: "Opus 4.6", description: "Most capable for ambitious work" },
-      { id: "claude-sonnet-4-6", name: "Sonnet 4.6", description: "Most efficient for everyday tasks" },
-      { id: "claude-haiku-4-5", name: "Haiku 4.5", description: "Fastest for quick answers" },
+      { id: CLAUDE_OPUS_4_8_MODEL, name: "Opus 4.8", description: "Most capable for long-horizon agentic work" },
+      { id: CLAUDE_OPUS_4_6_MODEL, name: "Opus 4.6", description: "Previous Opus release, still available" },
+      { id: CLAUDE_SONNET_4_6_MODEL, name: "Sonnet 4.6", description: "Most efficient for everyday tasks" },
+      { id: CLAUDE_HAIKU_4_5_MODEL, name: "Haiku 4.5", description: "Fastest for quick answers" },
     ],
     params: [
       {
@@ -65,14 +72,24 @@ export const AGENT_RUNTIMES = [
         name: "Effort",
         description: "Reasoning effort for Claude Code.",
         icon: "gauge",
-        defaultValue: "max",
+        defaultValue: "xhigh",
         options: [
           { id: "low", name: "Low", description: "Fast, minimal reasoning" },
           { id: "medium", name: "Medium", description: "Balanced speed and quality" },
-          { id: "high", name: "High", description: "Thorough, deeper reasoning" },
-          { id: "max", name: "Max", description: "Maximum effort (Opus only)" },
+          { id: "high", name: "High", description: "Default, strong reasoning" },
+          {
+            id: "xhigh",
+            name: "Extra high",
+            description: "Deeper agentic reasoning",
+            supportedModelIds: [CLAUDE_OPUS_4_8_MODEL],
+          },
+          {
+            id: "max",
+            name: "Max",
+            description: "Maximum effort",
+            disabledForModelIds: [CLAUDE_HAIKU_4_5_MODEL],
+          },
         ],
-        disabledForModelIds: ["claude-sonnet-4-6", "claude-haiku-4-5"],
       },
       {
         id: "thinking",
@@ -82,10 +99,23 @@ export const AGENT_RUNTIMES = [
         defaultValue: "adaptive",
         options: [
           { id: "disabled", name: "Off", description: "No extended thinking" },
-          { id: "enabled", name: "Enabled", description: "Fixed thinking budget" },
-          { id: "adaptive", name: "Adaptive", description: "Model decides (Opus only)" },
+          {
+            id: "enabled",
+            name: "Enabled",
+            description: "Legacy fixed thinking",
+            supportedModelIds: [CLAUDE_OPUS_4_6_MODEL, CLAUDE_SONNET_4_6_MODEL],
+          },
+          {
+            id: "adaptive",
+            name: "Adaptive",
+            description: "Model decides when to think",
+            supportedModelIds: [
+              CLAUDE_OPUS_4_8_MODEL,
+              CLAUDE_OPUS_4_6_MODEL,
+              CLAUDE_SONNET_4_6_MODEL,
+            ],
+          },
         ],
-        disabledForModelIds: ["claude-sonnet-4-6", "claude-haiku-4-5"],
       },
     ],
   },
@@ -152,7 +182,7 @@ export const DEFAULT_RUNTIME_SETTINGS: AgentRuntimeSettings = {
   runtimeId: "claude-code",
   model: CLAUDE_DEFAULT_MODEL,
   params: {
-    effort: "max",
+    effort: "xhigh",
     thinking: "adaptive",
   },
 };
@@ -171,6 +201,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = Object.fromEntries(
 );
 
 const MODEL_DISPLAY_NAME_ALIASES: Record<string, string> = {
+  "anthropic/claude-opus-4-8": "Claude Opus 4.8",
   "claude-opus-4-6-20251101": "Opus 4.6",
   "claude-sonnet-4-6-20251101": "Sonnet 4.6",
   "claude-haiku-4-5-20251001": "Haiku 4.5",
@@ -181,9 +212,12 @@ const MODEL_DISPLAY_NAME_ALIASES: Record<string, string> = {
 
 export function normalizeRuntimeModelId(model: string): string {
   const bareModel = model.replace(/^anthropic\//, "");
-  if (bareModel.startsWith("claude-opus-4-6")) return "claude-opus-4-6";
-  if (bareModel.startsWith("claude-sonnet-4-6")) return "claude-sonnet-4-6";
-  if (bareModel.startsWith("claude-haiku-4-5")) return "claude-haiku-4-5";
+  if (bareModel === CLAUDE_OPUS_4_8_MODEL || bareModel.startsWith(`${CLAUDE_OPUS_4_8_MODEL}-`)) {
+    return CLAUDE_OPUS_4_8_MODEL;
+  }
+  if (bareModel.startsWith(CLAUDE_OPUS_4_6_MODEL)) return CLAUDE_OPUS_4_6_MODEL;
+  if (bareModel.startsWith(CLAUDE_SONNET_4_6_MODEL)) return CLAUDE_SONNET_4_6_MODEL;
+  if (bareModel.startsWith(CLAUDE_HAIKU_4_5_MODEL)) return CLAUDE_HAIKU_4_5_MODEL;
   return model;
 }
 
@@ -250,11 +284,10 @@ export function normalizeRuntimeSettings(
   for (const control of runtime.params) {
     const requested = settings.params[control.id] ?? control.defaultValue;
     const option = control.options.find((candidate) => candidate.id === requested);
-    const value = option ? requested : control.defaultValue;
-    const disabled =
-      control.disabledForModelIds?.includes(model) &&
-      (control.id === "effort" ? value === "max" : value === "adaptive");
-    params[control.id] = disabled ? disabledRuntimeParamFallback(control) : value;
+    params[control.id] =
+      option && runtimeParamOptionSupportsModel(control, model, requested)
+        ? requested
+        : runtimeParamFallbackForModel(control, model);
   }
 
   return {
@@ -264,10 +297,21 @@ export function normalizeRuntimeSettings(
   };
 }
 
-function disabledRuntimeParamFallback(control: RuntimeParamControl): string {
-  if (control.id === "effort") return "high";
-  if (control.id === "thinking") return "enabled";
-  return control.defaultValue;
+function runtimeParamFallbackForModel(
+  control: RuntimeParamControl,
+  model: string,
+): string {
+  if (runtimeParamOptionSupportsModel(control, model, control.defaultValue)) {
+    return control.defaultValue;
+  }
+
+  if (control.id === "effort" && runtimeParamOptionSupportsModel(control, model, "high")) {
+    return "high";
+  }
+
+  return control.options.find((option) =>
+    runtimeParamOptionSupportsModel(control, model, option.id),
+  )?.id ?? control.defaultValue;
 }
 
 export function parseRuntimeSettings(value: unknown): AgentRuntimeSettings | null {
@@ -299,10 +343,36 @@ export function runtimeParamIsDisabledForModel(
   model: string,
   value: string,
 ): boolean {
-  if (!control.disabledForModelIds?.includes(model)) return false;
-  if (control.id === "effort") return value === "max";
-  if (control.id === "thinking") return value === "adaptive";
-  return false;
+  return !runtimeParamOptionSupportsModel(control, model, value);
+}
+
+function runtimeParamOptionSupportsModel(
+  control: RuntimeParamControl,
+  model: string,
+  value: string,
+): boolean {
+  const option = control.options.find((candidate) => candidate.id === value);
+  if (!option) return false;
+
+  const normalizedModel = normalizeRuntimeModelId(model);
+  if (
+    option.supportedModelIds &&
+    !option.supportedModelIds.includes(normalizedModel)
+  ) {
+    return false;
+  }
+  if (option.disabledForModelIds?.includes(normalizedModel)) {
+    return false;
+  }
+
+  if (
+    control.disabledForModelIds?.includes(normalizedModel) &&
+    (control.id === "effort" ? value === "max" : value === "adaptive")
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export function readPreferredRuntimeSettings(): AgentRuntimeSettings {

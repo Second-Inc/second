@@ -25,9 +25,9 @@ type OnboardingContextBody = {
 };
 
 const ONBOARDING_CONTEXT_TOOL = "mcp__second__set_onboarding_context";
-const ONBOARDING_CLAUDE_MODEL = "claude-opus-4-6";
+const ONBOARDING_CLAUDE_MODEL = "claude-opus-4-8";
 const ONBOARDING_CLAUDE_PARAMS = {
-  effort: "high",
+  effort: "xhigh",
   thinking: "adaptive",
 };
 const THATS_ENOUGH_PATTERN =

@@ -10,6 +10,10 @@ export function encodeDone(): Uint8Array {
   return encoder.encode("data: [DONE]\n\n");
 }
 
+export function encodeHeartbeat(): Uint8Array {
+  return encoder.encode(": keep-alive\n\n");
+}
+
 export function encodeError(error: string): Uint8Array {
   return encodeSSE(JSON.stringify({ type: "error", error }));
 }

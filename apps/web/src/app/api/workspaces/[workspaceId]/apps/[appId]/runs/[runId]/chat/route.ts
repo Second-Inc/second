@@ -32,6 +32,7 @@ import {
   resolveRuntimeSkillsForViewer,
   type StartRunStreamResult,
 } from "@/lib/db";
+import { classifyBuilderRunTerminalState } from "@/lib/agent/builder-run-terminal";
 import { isWorkerRestoreNeeded, streamFromWorker } from "@/lib/agent/worker-bridge";
 import { tryReadAgentsJsonSnapshot } from "@/lib/agents/agents-governance";
 import { parseRuntimeSettings } from "@/lib/agent/runtime-registry";
@@ -942,7 +943,8 @@ export async function POST(request: Request, context: ChatRouteContext) {
   );
 
   const streamId = generateId();
-  const runFailed = { current: false };
+  const skipFinishPersistence = { current: false };
+  const terminalFailure = { current: null as AgentRunFailure | null };
   let latestSessionState: ProviderSessionState | null = null;
   const workspaceAgentAllowedTools = run.workspaceAgentSnapshot
     ? [
@@ -973,7 +975,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
         appId,
       });
       if (!streamLeaseStillOwned(currentState, streamLeaseId)) {
-        runFailed.current = true;
+        skipFinishPersistence.current = true;
         if (!isUserStoppedFailure(currentState?.failure)) {
           writer.write({
             type: "error",
@@ -1004,7 +1006,6 @@ export async function POST(request: Request, context: ChatRouteContext) {
             ? existingSourceFiles ?? undefined
             : undefined,
         }).catch(async (error) => {
-          runFailed.current = true;
           const errorMessage = sanitizedErrorMessage(
             error,
             "Worker stream failed",
@@ -1015,6 +1016,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
             appId,
           });
           if (!streamLeaseStillOwned(currentFailureState, streamLeaseId)) {
+            skipFinishPersistence.current = true;
             if (!isUserStoppedFailure(currentFailureState?.failure)) {
               writer.write({
                 type: "error",
@@ -1038,71 +1040,13 @@ export async function POST(request: Request, context: ChatRouteContext) {
               messageCount: messagesForRun.length,
             },
           });
-          const failedRun = await failRun({
-            runId,
-            workspaceId: workspaceContext.workspaceId,
-            appId,
-            messages: messagesForRun,
-            expectedLeaseId: streamLeaseId,
-            failure: createFailure({
-              code: "worker_stream_failed",
-              phase: "worker_stream",
-              message: errorMessage,
-              retryable: true,
-              sentryEventId,
-            }),
+          terminalFailure.current = createFailure({
+            code: "worker_stream_failed",
+            phase: "worker_stream",
+            message: errorMessage,
+            retryable: true,
+            sentryEventId,
           });
-          if (!failedRun) {
-            const latestFailureState = await loadCurrentRunStreamState({
-              runId,
-              workspaceId: workspaceContext.workspaceId,
-              appId,
-            });
-            if (!isUserStoppedFailure(latestFailureState?.failure)) {
-              writer.write({
-                type: "error",
-                errorText: latestFailureState?.failure?.message ?? errorMessage,
-              });
-            }
-            return null;
-          }
-          if (!isWorkspaceAgentRun) {
-            void recordAuditEvent({
-              workspaceId: workspaceContext.workspaceId,
-              eventName: "builder_run.failed",
-              category: "apps",
-              severity: "warning",
-              outcome: "failure",
-              actor: auditActorFromWorkspaceContext(workspaceContext),
-              source: auditSourceFromRequest(request, {
-                kind: "builder_agent",
-                trust: "internal_trusted",
-                appId,
-                appName: app.name,
-                runId,
-              }),
-              target: {
-                type: "run",
-                id: runId,
-                parentType: "app",
-                parentId: appId,
-              },
-              action: "failed",
-              summary: `Builder run failed for ${app.name}.`,
-              metadata: {
-                error: errorMessage,
-                messageCount: messages.length,
-                streamLeaseHash: auditSha256(streamLeaseId),
-              },
-              relatedIds: { appId, runId },
-            });
-          }
-          await markRunReplayTerminal({ runId, status: "failed" }).catch(
-            () => {},
-          );
-          redis
-            .publish(runEventsChannel(runId), JSON.stringify({ type: "failed" }))
-            .catch(() => {});
           writer.write({
             type: "error",
             errorText: errorMessage,
@@ -1248,12 +1192,32 @@ export async function POST(request: Request, context: ChatRouteContext) {
           },
         });
       }
+
+      if (!terminalFailure.current) {
+        const terminalDecision = classifyBuilderRunTerminalState({
+          isWorkspaceAgentRun,
+          sourceFiles: bridgeResult.sourceFiles,
+          toolCalls: bridgeResult.toolCalls,
+        });
+        if (terminalDecision.status === "failed") {
+          terminalFailure.current = createFailure({
+            code: terminalDecision.code,
+            phase: "worker_stream",
+            message: terminalDecision.message,
+            retryable: true,
+          });
+          writer.write({
+            type: "error",
+            errorText: terminalDecision.message,
+          });
+        }
+      }
     },
 
     originalMessages: messagesForRun,
 
     onFinish: async ({ messages: finalMessages }) => {
-      if (runFailed.current) return;
+      if (skipFinishPersistence.current) return;
       const finalMessagesForPersistence = withLatestUserMessageAttachments(
         finalMessages,
         latestUserMessageAttachments,
@@ -1266,6 +1230,57 @@ export async function POST(request: Request, context: ChatRouteContext) {
         } catch (err) {
           console.error("[chat] Session state persistence error:", err);
         }
+      }
+      if (terminalFailure.current) {
+        const failed = await failRun({
+          runId,
+          workspaceId: workspaceContext.workspaceId,
+          appId,
+          messages: finalMessagesForPersistence,
+          expectedLeaseId: streamLeaseId,
+          failure: terminalFailure.current,
+        });
+        if (!failed) return;
+        if (!isWorkspaceAgentRun) {
+          void recordAuditEvent({
+            workspaceId: workspaceContext.workspaceId,
+            eventName: "builder_run.failed",
+            category: "apps",
+            severity: "warning",
+            outcome: "failure",
+            actor: auditActorFromWorkspaceContext(workspaceContext),
+            source: auditSourceFromRequest(request, {
+              kind: "builder_agent",
+              trust: "internal_trusted",
+              appId,
+              appName: app.name,
+              runId,
+            }),
+            target: {
+              type: "run",
+              id: runId,
+              parentType: "app",
+              parentId: appId,
+            },
+            action: "failed",
+            summary: `Builder run failed for ${app.name}.`,
+            metadata: {
+              error: terminalFailure.current.message,
+              errorCode: terminalFailure.current.code,
+              finalMessageCount: finalMessagesForPersistence.length,
+              hadSessionState: Boolean(latestSessionState),
+              streamLeaseHash: auditSha256(streamLeaseId),
+            },
+            relatedIds: { appId, runId },
+          });
+        }
+        await markRunReplayTerminal({ runId, status: "failed" }).catch(
+          () => {},
+        );
+        redis
+          .publish(runEventsChannel(runId), JSON.stringify({ type: "failed" }))
+          .catch(() => {});
+        return;
       }
       const completed = await completeRun({
         runId,
