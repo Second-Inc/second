@@ -1,6 +1,7 @@
 ---
 title: "Architecture"
 description: "How Second's governed workspace architecture connects the browser, web app, worker, and database."
+icon: "network"
 ---
 
 Second is built around a workspace-first data model and a streaming agent architecture. The browser talks to a Next.js API layer, which delegates agent work to a separate worker process. Access checks, review state, and source/data scoping live in the web layer before any worker output becomes trusted runtime state.

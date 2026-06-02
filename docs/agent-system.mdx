@@ -1,6 +1,7 @@
 ---
 title: "Agent System"
 description: "How Second runs AI agents — the worker, bridge layer, and provider abstraction."
+icon: "bot"
 ---
 
 Second delegates AI agent work to a standalone worker process. The worker runs agent sessions through runtime adapters for Claude Code, Codex CLI, and OpenCode, streams normalized events back to Next.js, and Next.js translates them into the Vercel AI SDK's UIMessageStream protocol for the browser.

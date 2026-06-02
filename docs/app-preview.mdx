@@ -1,6 +1,7 @@
 ---
 title: "App Preview"
 description: "How Second builds, previews, and persists Vite artifacts using done_building."
+icon: "monitor"
 ---
 
 Second's app preview system renders compiled artifacts in a sandboxed iframe. The agent edits a Vite + React + TypeScript workspace, calls `done_building`, the worker runs a real build, and the frontend renders `dist/index.html` plus built assets.

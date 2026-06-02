@@ -1,6 +1,7 @@
 ---
 title: "Streaming"
 description: "How agent responses stream from the worker to the browser — protocols, translation, persistence, and multi-client resume."
+icon: "radio"
 ---
 
 Agent responses stream in real time from the agent worker through two hops before reaching the browser. Each hop uses a different protocol. The architecture is **runtime-agnostic** for the browser: Claude Code, Codex CLI, and OpenCode all normalize to the same AI SDK UIMessageStream parts before rendering.

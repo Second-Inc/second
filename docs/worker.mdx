@@ -1,6 +1,7 @@
 ---
 title: "Worker"
 description: "The standalone agent worker — HTTP API, session management, workspace isolation, tool permissions, and SDK integration."
+icon: "server-cog"
 ---
 
 The worker is a standalone Node.js HTTP server (`apps/worker/`) that runs AI agent sessions. It's separate from the Next.js app so agent processes don't block web requests. It supports Claude Code, Codex CLI, and OpenCode through a runtime adapter layer.
