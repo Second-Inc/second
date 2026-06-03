@@ -1089,3 +1089,104 @@ html.dark .builder-agent-divider-button {
   animation: shimmer 3s ease infinite;
   filter: blur(12px);
 }
+
+/* ---------------------------------------------------------------------------
+ * App architecture map — React Flow theming scoped to the architecture canvas.
+ * Adapts to light/dark automatically via color-mix on theme tokens.
+ * ------------------------------------------------------------------------- */
+.app-architecture {
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+  --xy-edge-stroke: color-mix(in srgb, var(--color-foreground) 18%, transparent);
+  --xy-edge-stroke-width: 1.5;
+  --xy-edge-stroke-selected: var(--color-foreground);
+  --xy-connectionline-stroke: var(--color-muted-foreground);
+  --xy-handle-background-color: transparent;
+  --xy-handle-border-color: transparent;
+  --xy-minimap-background-color: var(--color-card);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--color-background) 55%, transparent);
+  --xy-controls-button-background-color: var(--color-card);
+  --xy-controls-button-background-color-hover: var(--color-muted);
+  --xy-controls-button-color: var(--color-muted-foreground);
+  --xy-controls-button-color-hover: var(--color-foreground);
+  --xy-controls-button-border-color: var(--color-border);
+  --xy-attribution-background-color: transparent;
+}
+
+.app-architecture .react-flow__node {
+  font-family: inherit;
+}
+
+.app-architecture .react-flow__node:focus,
+.app-architecture .react-flow__node:focus-visible {
+  outline: none;
+}
+
+/* Anchor points only — kept functional but invisible. */
+.app-architecture .react-flow__handle {
+  width: 6px;
+  height: 6px;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-architecture .react-flow__edge {
+  cursor: default;
+}
+
+.app-architecture .react-flow__edge-path {
+  transition:
+    stroke 180ms ease,
+    stroke-width 180ms ease,
+    opacity 180ms ease;
+}
+
+.app-architecture .arch-edge--data .react-flow__edge-path {
+  stroke: color-mix(in srgb, #10b981 45%, transparent);
+}
+
+.app-architecture .arch-edge--active .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+  stroke-width: 2;
+}
+
+.app-architecture .arch-edge--data.arch-edge--active .react-flow__edge-path {
+  stroke: #10b981;
+}
+
+.app-architecture .arch-edge--dim .react-flow__edge-path {
+  opacity: 0.1;
+}
+
+/* Controls — match the card surface + subtle ring. */
+.app-architecture .react-flow__controls {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.app-architecture .react-flow__controls-button {
+  width: 26px;
+  height: 26px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-architecture .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.app-architecture .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+/* MiniMap — card surface, rounded, subtle ring. */
+.app-architecture .react-flow__minimap {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
