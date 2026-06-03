@@ -14,6 +14,37 @@
   font-display: swap;
 }
 
+/* Ioskeley Mono — an Iosevka build tuned to feel like Berkeley Mono.
+   Used as the app-wide monospace face (code, ids, data collections). */
+@font-face {
+  font-family: "Ioskeley Mono";
+  src: url("/fonts/IoskeleyMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Ioskeley Mono";
+  src: url("/fonts/IoskeleyMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Ioskeley Mono";
+  src: url("/fonts/IoskeleyMono-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Ioskeley Mono";
+  src: url("/fonts/IoskeleyMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 
 html {
   height: 100%;
@@ -49,6 +80,8 @@ body {
   --app-zoom: 1;
   --font-sans: "SF Pro Display", "SF Pro", -apple-system, BlinkMacSystemFont,
     "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Ioskeley Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
   --background: oklch(1 0 0);
   --foreground: #0D0D0D;
   --card: oklch(1 0 0);
@@ -331,6 +364,7 @@ html.dark [data-onboarding-shell] {
 
 @theme inline {
   --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -1096,8 +1130,8 @@ html.dark .builder-agent-divider-button {
  * ------------------------------------------------------------------------- */
 .app-architecture {
   --xy-background-color: transparent;
-  --xy-background-pattern-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-  --xy-edge-stroke: color-mix(in srgb, var(--color-foreground) 18%, transparent);
+  --xy-background-pattern-color: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+  --xy-edge-stroke: color-mix(in srgb, var(--color-foreground) 16%, transparent);
   --xy-edge-stroke-width: 1.5;
   --xy-edge-stroke-selected: var(--color-foreground);
   --xy-connectionline-stroke: var(--color-muted-foreground);
@@ -1138,6 +1172,7 @@ html.dark .builder-agent-divider-button {
 }
 
 .app-architecture .react-flow__edge-path {
+  stroke-linecap: round;
   transition:
     stroke 180ms ease,
     stroke-width 180ms ease,
@@ -1145,20 +1180,90 @@ html.dark .builder-agent-divider-button {
 }
 
 .app-architecture .arch-edge--data .react-flow__edge-path {
-  stroke: color-mix(in srgb, #10b981 45%, transparent);
+  stroke: color-mix(in srgb, #10b981 42%, transparent);
 }
 
 .app-architecture .arch-edge--active .react-flow__edge-path {
-  stroke: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  stroke-width: 2;
+  stroke: color-mix(in srgb, var(--color-foreground) 50%, transparent);
+  stroke-width: 1.75;
 }
 
 .app-architecture .arch-edge--data.arch-edge--active .react-flow__edge-path {
-  stroke: #10b981;
+  stroke: color-mix(in srgb, #10b981 90%, transparent);
 }
 
 .app-architecture .arch-edge--dim .react-flow__edge-path {
-  opacity: 0.1;
+  opacity: 0.08;
+}
+
+/* ── Crisp floating cards: hairline edge + layered ambient depth.
+   color-mix on --color-foreground keeps the hairline sharp in both themes. ── */
+.app-architecture .arch-card {
+  position: relative;
+  background-color: var(--color-card);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-foreground) 9%, transparent),
+    0 1px 1px rgba(0, 0, 0, 0.02),
+    0 6px 16px -10px rgba(0, 0, 0, 0.12);
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.app-architecture .arch-card:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-foreground) 15%, transparent),
+    0 2px 4px rgba(0, 0, 0, 0.03),
+    0 12px 28px -12px rgba(0, 0, 0, 0.18);
+}
+
+.app-architecture .arch-card[data-focused="true"] {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-foreground) 24%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.05),
+    0 16px 34px -14px rgba(0, 0, 0, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  .app-architecture .arch-card {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-foreground) 12%, transparent),
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 10px 26px -12px rgba(0, 0, 0, 0.6);
+  }
+  .app-architecture .arch-card:hover {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-foreground) 20%, transparent),
+      0 2px 4px rgba(0, 0, 0, 0.45),
+      0 16px 32px -12px rgba(0, 0, 0, 0.7);
+  }
+  .app-architecture .arch-card[data-focused="true"] {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-foreground) 32%, transparent),
+      0 2px 6px rgba(0, 0, 0, 0.5),
+      0 20px 38px -14px rgba(0, 0, 0, 0.75);
+  }
+}
+
+html.dark .app-architecture .arch-card {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-foreground) 12%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 10px 26px -12px rgba(0, 0, 0, 0.6);
+}
+html.dark .app-architecture .arch-card:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-foreground) 20%, transparent),
+    0 2px 4px rgba(0, 0, 0, 0.45),
+    0 16px 32px -12px rgba(0, 0, 0, 0.7);
+}
+html.dark .app-architecture .arch-card[data-focused="true"] {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-foreground) 32%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.5),
+    0 20px 38px -14px rgba(0, 0, 0, 0.75);
 }
 
 /* Controls — match the card surface + subtle ring. */

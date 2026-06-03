@@ -54,28 +54,26 @@ export function AppArchitectureDialog({
       {/* Panel */}
       <div className="absolute inset-2 flex flex-col overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/10 duration-200 animate-in fade-in-0 zoom-in-[0.98] sm:inset-4 md:inset-6 lg:inset-8">
         {/* Header */}
-        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+        <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-3.5 py-2.5">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/50 text-foreground/80">
             <WaypointsIcon className="size-4" strokeWidth={1.75} />
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold text-foreground">
-                Architecture
-              </span>
-              <span className="truncate text-xs text-muted-foreground">
-                {appName}
-              </span>
-            </div>
-            <p className="truncate text-[11px] leading-tight text-muted-foreground">
-              The agents in this app, the tools they use, and the data they
-              touch.
-            </p>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-[13px] font-semibold tracking-[-0.01em] text-foreground">
+              Architecture
+            </span>
+            <span
+              className="size-1 shrink-0 rounded-full bg-border"
+              aria-hidden
+            />
+            <span className="truncate text-[13px] text-muted-foreground">
+              {appName}
+            </span>
           </div>
           <Button
             variant="ghost"
             size="icon-sm"
-            className="shrink-0 rounded-full text-muted-foreground"
+            className="ml-auto shrink-0 rounded-full text-muted-foreground"
             onClick={onClose}
             aria-label="Close architecture view"
           >

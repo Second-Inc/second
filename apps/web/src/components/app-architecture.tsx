@@ -216,53 +216,57 @@ function AgentNode({ id, data }: NodeProps) {
 
   return (
     <div
+      data-focused={focused || pinned ? "true" : undefined}
       className={cn(
-        "group w-[290px] cursor-pointer select-none rounded-2xl bg-card p-3.5 shadow-sm ring-1 ring-foreground/10 transition-all duration-200",
-        "hover:shadow-md hover:ring-foreground/20",
-        (focused || pinned) && "shadow-md ring-foreground/30",
+        "arch-card group w-[290px] cursor-pointer select-none overflow-hidden rounded-[16px]",
         dimmed && "opacity-30",
       )}
     >
       <Handle type="target" position={Position.Left} id="l" className={HANDLE_CLASS} />
       <Handle type="source" position={Position.Right} id="r" className={HANDLE_CLASS} />
 
-      <div className="flex items-start gap-3">
-        <div
-          className="size-10 shrink-0 rounded-full ring-1 ring-border/40"
-          style={{ backgroundImage: d.gradient }}
-        />
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="truncate text-[13.5px] font-medium leading-tight text-foreground">
-            {d.agent.name}
+      <div className="px-3.5 pt-3.5 pb-3">
+        <div className="flex items-start gap-3">
+          <div
+            className="relative size-9 shrink-0 rounded-full shadow-sm"
+            style={{ backgroundImage: d.gradient }}
+          >
+            <span className="absolute inset-0 rounded-full bg-gradient-to-b from-white/35 to-transparent" />
+            <span className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/10" />
           </div>
-          <div className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground/70">
-            {d.agent.id}
+          <div className="min-w-0 flex-1 pt-px">
+            <div className="truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground">
+              {d.agent.name}
+            </div>
+            <div className="mt-0.5 truncate font-mono text-[10.5px] text-muted-foreground/80">
+              {d.agent.id}
+            </div>
           </div>
         </div>
+
+        {d.agent.description ? (
+          <p className="mt-2.5 line-clamp-2 text-[12px] leading-[1.5] text-muted-foreground">
+            {d.agent.description}
+          </p>
+        ) : null}
       </div>
 
-      {d.agent.description ? (
-        <p className="mt-2.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
-          {d.agent.description}
-        </p>
-      ) : null}
-
-      <div className="mt-3 flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 border-t border-border/60 bg-muted/20 px-3.5 py-2">
         {d.toolCount > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">
-            <WrenchIcon className="size-3" />
+          <span className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1.5 py-[3px] text-[10.5px] font-medium text-muted-foreground">
+            <WrenchIcon className="size-3 text-muted-foreground/70" />
             {d.toolCount}
           </span>
         ) : null}
         {d.dataCount > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10.5px] font-medium text-muted-foreground">
-            <DatabaseIcon className="size-3" />
+          <span className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1.5 py-[3px] text-[10.5px] font-medium text-muted-foreground">
+            <DatabaseIcon className="size-3 text-emerald-600/80 dark:text-emerald-400/80" />
             {d.dataCount}
           </span>
         ) : null}
-        <span className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium text-muted-foreground/60 transition-colors group-hover:text-foreground/80">
+        <span className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium text-muted-foreground/70 transition-colors group-hover:text-foreground">
           View
-          <ChevronRightIcon className="size-3" />
+          <ChevronRightIcon className="size-3 transition-transform group-hover:translate-x-0.5" />
         </span>
       </div>
     </div>
@@ -279,15 +283,15 @@ function ToolNode({ id, data }: NodeProps) {
 
   return (
     <div
+      data-focused={focused ? "true" : undefined}
       className={cn(
-        "group flex w-[208px] items-center gap-2 rounded-xl bg-card px-2.5 py-2 shadow-sm ring-1 ring-foreground/10 transition-all duration-200",
-        focused && "ring-foreground/30",
+        "arch-card group flex w-[212px] items-center gap-2.5 rounded-[12px] px-2.5 py-2",
         dimmed && "opacity-30",
       )}
     >
       <Handle type="target" position={Position.Left} id="in" className={HANDLE_CLASS} />
-      <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted ring-1 ring-border/50">
-        <ToolGlyph tool={d.tool} size={13} />
+      <div className="flex size-[26px] shrink-0 items-center justify-center rounded-[7px] border border-border/70 bg-background">
+        <ToolGlyph tool={d.tool} size={14} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[12px] font-medium leading-tight text-foreground">
@@ -298,7 +302,7 @@ function ToolNode({ id, data }: NodeProps) {
         </div>
       </div>
       {d.agentCount > 1 ? (
-        <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+        <span className="shrink-0 rounded-md border border-border/70 bg-background/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
           {d.agentCount}
         </span>
       ) : null}
@@ -316,19 +320,19 @@ function DatabaseNode({ id, data }: NodeProps) {
 
   return (
     <div
+      data-focused={focused ? "true" : undefined}
       className={cn(
-        "group flex w-[192px] items-center gap-2 rounded-xl bg-card px-2.5 py-2 shadow-sm ring-1 ring-foreground/10 transition-all duration-200",
-        focused && "ring-emerald-500/40",
+        "arch-card group flex w-[196px] items-center gap-2.5 rounded-[12px] px-2.5 py-2",
         dimmed && "opacity-30",
       )}
     >
       <Handle type="source" position={Position.Right} id="out" className={HANDLE_CLASS} />
       <Handle type="target" position={Position.Right} id="out-t" className={HANDLE_CLASS} />
-      <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-400">
-        <DatabaseIcon className="size-3.5" />
+      <div className="flex size-[26px] shrink-0 items-center justify-center rounded-[7px] bg-emerald-500/12 text-emerald-600 ring-1 ring-inset ring-emerald-500/25 dark:text-emerald-400">
+        <DatabaseIcon className="size-3.5" strokeWidth={2} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate font-mono text-[11.5px] leading-tight text-foreground">
+        <div className="truncate font-mono text-[11.5px] font-medium leading-tight text-foreground">
           {d.collection}
         </div>
         <div className="truncate text-[10.5px] leading-tight text-muted-foreground">
@@ -603,11 +607,14 @@ function AgentDetailPanel({
     <div className="absolute inset-y-0 right-0 z-20 flex w-full max-w-[400px] flex-col border-l border-border bg-background/95 shadow-2xl backdrop-blur-md animate-in slide-in-from-right duration-200">
       <div className="flex items-start gap-3 border-b border-border px-4 py-3.5">
         <div
-          className="size-10 shrink-0 rounded-full ring-1 ring-border/40"
+          className="relative size-10 shrink-0 rounded-full shadow-sm"
           style={{ backgroundImage: pickAgentGradient(agent.id || agent.name) }}
-        />
+        >
+          <span className="absolute inset-0 rounded-full bg-gradient-to-b from-white/35 to-transparent" />
+          <span className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/10" />
+        </div>
         <div className="min-w-0 flex-1 pt-0.5">
-          <div className="truncate text-sm font-semibold text-foreground">
+          <div className="truncate text-sm font-semibold tracking-[-0.01em] text-foreground">
             {agent.name}
           </div>
           <div className="truncate font-mono text-[11px] text-muted-foreground">
@@ -780,7 +787,7 @@ function ArchitectureFlow({
           proOptions={{ hideAttribution: true }}
           defaultEdgeOptions={{ type: "default" }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} />
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1} />
           <Controls
             showInteractive={false}
             className="!shadow-sm"
@@ -795,8 +802,8 @@ function ArchitectureFlow({
             nodeBorderRadius={8}
           />
           <Panel position="top-left">
-            <div className="flex flex-col gap-2 rounded-xl bg-background/80 px-3 py-2.5 text-[11px] shadow-sm ring-1 ring-foreground/10 backdrop-blur">
-              <div className="flex items-center gap-1.5 font-medium tabular-nums text-foreground">
+            <div className="overflow-hidden rounded-xl border border-border/70 bg-background/85 text-[11px] shadow-sm backdrop-blur-md">
+              <div className="flex items-center gap-1.5 px-3 py-2 font-medium tabular-nums tracking-tight text-foreground">
                 {graph.counts.agents} agent
                 {graph.counts.agents === 1 ? "" : "s"}
                 <span className="text-muted-foreground/40">·</span>
@@ -806,7 +813,7 @@ function ArchitectureFlow({
                 {graph.counts.collections} collection
                 {graph.counts.collections === 1 ? "" : "s"}
               </div>
-              <div className="flex items-center gap-3 text-muted-foreground">
+              <div className="flex items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-2 text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   <LegendDot className="bg-gradient-to-br from-violet-400 to-sky-400" />
                   Agents
