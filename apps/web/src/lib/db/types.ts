@@ -108,6 +108,7 @@ export type ReviewResourceType = "app";
 export type AgentsJsonApprovalSource =
   | "build_chat"
   | "build_chat_mock"
+  | "headless_cli"
   | "agents_page"
   | "review"
   | "publish";

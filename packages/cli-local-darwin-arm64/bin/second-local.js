@@ -40,6 +40,7 @@ const INTERNAL_API_TOKEN_FILE = join(SECRETS_DIR, "internal-api-token");
 const LOCAL_CONTROL_TOKEN_FILE = join(SECRETS_DIR, "local-control-token");
 const LOCAL_CONTROL_STATE_FILE = join(SECOND_HOME, "local-control.json");
 const RUNTIME_STATE_FILE = join(SECOND_HOME, "runtime.json");
+const HEADLESS_STATE_FILE = join(SECOND_HOME, "headless.json");
 const RUNTIME_LOCK_DIR = join(SECOND_HOME, "runtime.lock");
 const RUNTIME_LOCK_FILE = join(RUNTIME_LOCK_DIR, "owner.json");
 
@@ -49,9 +50,16 @@ const require = createRequire(import.meta.url);
 let MongoClientConstructor = null;
 
 const args = process.argv.slice(2);
+const headlessSupervisor =
+  args.includes("--headless-supervisor") ||
+  process.env.SECOND_HEADLESS_SUPERVISOR === "1";
 
 if (args.includes("--help") || args.includes("-h")) {
-  printUsage();
+  if (args[0] === "headless") {
+    printHeadlessUsage();
+  } else {
+    printUsage();
+  }
   process.exit(0);
 }
 
@@ -105,6 +113,7 @@ const ui = {
 };
 const colors = createCliColors();
 const FULLSCREEN_ENABLED =
+  !headlessSupervisor &&
   process.env.SECOND_CLI_NO_FULLSCREEN !== "1" &&
   (process.stdout.isTTY || process.env.SECOND_CLI_FORCE_FULLSCREEN === "1");
 let fullscreenActive = false;
@@ -156,6 +165,9 @@ switch (command) {
   case "reset":
     await reset();
     break;
+  case "headless":
+    await headless();
+    break;
   default:
     console.error(`Unknown command: ${command}\n`);
     printUsage();
@@ -164,14 +176,18 @@ switch (command) {
 
 async function start() {
   warnAboutRemovedContainerFlags();
-  printStartupBanner();
+  if (!headlessSupervisor) {
+    printStartupBanner();
+  }
   runtimeStopState.stopping = false;
 
   const existingRuntime = await findExistingRuntime();
   if (existingRuntime) {
     leaveFullscreen();
-    printAlreadyRunning(existingRuntime);
-    if (existingRuntime.publicUrl) {
+    if (!headlessSupervisor) {
+      printAlreadyRunning(existingRuntime);
+    }
+    if (!headlessSupervisor && existingRuntime.publicUrl) {
       openBrowser(existingRuntime.publicUrl);
     }
     process.exit(0);
@@ -180,8 +196,10 @@ async function start() {
   const lock = acquireRuntimeLock({ port });
   if (!lock.acquired) {
     leaveFullscreen();
-    printAlreadyRunning(lock);
-    if (lock.publicUrl) {
+    if (!headlessSupervisor) {
+      printAlreadyRunning(lock);
+    }
+    if (!headlessSupervisor && lock.publicUrl) {
       openBrowser(lock.publicUrl);
     }
     process.exit(0);
@@ -357,6 +375,15 @@ async function start() {
   }
   spinner.succeed("Second health check passed");
 
+  if (headlessSupervisor) {
+    console.log(`Second headless runtime ready at ${publicUrl}`);
+    setInterruptHandler(() => {
+      runtimeStopState.stopping = true;
+    });
+    await watchUntilStopped(runtimeStopState);
+    return;
+  }
+
   printReadyPanel({
     publicUrl,
     dataPath: shortPath(DATA_ROOT_DIR),
@@ -433,11 +460,342 @@ async function reset() {
   rmSync(NO_AUTH_SESSION_SECRET_FILE, { force: true });
   rmSync(INTERNAL_API_TOKEN_FILE, { force: true });
   rmSync(LOCAL_CONTROL_TOKEN_FILE, { force: true });
+  rmSync(HEADLESS_STATE_FILE, { force: true });
   removeLocalControlState();
   removeRuntimeState();
 
   spinner.succeed("Reset complete");
   printNotice("Reset complete.", "Run 'npx --yes @second-inc/cli' to start fresh.");
+}
+
+async function headless() {
+  const subcommand =
+    args.slice(1).find((arg) => !arg.startsWith("-")) ?? "start";
+
+  if (args.includes("--help") || args.includes("-h")) {
+    printHeadlessUsage();
+    return;
+  }
+
+  try {
+    switch (subcommand) {
+      case "start":
+        await headlessStart();
+        return;
+      case "status":
+        await headlessStatus();
+        return;
+      case "preview":
+        await headlessPreview();
+        return;
+      case "integrations":
+        await headlessIntegrations();
+        return;
+      case "open":
+        await headlessOpen();
+        return;
+      default:
+        throw new Error(`Unknown headless command: ${subcommand}`);
+    }
+  } catch (err) {
+    writeHeadlessError(err);
+    process.exit(1);
+  }
+}
+
+async function headlessStart() {
+  const runtimeUrl = await ensureHeadlessRuntime();
+  const state = readHeadlessState();
+  const requestedAppId =
+    headlessFlag("--app") ??
+    (headlessHas("--new") ? null : state?.appId ?? null);
+  const name = headlessFlag("--name") ?? "Headless app";
+  const payload = await headlessApiRequest(runtimeUrl, "/api/local/headless/apps", {
+    method: "POST",
+    body: {
+      ...(requestedAppId ? { appId: requestedAppId } : {}),
+      name,
+    },
+    timeoutMs: 120_000,
+  });
+  const app = requireHeadlessAppPayload(payload);
+  writeHeadlessStateFromApp(app);
+
+  if (!headlessHas("--no-open")) {
+    openBrowser(app.launchUrl ?? app.appUrl);
+  }
+
+  writeHeadlessOutput({
+    ok: true,
+    reused: Boolean(payload.reused),
+    ...app,
+  });
+}
+
+async function headlessStatus() {
+  const runtimeUrl = await ensureHeadlessRuntime();
+  const appId = resolveHeadlessAppId();
+  const payload = await headlessApiRequest(
+    runtimeUrl,
+    `/api/local/headless/apps/${encodeURIComponent(appId)}`,
+    { method: "GET", timeoutMs: 30_000 },
+  );
+  const app = requireHeadlessAppPayload(payload);
+  writeHeadlessStateFromApp(app);
+  writeHeadlessOutput(payload);
+}
+
+async function headlessPreview() {
+  const runtimeUrl = await ensureHeadlessRuntime();
+  const appId = resolveHeadlessAppId();
+  const summary = headlessFlag("--summary") ?? "Updated headless preview";
+  const payload = await headlessApiRequest(
+    runtimeUrl,
+    `/api/local/headless/apps/${encodeURIComponent(appId)}/preview`,
+    {
+      method: "POST",
+      body: { summary },
+      timeoutMs: 10 * 60_000,
+    },
+  );
+  const app = requireHeadlessAppPayload(payload);
+  writeHeadlessStateFromApp(app);
+  writeHeadlessOutput(payload);
+}
+
+async function headlessIntegrations() {
+  const runtimeUrl = await ensureHeadlessRuntime();
+  const appId = resolveHeadlessAppId();
+  const payload = await headlessApiRequest(
+    runtimeUrl,
+    `/api/local/headless/apps/${encodeURIComponent(appId)}/integrations`,
+    { method: "GET", timeoutMs: 30_000 },
+  );
+  writeHeadlessOutput(payload);
+}
+
+async function headlessOpen() {
+  const runtimeUrl = await ensureHeadlessRuntime();
+  const appId = resolveHeadlessAppId();
+  const payload = await headlessApiRequest(
+    runtimeUrl,
+    `/api/local/headless/apps/${encodeURIComponent(appId)}`,
+    { method: "GET", timeoutMs: 30_000 },
+  );
+  const app = requireHeadlessAppPayload(payload);
+  writeHeadlessStateFromApp(app);
+  openBrowser(app.launchUrl ?? app.appUrl);
+  writeHeadlessOutput({
+    ok: true,
+    opened: true,
+    ...app,
+  });
+}
+
+function headlessHas(name) {
+  return args.includes(name);
+}
+
+function headlessFlag(name) {
+  const i = args.indexOf(name);
+  if (i === -1) return undefined;
+  const value = args[i + 1];
+  return value && !value.startsWith("-") ? value : undefined;
+}
+
+function resolveHeadlessAppId() {
+  const appId = headlessFlag("--app") ?? readHeadlessState()?.appId;
+  if (!appId) {
+    throw new Error(
+      "No headless app is selected. Run `second headless start --json` first or pass `--app <appId>`.",
+    );
+  }
+  return appId;
+}
+
+function readHeadlessState() {
+  try {
+    if (!existsSync(HEADLESS_STATE_FILE)) return null;
+    const state = JSON.parse(readFileSync(HEADLESS_STATE_FILE, "utf8"));
+    return state && typeof state === "object" ? state : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeHeadlessStateFromApp(app) {
+  mkdirSync(SECOND_HOME, { recursive: true });
+  writeFileSync(
+    HEADLESS_STATE_FILE,
+    `${JSON.stringify(
+      {
+        appId: app.appId,
+        workspaceId: app.workspaceId,
+        appName: app.appName,
+        appDir: app.appDir,
+        appUrl: app.appUrl,
+        launchUrl: app.launchUrl,
+        integrationsUrl: app.integrationsUrl,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+}
+
+function requireHeadlessAppPayload(payload) {
+  const app = payload?.app && typeof payload.app === "object"
+    ? payload.app
+    : payload;
+  if (!app || typeof app !== "object" || typeof app.appId !== "string") {
+    throw new Error("Headless API returned an invalid app payload.");
+  }
+  return app;
+}
+
+async function ensureHeadlessRuntime() {
+  const existingRuntime = await findExistingRuntime();
+  if (existingRuntime?.publicUrl) return existingRuntime.publicUrl;
+
+  await spawnHeadlessSupervisor();
+  const runtimeUrl = await waitForHeadlessRuntimeReady(120_000);
+  if (!runtimeUrl) {
+    throw new Error(
+      `Timed out waiting for Second headless runtime. Check ${shortPath(join(LOGS_DIR, "headless-supervisor.log"))}.`,
+    );
+  }
+  return runtimeUrl;
+}
+
+async function spawnHeadlessSupervisor() {
+  mkdirSync(LOGS_DIR, { recursive: true });
+  const out = createWriteStream(join(LOGS_DIR, "headless-supervisor.log"), {
+    flags: "a",
+  });
+  out.write(`\n[${new Date().toISOString()}] ${process.execPath} ${__filename} start --headless-supervisor\n`);
+  const child = spawn(
+    process.execPath,
+    [
+      __filename,
+      "start",
+      "--port",
+      String(port),
+      "--headless-supervisor",
+    ],
+    {
+      detached: true,
+      stdio: ["ignore", out, out],
+      env: {
+        ...process.env,
+        SECOND_HEADLESS_SUPERVISOR: "1",
+        SECOND_CLI_NO_FULLSCREEN: "1",
+        SECOND_CLI_QUIET: "1",
+      },
+    },
+  );
+  child.unref();
+  await waitForChildSpawn(child);
+}
+
+async function waitForHeadlessRuntimeReady(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = readRuntimeState({ allowAnyPackageName: true });
+    const runtimeUrl = Number.isInteger(state?.port)
+      ? `http://localhost:${state.port}`
+      : null;
+    if (runtimeUrl) {
+      try {
+        const res = await fetch(`${runtimeUrl}/api/health`, {
+          signal: AbortSignal.timeout(1500),
+        });
+        if (res.ok) return runtimeUrl;
+      } catch {
+        // Runtime is still booting.
+      }
+    }
+    await delay(500);
+  }
+  return null;
+}
+
+function readHeadlessApiToken() {
+  try {
+    return readFileSync(LOCAL_CONTROL_TOKEN_FILE, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+async function headlessApiRequest(runtimeUrl, path, options) {
+  const token = readHeadlessApiToken();
+  if (!token) {
+    throw new Error("Second local control token was not found.");
+  }
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
+  };
+  const response = await fetch(`${runtimeUrl}${path}`, {
+    method: options.method,
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: AbortSignal.timeout(options.timeoutMs),
+  });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = { raw: text };
+  }
+  if (!response.ok) {
+    const message =
+      payload?.message ||
+      payload?.error ||
+      `Headless API request failed with HTTP ${response.status}.`;
+    const error = new Error(String(message));
+    error.payload = payload;
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function writeHeadlessOutput(payload) {
+  if (headlessHas("--json")) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  const app = payload?.app ?? payload;
+  if (app?.appUrl) {
+    printNotice(
+      "Headless Second ready.",
+      `${app.appName ?? "App"}: ${app.appUrl}\nApp directory: ${app.appDir ?? "(unavailable)"}`,
+    );
+    return;
+  }
+
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function writeHeadlessError(err) {
+  const payload = {
+    ok: false,
+    error: err?.payload?.error ?? err?.code ?? "headless_failed",
+    message: sanitizeErrorMessage(err),
+    ...(err?.status ? { status: err.status } : {}),
+    ...(err?.payload ? { details: err.payload } : {}),
+  };
+  if (headlessHas("--json")) {
+    console.error(JSON.stringify(payload, null, 2));
+    return;
+  }
+  console.error(`Headless Second failed: ${payload.message}`);
 }
 
 async function runStartupTask(name, task) {
@@ -863,6 +1221,8 @@ async function startWeb({
       WORKER_URL: workerUrl,
       REDIS_URL: redisUrl,
       SECOND_LOCAL_INSTALL: "1",
+      SECOND_HEADLESS_ENABLED: "1",
+      SECOND_HEADLESS_WORKSPACES_DIR: WORKSPACES_DIR,
       SECOND_RELEASE_RUNTIME: "native",
       SECOND_RELEASE_VERSION: packageMetadata.version,
       SECOND_RELEASE_PACKAGE: packageMetadata.name,
@@ -2835,6 +3195,8 @@ Usage: npx --yes @second-inc/cli [command] [options]
 Commands:
   run     Start Second locally
   start   Start Second locally (default)
+  headless
+          Build and preview apps from Claude/Codex CLI
   stop    Stop running local Second processes
   reset   Remove all local data
 
@@ -2851,5 +3213,28 @@ Environment:
   SECOND_NO_AUTH_SESSION_SECRET
                             Override the local no-auth session secret
   INTERNAL_API_TOKEN        Override the local web/worker token
+`);
+}
+
+function printHeadlessUsage() {
+  console.log(`
+Usage: npx --yes @second-inc/cli headless <command> [options]
+
+Commands:
+  start          Start/reuse local Second and create/reuse a headless app
+  status         Show selected headless app status
+  preview        Build the app workspace and refresh the preview
+  integrations   Show setup URLs and integration status
+  open           Open the headless app in the browser
+
+Options:
+  --json             Print machine-readable JSON
+  --app <appId>      Target a specific app
+  --name <name>      App name for headless start
+  --new              Create a new app instead of reusing the last one
+  --no-open          Do not open the browser on headless start
+  --summary <text>   Build summary for headless preview
+  --port <number>    Web port when starting a new local runtime
+  -h, --help         Show this help
 `);
 }

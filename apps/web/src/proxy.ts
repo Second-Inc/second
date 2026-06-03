@@ -21,6 +21,10 @@ function isLocalReleaseRoute(pathname: string): boolean {
   return pathname.startsWith("/api/local-release/");
 }
 
+function isLocalHeadlessRoute(pathname: string): boolean {
+  return pathname.startsWith("/api/local/headless/");
+}
+
 function isIdentityOnboardingRoute(pathname: string): boolean {
   return (
     pathname === IDENTITY_ONBOARDING_PATH ||
@@ -76,6 +80,7 @@ export async function proxy(request: NextRequest) {
   if (
     pathname === "/api/health" ||
     isLocalReleaseRoute(pathname) ||
+    isLocalHeadlessRoute(pathname) ||
     pathname.startsWith("/api/internal/")
   ) {
     return NextResponse.next();

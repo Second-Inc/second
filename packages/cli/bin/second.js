@@ -14,6 +14,7 @@ const require = createRequire(import.meta.url);
 const PUBLIC_PACKAGE_NAME = "@second-inc/cli";
 const FALLBACK_VERSION = "0.0.0-local";
 const args = process.argv.slice(2);
+const JSON_OUTPUT_MODE = args[0] === "headless" && args.includes("--json");
 const packageVersion = readPackageVersion();
 const payload = resolvePayloadPackage();
 const payloadPackageSpec =
@@ -33,6 +34,7 @@ const ansi = {
 };
 const colors = createCliColors();
 const FULLSCREEN_ENABLED =
+  !JSON_OUTPUT_MODE &&
   process.stdout.isTTY && process.env.SECOND_CLI_NO_FULLSCREEN !== "1";
 let fullscreenActive = false;
 
@@ -42,13 +44,25 @@ if (args.includes("--help") || args.includes("-h")) {
 }
 
 if (!payload) {
+  if (JSON_OUTPUT_MODE) {
+    console.error(JSON.stringify({
+      ok: false,
+      error: "unsupported_platform",
+      runtimeId: currentRuntimeId(),
+    }, null, 2));
+    process.exit(1);
+  }
   printUnsupportedPlatform();
   process.exit(1);
 }
 
-printLauncherBanner();
+if (!JSON_OUTPUT_MODE) {
+  printLauncherBanner();
+}
 
-const spinner = createSpinner(`Installing ${payload.packageName}@${packageVersion}...`);
+const spinner = JSON_OUTPUT_MODE
+  ? createNoopSpinner()
+  : createSpinner(`Installing ${payload.packageName}@${packageVersion}...`);
 installResizeHandler(() => {
   if (!fullscreenActive) return;
   printLauncherBanner();
@@ -66,6 +80,7 @@ const child = spawn(payloadBinPath, args, {
     SECOND_CLI_RELEASE_VERSION: packageVersion,
     SECOND_LAUNCHED_BY_CLI: "1",
     SECOND_CLI_FORCE_FULLSCREEN: FULLSCREEN_ENABLED ? "1" : "0",
+    SECOND_CLI_NO_FULLSCREEN: JSON_OUTPUT_MODE ? "1" : process.env.SECOND_CLI_NO_FULLSCREEN,
     SECOND_CLI_COLUMNS: String(process.stdout.columns || process.env.COLUMNS || ""),
     SECOND_CLI_ROWS: String(process.stdout.rows || process.env.LINES || ""),
   },
@@ -518,6 +533,14 @@ function createSpinner(text) {
   };
 }
 
+function createNoopSpinner() {
+  return {
+    stop() {},
+    fail() {},
+    redraw() {},
+  };
+}
+
 function dockTop(title, width) {
   const safeTitle = fitLine(title, Math.max(1, width - 4)).trimEnd();
   const labelText = ` ${safeTitle} `;
@@ -559,6 +582,8 @@ Usage: npx --yes @second-inc/cli [command] [options]
 Commands:
   run     Start Second locally
   start   Start Second locally (default)
+  headless
+          Build and preview apps from Claude/Codex CLI
   stop    Stop running local Second processes
   reset   Remove all local data
 

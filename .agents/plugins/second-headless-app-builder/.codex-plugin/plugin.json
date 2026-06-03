@@ -1,0 +1,38 @@
+{
+  "name": "second-headless-app-builder",
+  "version": "0.1.0",
+  "description": "Build and iterate local Second headless apps from Claude or Codex using the packaged Second CLI.",
+  "author": {
+    "name": "Second"
+  },
+  "homepage": "https://second.so",
+  "repository": "https://github.com/second-inc/second",
+  "license": "MIT",
+  "keywords": [
+    "second",
+    "headless",
+    "apps",
+    "codex",
+    "claude",
+    "agents",
+    "integrations"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Second Headless App Builder",
+    "shortDescription": "Build local Second apps from your own agent",
+    "longDescription": "Use the packaged Second CLI to start a local headless Second runtime, edit the generated app workspace, run the real preview build, auto-approve local agents.json safely, and return a live app URL while the user keeps talking to their own Claude or Codex.",
+    "developerName": "Second",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://second.so",
+    "defaultPrompt": [
+      "Build a visual Second app around this task"
+    ],
+    "brandColor": "#111827"
+  }
+}

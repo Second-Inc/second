@@ -23,6 +23,7 @@ import {
   Maximize2,
   Minimize2,
   PencilLine,
+  PlugIcon,
   SparklesIcon,
   XIcon,
 } from "lucide-react";
@@ -112,6 +113,7 @@ type AppWorkspaceProps = {
   workspaceId: string;
   appId: string;
   appName: string;
+  headlessMode?: boolean;
   currentUserId: string;
   appCreatorUserId: string;
   collaboratorUserIds: string[];
@@ -573,6 +575,7 @@ export function AppWorkspace({
   workspaceId,
   appId,
   appName,
+  headlessMode = false,
   currentUserId,
   appCreatorUserId,
   collaboratorUserIds,
@@ -627,11 +630,14 @@ export function AppWorkspace({
   );
   const [previewVisible, setPreviewVisible] = useState(
     () =>
+      headlessMode ||
       !!initialSourceFiles ||
       hasPublishedVersion ||
       hasDoneBuildingInMessages(initialMessages),
   );
-  const [agentMode, setAgentMode] = useState<AgentMode>("panel");
+  const [agentMode, setAgentMode] = useState<AgentMode>(
+    () => headlessMode ? "hidden" : "panel",
+  );
   const [builderPanelWidth, setBuilderPanelWidth] = useState(
     DEFAULT_BUILDER_PANEL_WIDTH,
   );
@@ -1428,8 +1434,10 @@ export function AppWorkspace({
   const canManageWorkspaceIntegrations =
     currentUserRole === "owner" || currentUserRole === "admin";
   const hasBuilderChat = canCollaborateApp && isDraftVersion && Boolean(runId);
-  const showTopBar = previewVisible || hasBuilderChat;
+  const hasVisibleBuilderChat = !headlessMode && hasBuilderChat;
+  const showTopBar = previewVisible || hasVisibleBuilderChat;
   const showPublishDialog =
+    !headlessMode &&
     previewVisible &&
     isDraftVersion &&
     (!hasPublishedSnapshot ||
@@ -1437,10 +1445,23 @@ export function AppWorkspace({
       currentPublishStatus !== "published");
   // Published app sharing grants runtime app and app-data access to selected teams.
   // Keep source/data inspector chrome draft-only until app-level RBAC can split those capabilities.
-  const showDraftInspectorTools = previewVisible && isDraftVersion;
-  const showRunUsage = isDraftVersion;
+  const showDraftInspectorTools =
+    !headlessMode && previewVisible && isDraftVersion;
+  const showRunUsage = !headlessMode && isDraftVersion;
   const showDraftAgentControls =
-    previewVisible && canCollaborateApp && isDraftVersion && !isInspectorView;
+    !headlessMode &&
+    previewVisible &&
+    canCollaborateApp &&
+    isDraftVersion &&
+    !isInspectorView;
+  const pendingIntegrationSetupCount = livePublishIntegrations.filter(
+    (integration) => integration.needsSetup,
+  ).length;
+  const showHeadlessIntegrationsButton =
+    headlessMode && pendingIntegrationSetupCount > 0;
+  const headlessIntegrationsHref =
+    `/w/${workspaceId}/settings/integrations?appId=${appId}` +
+    `&returnTo=${encodeURIComponent(`/headless/w/${workspaceId}/apps/${appId}`)}`;
   const isBuilderRunActive = isActiveRunStatus(builderRunStatus);
   const activeToolRecoveryStatus = isBuilderRunActive
     ? toolRecoveryStatus
@@ -1724,6 +1745,27 @@ export function AppWorkspace({
                 onSubmitted={() => void fetchAppState()}
               />
             ) : null}
+            {showHeadlessIntegrationsButton ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 rounded-full px-2.5 text-xs"
+                    onClick={() => router.push(headlessIntegrationsHref)}
+                  >
+                    <PlugIcon data-icon="inline-start" strokeWidth={1.5} />
+                    Integrations
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {pendingIntegrationSetupCount === 1
+                    ? "Connect the required integration"
+                    : `Connect ${pendingIntegrationSetupCount} required integrations`}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
             {canShowAppAgents ? (
               <div className={cn("relative", agentRunsHintOpen && "z-[60]")}>
                 <DropdownMenu open={agentRunsOpen} onOpenChange={handleAgentRunsOpenChange} modal={false}>
@@ -1781,7 +1823,9 @@ export function AppWorkspace({
                 </DropdownMenu>
               </div>
             ) : null}
-            {(previewVisible && showPublishDialog) || canShowAppAgents ? (
+            {(previewVisible && showPublishDialog) ||
+            showHeadlessIntegrationsButton ||
+            canShowAppAgents ? (
               <BarSeparator />
             ) : null}
 
@@ -1835,14 +1879,16 @@ export function AppWorkspace({
             ) : null}
 
               {/* --- Collaboration --- */}
-              <AppCollaboratorsDialog
-                workspaceId={workspaceId}
-                appId={appId}
-                creatorUserId={appCreatorUserId}
-                collaboratorUserIds={liveCollaboratorUserIds}
-                canManageCollaborators={canManageCollaborators}
-                showLabel={!previewVisible}
-              />
+              {!headlessMode ? (
+                <AppCollaboratorsDialog
+                  workspaceId={workspaceId}
+                  appId={appId}
+                  creatorUserId={appCreatorUserId}
+                  collaboratorUserIds={liveCollaboratorUserIds}
+                  canManageCollaborators={canManageCollaborators}
+                  showLabel={!previewVisible}
+                />
+              ) : null}
 
               {showRunUsage || showDraftAgentControls ? (
                 <BarSeparator />
@@ -2156,6 +2202,8 @@ export function AppWorkspace({
           className={cn(
             !canCollaborateApp
               ? "hidden"
+              : headlessMode
+                ? "hidden"
               : !isDraftVersion
                 ? "hidden"
                 : !previewVisible
@@ -2172,7 +2220,7 @@ export function AppWorkspace({
           )}
           style={showAgent && panelMode ? { width: builderPanelWidth } : undefined}
         >
-          {canCollaborateApp ? (
+          {canCollaborateApp && !headlessMode ? (
             <RecoverableErrorBoundary
               name="AppWorkspace.AppChat"
               resetKey={`${appId}:${runId ?? "no-run"}:${initialAutoStartKey ?? "no-autostart"}`}

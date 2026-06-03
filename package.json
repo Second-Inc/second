@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "bash ./scripts/dev.sh",
+    "headless": "node packages/cli-local-darwin-arm64/bin/second-local.js headless",
     "bump:cli": "node ./scripts/bump-cli-version.mjs",
     "publish:cli:darwin-arm64": "node ./scripts/publish-cli-darwin-arm64.mjs",
     "start": "docker compose up --build",

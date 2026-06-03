@@ -37,11 +37,23 @@ The local CLI currently supports Apple Silicon Macs.
 
 ```bash
 npx --yes @second-inc/cli                         # Start Second
+npx --yes @second-inc/cli headless start --json   # Start headless app mode for Claude/Codex
+npx --yes @second-inc/cli headless preview --app <appId> --json
+npx --yes @second-inc/cli headless status --app <appId> --json
+npx --yes @second-inc/cli headless integrations --app <appId> --json
+npx --yes @second-inc/cli headless open --app <appId>
 npx --yes @second-inc/cli stop                    # Stop all services
 npx --yes @second-inc/cli reset                   # Stop and delete all data
 npx --yes @second-inc/cli --port 4000             # Custom port
 npx --yes @second-inc/cli --disable-telemetry     # Disable analytics
 ```
+
+`headless start --json` starts or reuses the local runtime, creates or reuses a
+headless app, and returns `appId`, `appDir`, `appUrl`, `launchUrl`, and the
+preview command. Claude or Codex can edit files under `appDir`, then call
+`headless preview` to run Second's real Vite build and refresh the local app
+preview. Headless mode keeps the app top bar and preview surface, but does not
+show the normal workspace sidebar or builder chat.
 
 ## Bring Your Agent
 

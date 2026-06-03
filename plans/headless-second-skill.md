@@ -310,11 +310,12 @@ Headless local command sequence:
 - [x] 2026-06-03 Asia/Jerusalem: Inspected current local dev, packaged CLI, workspace layout, app page, app workspace, app creation, files, and agents approval routes.
 - [x] 2026-06-03 Asia/Jerusalem: Checked official Codex and Claude skill docs enough to plan the packaging approach.
 - [x] 2026-06-03 Asia/Jerusalem: Created this plan file.
-- [ ] Implement headless local CLI/API command surface.
-- [ ] Implement headless app route and `AppWorkspace` mode.
-- [ ] Implement worker/web build-preview command path.
-- [ ] Implement local-only `agents.json` approval and integration setup sync.
-- [ ] Build and validate the releaseable Codex plugin and Claude skill package.
+- [x] Implement headless local CLI/API command surface.
+- [x] Implement headless app route and `AppWorkspace` mode.
+- [x] Implement worker/web build-preview command path.
+- [x] Implement local-only `agents.json` approval and integration setup sync.
+- [x] Build and validate the releaseable Codex plugin and Claude skill package.
+- [x] 2026-06-03 Asia/Jerusalem: Added packaged CLI `headless` command family, repo `npm run headless` alias, local token-guarded web APIs, worker workspace/build-preview endpoints, headless app route, `AppWorkspace` headless mode, `headless_cli` approval source, Codex plugin skill, Claude skill, and CLI README docs.
 - [ ] Update docs and QA artifacts.
 - [ ] Run automated and manual validation.
 

@@ -19,6 +19,7 @@ import { SessionManager } from "./session-manager.js";
 import {
   collectWorkspaceSnapshot,
   defaultAllowedToolsForRuntimeMode,
+  executeDoneBuildingTool,
   type AgentConfig,
 } from "./runner.js";
 import {
@@ -409,6 +410,96 @@ app.get("/sessions/:appId/status", (c) => {
   });
 });
 
+app.post("/sessions/:appId/workspace", async (c) => {
+  const appId = c.req.param("appId");
+  const body = (await c.req.json().catch(() => null)) as {
+    sourceFiles?: unknown;
+  } | null;
+  const sourceFiles = isStringRecord(body?.sourceFiles)
+    ? body.sourceFiles
+    : undefined;
+  const workingDirectory = ensureWorkingDirectory(appId);
+
+  scaffoldWorkspace(workingDirectory, sourceFiles);
+  ensureBuilderSkills(workingDirectory);
+  startDependencyWarmup(workingDirectory);
+
+  return c.json({
+    ok: true,
+    workingDirectory,
+    fileCount: readdirSync(workingDirectory).filter(isWorkspaceContentEntry).length,
+  });
+});
+
+function toolTextResultText(result: Awaited<ReturnType<typeof executeDoneBuildingTool>>): string {
+  return result.content
+    .map((item) => item.type === "text" ? item.text : "")
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+type BuildPreviewCompletePayload = {
+  status?: unknown;
+  summary?: unknown;
+  fileCount?: unknown;
+  totalBytes?: unknown;
+  warning?: unknown;
+};
+
+app.post("/sessions/:appId/build-preview", async (c) => {
+  const appId = c.req.param("appId");
+  const body = (await c.req.json().catch(() => null)) as {
+    sourceFiles?: unknown;
+    summary?: unknown;
+  } | null;
+  const sourceFiles = isStringRecord(body?.sourceFiles)
+    ? body.sourceFiles
+    : undefined;
+  const summary =
+    typeof body?.summary === "string" && body.summary.trim()
+      ? body.summary.trim().slice(0, 500)
+      : "Updated headless preview";
+  const workingDirectory = ensureWorkingDirectory(appId);
+
+  scaffoldWorkspace(workingDirectory, sourceFiles);
+  ensureBuilderSkills(workingDirectory);
+  startDependencyWarmup(workingDirectory);
+
+  const result = await executeDoneBuildingTool(workingDirectory, { summary });
+  const text = toolTextResultText(result);
+
+  let parsed: BuildPreviewCompletePayload | null = null;
+  try {
+    parsed = JSON.parse(text) as BuildPreviewCompletePayload;
+  } catch {
+    parsed = null;
+  }
+
+  if (parsed?.status !== "complete") {
+    return c.json(
+      {
+        ok: false,
+        error: "build_failed",
+        message: text || "Build failed.",
+        workingDirectory,
+      },
+      400,
+    );
+  }
+
+  const snapshot = collectWorkspaceSnapshot(workingDirectory);
+  return c.json({
+    ok: true,
+    result: parsed,
+    files: snapshot.files,
+    fileCount: Object.keys(snapshot.files).length,
+    totalBytes: snapshot.totalBytes,
+    warnings: snapshot.warnings,
+    workingDirectory,
+  });
+});
+
 const MAX_ATTACHMENT_FILES = 10;
 const MAX_ATTACHMENT_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENT_TOTAL_BYTES = 50 * 1024 * 1024;
@@ -417,6 +508,11 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every((entry) => typeof entry === "string");
 }
 
 function normalizeAttachmentPath(value: unknown): string | null {
