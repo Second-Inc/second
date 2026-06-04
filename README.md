@@ -176,6 +176,14 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 | **⏲️ Scheduled Agent Jobs** | Agents run on a schedule for periodic research, monitoring, and background tasks |
 | **🚀 One-Command Setup** | From zero to running with `npx @second-inc/cli` |
 
+## Share and use pre-built apps
+
+Download a `.second-app.zip` file and click **Import App** in Second to load it into your workspace.
+
+- [Polsia](https://github.com/Second-Inc/second-apps/releases/download/polsia-v1/Polsia.second-app.zip)
+
+![Import App button](docs/assets/import-app.png)
+
 ## What You Can Build
 
 <table>
