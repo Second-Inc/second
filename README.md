@@ -178,8 +178,9 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 
 ## Share and use pre-built apps
 
-Download a `.second-app.zip` file and click **Import App** in Second to load it into your workspace.
+Download pre-built apps as ZIP files from our catalog, then click **Import App** to load one into your workspace.
 
+Available Apps (1):
 - [Polsia](https://github.com/Second-Inc/second-apps/releases/download/polsia-v1/Polsia.second-app.zip)
 
 ![Import App button](docs/assets/import-app.png)
