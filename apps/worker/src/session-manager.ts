@@ -6,6 +6,7 @@ import {
 } from "./runtimes/index.js";
 
 const TTL_MS = 15 * 60 * 1000; // 15 minutes
+const ACTIVE_TTL_REFRESH_MS = 30 * 1000;
 
 export type SessionStatus = "idle" | "busy";
 
@@ -83,6 +84,9 @@ class SessionImpl implements Session {
       })) {
         if (this.activeAbortController.signal.aborted) {
           throw new Error("Agent run cancelled");
+        }
+        if (Date.now() - this.lastActiveAt.getTime() >= ACTIVE_TTL_REFRESH_MS) {
+          this.resetTTL();
         }
         if (msg.providerSessionState) {
           this.sessionState = msg.providerSessionState;
