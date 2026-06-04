@@ -171,7 +171,7 @@ export async function GET(
     relatedIds: { appId },
   });
 
-  return new NextResponse(bundle, {
+  return new NextResponse(new Uint8Array(bundle), {
     status: 200,
     headers: {
       "Content-Type": "application/zip",
