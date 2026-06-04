@@ -60,6 +60,7 @@ import {
 import { AgentRunList, type AgentRunSummary } from "@/components/agent-run-viewer";
 import { Balloons, type BalloonsHandle } from "@/components/ui/balloons";
 import { AgentStreamDialog } from "@/components/agent-stream-dialog";
+import { AppArchitectureDialog } from "@/components/app-architecture-dialog";
 import {
   AppPublishDialog,
 } from "@/components/app-publish-dialog";
@@ -1137,6 +1138,7 @@ export function AppWorkspace({
 
   // Agent runs dropdown state
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
+  const [architectureOpen, setArchitectureOpen] = useState(false);
   const [firstAppAgentRunDialogOpen, setFirstAppAgentRunDialogOpen] =
     useState(false);
   const dataChangeSequenceRef = useRef(0);
@@ -1775,6 +1777,11 @@ export function AppWorkspace({
                         workspaceId={workspaceId}
                         appId={appId}
                         onRunClick={onAgentRunClick}
+                        onOpenArchitecture={() => {
+                          dismissAgentRunsHint();
+                          setAgentRunsOpen(false);
+                          setArchitectureOpen(true);
+                        }}
                       />
                     </RecoverableErrorBoundary>
                   </DropdownMenuContent>
@@ -2018,7 +2025,11 @@ export function AppWorkspace({
             >
               {/* Source and data inspectors stay draft-only. Sharing an app can expose the app's runtime data to its selected teams today, which is acceptable inside the workspace until app-level RBAC is introduced. */}
               {isDraftVersion && mainView === "files" ? (
-                <AppFileExplorer files={sourceFiles} />
+                <AppFileExplorer
+                  workspaceId={workspaceId}
+                  appId={appId}
+                  files={sourceFiles}
+                />
               ) : isDraftVersion && mainView === "data" ? (
                 <AppDataExplorer
                   workspaceId={workspaceId}
@@ -2246,6 +2257,20 @@ export function AppWorkspace({
           runId={streamDialogRun?.runId ?? ""}
           agentName={streamDialogRun?.agentName ?? ""}
           prompt={streamDialogRun?.prompt ?? ""}
+        />
+      </RecoverableErrorBoundary>
+
+      {/* App architecture map */}
+      <RecoverableErrorBoundary
+        name="AppWorkspace.AppArchitectureDialog"
+        resetKey={architectureOpen ? "open" : "closed"}
+      >
+        <AppArchitectureDialog
+          open={architectureOpen}
+          onClose={() => setArchitectureOpen(false)}
+          workspaceId={workspaceId}
+          appId={appId}
+          appName={appName}
         />
       </RecoverableErrorBoundary>
     </div>

@@ -14,6 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type ErrorInfo,
 } from "react";
@@ -1147,6 +1148,26 @@ type PendingApproval = {
   analytics: AnalyticsProperties;
 };
 
+const INTEGRATION_SETUP_TOOLTIP_STORAGE_PREFIX =
+  "second.integration-setup-callout-seen.v1";
+
+function subscribeIntegrationSetupTooltipStorage(
+  onStoreChange: () => void,
+): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function integrationSetupTooltipWasDismissed(storageKey: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(storageKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function blockingApprovalKind(toolName: string): PendingApproval["kind"] | null {
   if (toolName === "mcp__second__present_plan") return "plan";
   if (toolName === "mcp__second__present_suggestions") return "suggestions";
@@ -1245,6 +1266,32 @@ function latestAssistantTurnHasStarted(messages: UIMessage[]): boolean {
     if (message?.role !== "assistant") continue;
     if ((message.parts ?? []).some((part) => part != null)) return true;
   }
+  return false;
+}
+
+function hasImportedAppContextMessage(messages: UIMessage[]): boolean {
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    if (
+      typeof message.id === "string" &&
+      message.id.startsWith("imported-app-context-")
+    ) {
+      return true;
+    }
+
+    const parts = Array.isArray(message.parts) ? message.parts : [];
+    for (const part of parts) {
+      const record = asRecord(part);
+      if (
+        record?.type === "text" &&
+        typeof record.text === "string" &&
+        record.text.trimStart().startsWith("Imported app context")
+      ) {
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 
@@ -1462,6 +1509,7 @@ function IntegrationSetupComposerCallout({
   canManageIntegrations,
   connectableOAuthIntegration,
   liveIntegrationKeys,
+  showFirstLoadTooltip = false,
   onBeforeNavigate,
 }: {
   integrations: IntegrationSetupItem[];
@@ -1470,11 +1518,37 @@ function IntegrationSetupComposerCallout({
   canManageIntegrations: boolean;
   connectableOAuthIntegration?: AppIntegrationKeyStatus | null;
   liveIntegrationKeys?: AppIntegrationKeyStatus[] | null;
+  showFirstLoadTooltip?: boolean;
   onBeforeNavigate?: () => void;
 }) {
+  const connectableOAuth = connectableOAuthIntegration;
+  const actionable = showFirstLoadTooltip && integrations.length > 0 && (
+    canManageIntegrations || Boolean(connectableOAuth)
+  );
+  const tooltipStorageKey =
+    `${INTEGRATION_SETUP_TOOLTIP_STORAGE_PREFIX}:${workspaceId}:${appId}`;
+  const tooltipDismissedInStorage = useSyncExternalStore(
+    subscribeIntegrationSetupTooltipStorage,
+    () => integrationSetupTooltipWasDismissed(tooltipStorageKey),
+    () => true,
+  );
+  const [dismissedTooltipKey, setDismissedTooltipKey] = useState<string | null>(null);
+
+  const acknowledgeTooltip = useCallback(() => {
+    try {
+      window.localStorage.setItem(tooltipStorageKey, "1");
+    } catch {
+      // Non-critical hint state; keep navigation working if storage is blocked.
+    }
+    setDismissedTooltipKey(tooltipStorageKey);
+  }, [tooltipStorageKey]);
+
   if (integrations.length === 0) return null;
 
-  const connectableOAuth = connectableOAuthIntegration;
+  const showFirstLoadTooltipOpen =
+    actionable &&
+    !tooltipDismissedInStorage &&
+    dismissedTooltipKey !== tooltipStorageKey;
   const appReturnTo = `/w/${workspaceId}/apps/${appId}`;
   const connectedAppsTarget = connectableOAuth
     ? `/w/${workspaceId}/settings/connected-apps?integration=${encodeURIComponent(connectableOAuth.id ?? connectableOAuth.domain)}&returnTo=${encodeURIComponent(appReturnTo)}`
@@ -1489,6 +1563,7 @@ function IntegrationSetupComposerCallout({
       : `/w/${workspaceId}/settings/integrations?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`
     : `/w/${workspaceId}/settings/integrations?app=${encodeURIComponent(appId)}&returnTo=${encodeURIComponent(appReturnTo)}`;
   const trackSetupNavigation = () => {
+    acknowledgeTooltip();
     captureAnalyticsEvent("integration setup started", {
       workspace_id: workspaceId,
       app_id: appId,
@@ -1561,18 +1636,34 @@ function IntegrationSetupComposerCallout({
       </div>
     </div>
   );
+  const calloutClassName =
+    "group relative mx-2 -mb-6 block translate-y-[-2px] animate-in fade-in-0 slide-in-from-bottom-1 duration-300 transition-transform hover:translate-y-[-5px]";
+  const tooltipContent = (
+    <TooltipContent
+      side="top"
+      sideOffset={10}
+      className="max-w-[260px] text-center font-medium"
+    >
+      Connect integrations to use this app with live data and actions.
+    </TooltipContent>
+  );
 
   if (connectedAppsTarget) {
     return (
-      <Link
-        href={connectedAppsTarget}
-        prefetch={false}
-        onPointerDown={onBeforeNavigate}
-        onClick={trackSetupNavigation}
-        className="group relative mx-2 -mb-6 block translate-y-[-2px] animate-in fade-in-0 slide-in-from-bottom-1 duration-300 transition-transform hover:translate-y-[-5px]"
-      >
-        {content}
-      </Link>
+      <Tooltip open={showFirstLoadTooltipOpen}>
+        <TooltipTrigger asChild>
+          <Link
+            href={connectedAppsTarget}
+            prefetch={false}
+            onPointerDown={onBeforeNavigate}
+            onClick={trackSetupNavigation}
+            className={calloutClassName}
+          >
+            {content}
+          </Link>
+        </TooltipTrigger>
+        {tooltipContent}
+      </Tooltip>
     );
   }
 
@@ -1585,15 +1676,20 @@ function IntegrationSetupComposerCallout({
   }
 
   return (
-    <Link
-      href={integrationSetupTarget}
-      prefetch={false}
-      onPointerDown={onBeforeNavigate}
-      onClick={trackSetupNavigation}
-      className="group relative mx-2 -mb-6 block translate-y-[-2px] animate-in fade-in-0 slide-in-from-bottom-1 duration-300 transition-transform hover:translate-y-[-5px]"
-    >
-      {content}
-    </Link>
+    <Tooltip open={showFirstLoadTooltipOpen}>
+      <TooltipTrigger asChild>
+        <Link
+          href={integrationSetupTarget}
+          prefetch={false}
+          onPointerDown={onBeforeNavigate}
+          onClick={trackSetupNavigation}
+          className={calloutClassName}
+        >
+          {content}
+        </Link>
+      </TooltipTrigger>
+      {tooltipContent}
+    </Tooltip>
   );
 }
 
@@ -2880,6 +2976,10 @@ export function AppChat({
 
   const requestedIntegrationSetup = useMemo(
     () => latestIntegrationSetupFromMessages(messages),
+    [messages],
+  );
+  const hasImportedAppContext = useMemo(
+    () => hasImportedAppContextMessage(messages),
     [messages],
   );
   const requestedIntegrationSetupKey = useMemo(
@@ -4583,6 +4683,7 @@ export function AppChat({
             canManageIntegrations={canManageIntegrations}
             connectableOAuthIntegration={connectableOAuthIntegration}
             liveIntegrationKeys={appIntegrationKeys}
+            showFirstLoadTooltip={hasImportedAppContext}
             onBeforeNavigate={releaseLiveObserversForNavigation}
           />
           <div className="relative rounded-2xl">
