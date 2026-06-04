@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   buildWorkspaceCookie,
@@ -14,6 +15,7 @@ import {
   deleteApp,
   saveAppSourceFiles,
   SourceFilesLimitError,
+  syncIntegrationSetupInstructions,
 } from "@/lib/db";
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -27,7 +29,12 @@ import {
 import {
   AppBundleError,
   parseSecondAppBundle,
+  type SecondAppBundleManifest,
 } from "@/lib/app-bundles";
+import type {
+  IntegrationSetupConfig,
+  SyncIntegrationSetupInstructionsResult,
+} from "@/lib/db/repositories/integrations";
 import { validateAppName } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -42,6 +49,12 @@ const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
 
 function formString(value: FormDataEntryValue | null): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function appNameFromFilename(filename: string): string {
@@ -71,6 +84,142 @@ function responseForBundleError(error: AppBundleError) {
     { error: error.code, message: error.message },
     { status: error.status },
   );
+}
+
+function parseImportedIntegrationSetup(
+  setupJsonRaw: string | undefined,
+): IntegrationSetupConfig | null {
+  if (!setupJsonRaw) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(setupJsonRaw) as unknown;
+  } catch {
+    return null;
+  }
+
+  const record = asRecord(parsed);
+  if (!record || !Array.isArray(record.integrations)) return null;
+  if (record.integrations.length === 0) return null;
+  return record as IntegrationSetupConfig;
+}
+
+function integrationSetupNames(setupConfig: IntegrationSetupConfig): string {
+  return (setupConfig.integrations ?? [])
+    .map((integration) =>
+      typeof integration?.name === "string" && integration.name.trim()
+        ? integration.name.trim()
+        : typeof integration?.domain === "string"
+          ? integration.domain.trim()
+          : "",
+    )
+    .filter(Boolean)
+    .join(", ");
+}
+
+function numberedList(items: string[]): string[] {
+  return items.map((item, index) => `${index + 1}. ${item}`);
+}
+
+function buildImportedContextText(input: {
+  appName: string;
+  prompt: string | null | undefined;
+  context: SecondAppBundleManifest["context"] | null | undefined;
+  fileCount: number;
+  hasIntegrationSetupFile: boolean;
+  integrationSetup: IntegrationSetupConfig | null;
+  integrationSyncResult: SyncIntegrationSetupInstructionsResult | null;
+}): string {
+  const initialUserMessage =
+    input.context?.initialUserMessage?.trim() ||
+    input.prompt?.trim() ||
+    null;
+  const buildSummaries = input.context?.buildSummaries ?? [];
+  const integrationNames = input.integrationSetup
+    ? integrationSetupNames(input.integrationSetup)
+    : "";
+
+  return [
+    "Imported app context",
+    "",
+    `App: ${input.appName}`,
+    `Files restored: ${input.fileCount}`,
+    "",
+    "Original user request:",
+    initialUserMessage ?? "Not available in the exported transcript.",
+    "",
+    "Build history from app-ready summaries:",
+    ...(buildSummaries.length > 0
+      ? numberedList(buildSummaries)
+      : ["Not available in the exported transcript."]),
+    "",
+    input.integrationSetup
+      ? `Integration requirements restored from integration-setup.json: ${integrationNames || "unnamed integrations"}.`
+      : input.hasIntegrationSetupFile
+        ? "integration-setup.json was included, but it could not be parsed into syncable integration requirements."
+      : "No integration-setup.json requirements were included in this import.",
+    input.integrationSyncResult
+      ? `Integration requirements synced: ${input.integrationSyncResult.grants.length}/${input.integrationSyncResult.requestedCount}.`
+      : null,
+    "",
+    "Before making changes, inspect agents.json, integration-setup.json if present, and the relevant source files. Treat the restored files as authoritative over this transcript.",
+  ].filter((line): line is string => line !== null).join("\n");
+}
+
+function shouldPresentImportedIntegrationSetup(
+  setupConfig: IntegrationSetupConfig | null,
+  syncResult: SyncIntegrationSetupInstructionsResult | null,
+): setupConfig is IntegrationSetupConfig {
+  return Boolean(
+    setupConfig &&
+      syncResult &&
+      syncResult.requestedCount > 0 &&
+      syncResult.skippedCount === 0 &&
+      syncResult.grants.length === syncResult.requestedCount,
+  );
+}
+
+function createImportedContextMessage(input: {
+  appName: string;
+  prompt: string | null | undefined;
+  context: SecondAppBundleManifest["context"] | null | undefined;
+  fileCount: number;
+  hasIntegrationSetupFile: boolean;
+  integrationSetup: IntegrationSetupConfig | null;
+  integrationSyncResult: SyncIntegrationSetupInstructionsResult | null;
+}): unknown {
+  const text = buildImportedContextText(input);
+  const parts: unknown[] = [{ type: "text", text }];
+
+  if (
+    shouldPresentImportedIntegrationSetup(
+      input.integrationSetup,
+      input.integrationSyncResult,
+    )
+  ) {
+    const names = integrationSetupNames(input.integrationSetup);
+    parts.push({
+      type: "dynamic-tool",
+      toolCallId: `imported-integration-setup-${randomUUID()}`,
+      toolName: "mcp__second__present_integration_setup",
+      state: "output-available",
+      input: {
+        integrations: input.integrationSetup.integrations ?? [],
+      },
+      output: {
+        content: [{
+          type: "text",
+          text: `Integration setup instructions presented to user and synced: ${names || "none"}.`,
+        }],
+      },
+    });
+  }
+
+  return {
+    id: `imported-app-context-${randomUUID()}`,
+    role: "assistant",
+    parts,
+  };
 }
 
 export async function POST(
@@ -167,6 +316,24 @@ export async function POST(
     throw error;
   }
 
+  const importedIntegrationSetupRaw = bundle.files["integration-setup.json"];
+  const importedIntegrationSetup = parseImportedIntegrationSetup(
+    importedIntegrationSetupRaw,
+  );
+  let integrationSyncResult: SyncIntegrationSetupInstructionsResult | null = null;
+  if (importedIntegrationSetup) {
+    integrationSyncResult = await syncIntegrationSetupInstructions({
+      workspaceId: workspaceContext.workspaceId,
+      setupConfig: importedIntegrationSetup,
+      requester: {
+        appId: app._id,
+        appName: app.name,
+        requestedByUserId: workspaceContext.user._id,
+        requestedByUserName: workspaceContext.user.displayName,
+      },
+    });
+  }
+
   const canApproveLiveRuntime = isWorkspaceAdminRole(
     workspaceContext.membership.role,
   );
@@ -189,7 +356,18 @@ export async function POST(
   const importedRuns = bundle.runs.filter(
     (run) => run.mode !== "workspace_agent",
   );
-  const restoredMessages = importedRuns.flatMap((run) => run.messages);
+  const restoredMessages = [
+    ...importedRuns.flatMap((run) => run.messages),
+    createImportedContextMessage({
+      appName: app.name,
+      prompt,
+      context: bundle.manifest?.context,
+      fileCount: Object.keys(bundle.files).length,
+      hasIntegrationSetupFile: typeof importedIntegrationSetupRaw === "string",
+      integrationSetup: importedIntegrationSetup,
+      integrationSyncResult,
+    }),
+  ];
   const latestRun = await createCompletedRun({
     workspaceId: workspaceContext.workspaceId,
     appId: app._id,
@@ -221,11 +399,18 @@ export async function POST(
       agentsJsonApprovalHash: agentsApproval?.hash ?? null,
       agentsJsonMockOnly:
         agentsApproval?.hasAgentsJson === true && !canApproveLiveRuntime,
+      integrationSetupFileIncluded:
+        typeof importedIntegrationSetupRaw === "string",
+      integrationSetupImported: Boolean(importedIntegrationSetup),
+      integrationSetupRequestedCount: integrationSyncResult?.requestedCount ?? 0,
+      integrationSetupSyncedCount: integrationSyncResult?.grants.length ?? 0,
+      integrationSetupSkippedCount: integrationSyncResult?.skippedCount ?? 0,
     },
     changes: {
       changedFields: [
         "draftSnapshotId",
         "agentsJsonApprovalHash",
+        "integrationRequirements",
       ],
     },
     relatedIds: { appId: app._id, runId: latestRun?._id },
@@ -247,6 +432,10 @@ export async function POST(
         restoredRunCount: 1,
         hasSecondManifest: Boolean(bundle.manifest),
         agentsJsonApproved: agentsApproval?.hasAgentsJson ?? false,
+        integrationSetupSynced:
+          integrationSyncResult
+            ? integrationSyncResult.grants.length
+            : 0,
       },
     },
     { status: 201 },

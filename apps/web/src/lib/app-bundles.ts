@@ -1,4 +1,5 @@
 import { deflateRawSync, inflateRawSync } from "node:zlib";
+import { parseDoneBuildingOutput } from "@/lib/agent/done-building";
 import type { AgentRuntimeId } from "@/lib/agent/runtime-registry";
 
 export const SECOND_APP_BUNDLE_TYPE = "second.app.export.v1";
@@ -15,6 +16,9 @@ const MAX_SOURCE_TOTAL_BYTES = 12 * 1024 * 1024;
 const MAX_SOURCE_FILE_BYTES = 512 * 1024;
 const MAX_FILE_COUNT = 2000;
 const MAX_PATH_LENGTH = 240;
+const MAX_CONTEXT_TEXT_CHARS = 4_000;
+const MAX_CONTEXT_SUMMARIES = 100;
+const MAX_CONTEXT_SUMMARY_CHARS = 1_200;
 
 const IGNORED_TOP_LEVEL_SEGMENTS = new Set([
   "node_modules",
@@ -65,6 +69,10 @@ export type SecondAppBundleManifest = {
     fileCount: number;
     totalBytes: number;
     includesPreviewArtifact: boolean;
+  };
+  context: {
+    initialUserMessage: string | null;
+    buildSummaries: string[];
   };
   runs: Array<{
     mode?: "builder" | "workspace_agent";
@@ -182,6 +190,113 @@ function sourceSummary(files: Record<string, string>): FileSummary {
   };
 }
 
+function compactContextText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().replace(/\s+/g, " ");
+  if (!text) return null;
+  return text.length <= maxLength
+    ? text
+    : `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+}
+
+function textFromUiMessage(message: unknown): string | null {
+  const record = isRecord(message) ? message : null;
+  if (!record || record.role !== "user") return null;
+  const parts = Array.isArray(record.parts) ? record.parts : [];
+  const text = parts
+    .map((part) => {
+      const partRecord = isRecord(part) ? part : null;
+      return partRecord?.type === "text" && typeof partRecord.text === "string"
+        ? partRecord.text
+        : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+  return compactContextText(text, MAX_CONTEXT_TEXT_CHARS);
+}
+
+function firstUserMessageFromRuns(
+  runs: SecondAppBundleManifest["runs"],
+): string | null {
+  for (const run of runs) {
+    for (const message of run.messages) {
+      const text = textFromUiMessage(message);
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
+function doneBuildingSummariesFromMessages(messages: unknown[]): string[] {
+  const summaries: string[] = [];
+
+  for (const message of messages) {
+    const record = isRecord(message) ? message : null;
+    const parts = Array.isArray(record?.parts) ? record.parts : [];
+    for (const part of parts) {
+      const partRecord = isRecord(part) ? part : null;
+      if (
+        partRecord?.type !== "dynamic-tool" ||
+        partRecord.toolName !== "mcp__second__done_building" ||
+        partRecord.state !== "output-available" ||
+        partRecord.preliminary === true
+      ) {
+        continue;
+      }
+
+      const payload = parseDoneBuildingOutput(partRecord.output);
+      const summary = payload?.status === "complete"
+        ? compactContextText(payload.summary, MAX_CONTEXT_SUMMARY_CHARS)
+        : null;
+      if (summary) summaries.push(summary);
+    }
+  }
+
+  return summaries;
+}
+
+function buildSummariesFromRuns(
+  runs: SecondAppBundleManifest["runs"],
+): string[] {
+  return runs
+    .flatMap((run) => doneBuildingSummariesFromMessages(run.messages))
+    .slice(0, MAX_CONTEXT_SUMMARIES);
+}
+
+function normalizeBundleContext(value: unknown): SecondAppBundleManifest["context"] {
+  const context = isRecord(value) ? value : {};
+  const initialUserMessage = compactContextText(
+    context.initialUserMessage,
+    MAX_CONTEXT_TEXT_CHARS,
+  );
+  const buildSummaries = Array.isArray(context.buildSummaries)
+    ? context.buildSummaries.flatMap((summary) => {
+        const text = compactContextText(summary, MAX_CONTEXT_SUMMARY_CHARS);
+        return text ? [text] : [];
+      }).slice(0, MAX_CONTEXT_SUMMARIES)
+    : [];
+
+  return {
+    initialUserMessage,
+    buildSummaries,
+  };
+}
+
+function createBundleContext(input: {
+  runs: SecondAppBundleManifest["runs"];
+  context?: Partial<SecondAppBundleManifest["context"]>;
+}): SecondAppBundleManifest["context"] {
+  const normalizedInput = normalizeBundleContext(input.context);
+  return {
+    initialUserMessage:
+      normalizedInput.initialUserMessage ?? firstUserMessageFromRuns(input.runs),
+    buildSummaries:
+      normalizedInput.buildSummaries.length > 0
+        ? normalizedInput.buildSummaries
+        : buildSummariesFromRuns(input.runs),
+  };
+}
+
 export function filterBundleSourceFiles(
   files: Record<string, string>,
 ): Record<string, string> {
@@ -270,6 +385,15 @@ function normalizeManifest(value: unknown): SecondAppBundleManifest {
   const app = isRecord(value.app) ? value.app : {};
   const source = isRecord(value.source) ? value.source : {};
   const runs = Array.isArray(value.runs) ? value.runs : [];
+  const normalizedRuns = runs.flatMap((run): SecondAppBundleManifest["runs"] => {
+    if (!isRecord(run) || !Array.isArray(run.messages)) return [];
+    return [{
+      mode: run.mode === "workspace_agent" ? "workspace_agent" : "builder",
+      messages: run.messages,
+      createdAt: typeof run.createdAt === "string" ? run.createdAt : null,
+      updatedAt: typeof run.updatedAt === "string" ? run.updatedAt : null,
+    }];
+  });
 
   return {
     type: SECOND_APP_BUNDLE_TYPE,
@@ -301,15 +425,11 @@ function normalizeManifest(value: unknown): SecondAppBundleManifest {
           ? source.includesPreviewArtifact
           : false,
     },
-    runs: runs.flatMap((run): SecondAppBundleManifest["runs"] => {
-      if (!isRecord(run) || !Array.isArray(run.messages)) return [];
-      return [{
-        mode: run.mode === "workspace_agent" ? "workspace_agent" : "builder",
-        messages: run.messages,
-        createdAt: typeof run.createdAt === "string" ? run.createdAt : null,
-        updatedAt: typeof run.updatedAt === "string" ? run.updatedAt : null,
-      }];
+    context: createBundleContext({
+      runs: normalizedRuns,
+      context: normalizeBundleContext(value.context),
     }),
+    runs: normalizedRuns,
   };
 }
 
@@ -575,6 +695,7 @@ export function createSecondAppBundle(input: {
   app: SecondAppBundleManifest["app"];
   files: Record<string, string>;
   runs: SecondAppBundleManifest["runs"];
+  context?: Partial<SecondAppBundleManifest["context"]>;
 }): Buffer {
   const files = filterBundleSourceFiles(input.files);
   const summary = sourceSummary(files);
@@ -584,6 +705,10 @@ export function createSecondAppBundle(input: {
     exportedAt: new Date().toISOString(),
     app: input.app,
     source: summary,
+    context: createBundleContext({
+      runs: input.runs,
+      context: input.context,
+    }),
     runs: input.runs,
   };
 
