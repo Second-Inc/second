@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -69,8 +68,6 @@ type AppComposerProps = {
 };
 
 const SUGGESTION_PROMPT = "Suggest something for us to build!";
-const IMPORT_EXISTING_APP_PROMPT =
-  "Convert this project into a fully functional second app. Identify key files first and map the data schemas.";
 const AGENT_SELECTED_HINT_DELAY_MS = 1100;
 
 export function AppComposer({
@@ -102,7 +99,7 @@ export function AppComposer({
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const composerWindowRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSkillSelect = (skill: SkillRef) => {
     setSubmitError(null);
@@ -139,20 +136,6 @@ export function AppComposer({
       const textarea = textareaRef.current;
       textarea?.focus();
       textarea?.setSelectionRange(SUGGESTION_PROMPT.length, SUGGESTION_PROMPT.length);
-    });
-  }, [onChange, textareaRef]);
-
-  const handleImportPrompt = useCallback(() => {
-    setSubmitError(null);
-    setShowAgentSelectedHint(false);
-    onChange(IMPORT_EXISTING_APP_PROMPT);
-    requestAnimationFrame(() => {
-      const textarea = textareaRef.current;
-      textarea?.focus();
-      textarea?.setSelectionRange(
-        IMPORT_EXISTING_APP_PROMPT.length,
-        IMPORT_EXISTING_APP_PROMPT.length,
-      );
     });
   }, [onChange, textareaRef]);
 
@@ -266,6 +249,82 @@ export function AppComposer({
     setSubmitError(null);
     setAttachments((current) => current.filter((item) => item.id !== id));
   }, []);
+
+  const importAppBundle = useCallback(
+    async (file: File) => {
+      if (isSubmitting) return;
+
+      setShowAgentSelectedHint(false);
+      setIsSubmitting(true);
+      setSubmitError(null);
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file, file.name);
+
+        const res = await fetch(`/api/workspaces/${workspaceId}/apps/import`, {
+          method: "POST",
+          body: formData,
+        });
+        const payload = (await res.json().catch(() => null)) as
+          | {
+              id?: string;
+              name?: string;
+              initialRun?: { id?: string; status?: string } | null;
+              imported?: {
+                fileCount?: number;
+                restoredRunCount?: number;
+                hasSecondManifest?: boolean;
+                agentsJsonApproved?: boolean;
+              };
+              error?: string;
+              message?: string;
+            }
+          | null;
+
+        if (!res.ok || !payload?.id) {
+          throw new Error(payload?.message ?? "Failed to import app.");
+        }
+
+        captureAnalyticsEvent("app import completed", {
+          workspace_id: workspaceId,
+          app_id: payload.id,
+          app_name: payload.name ?? "Imported app",
+          file_count: payload.imported?.fileCount,
+          restored_run_count: payload.imported?.restoredRunCount,
+          has_second_manifest: payload.imported?.hasSecondManifest,
+          agents_json_approved: payload.imported?.agentsJsonApproved,
+        });
+
+        window.dispatchEvent(
+          new CustomEvent("second:app-created", {
+            detail: {
+              workspaceId,
+              app: {
+                _id: payload.id,
+                name: payload.name ?? "Imported app",
+                runStatus: payload.initialRun?.status ?? "completed",
+                toolRecoveryStatus: null,
+                publishStatus: "draft",
+                hasPublishedVersion: false,
+                canManage: true,
+              },
+            },
+          }),
+        );
+
+        router.push(`/w/${workspaceId}/apps/${payload.id}`);
+      } catch (err) {
+        console.error("Failed to import app:", err);
+        const message =
+          err instanceof Error ? err.message : "Failed to import app.";
+        setSubmitError(message);
+        toast.error("Failed to import app", { description: message });
+        setIsSubmitting(false);
+      }
+    },
+    [isSubmitting, router, workspaceId],
+  );
 
   const canSubmit = Boolean(value.trim() || attachments.length > 0);
   const agentSelectedHintOpen =
@@ -563,15 +622,15 @@ export function AppComposer({
         </div>
       </form>
       <input
-        ref={fileInputRef}
+        ref={importFileInputRef}
         type="file"
-        multiple
+        accept=".zip,application/zip,application/x-zip-compressed"
         className="hidden"
         onChange={(event) => {
-          const acceptedCount = addFiles(
-            Array.from(event.currentTarget.files ?? []),
-          );
-          if (acceptedCount > 0) handleImportPrompt();
+          const file = event.currentTarget.files?.[0];
+          if (file) {
+            void importAppBundle(file);
+          }
           event.currentTarget.value = "";
         }}
       />
@@ -580,11 +639,11 @@ export function AppComposer({
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
         onUpload={() => {
-          captureAnalyticsEvent("import existing app triggered", {
+          captureAnalyticsEvent("import app triggered", {
             workspace_id: workspaceId,
-            trigger: "upload_files",
+            trigger: "upload_zip",
           });
-          fileInputRef.current?.click();
+          importFileInputRef.current?.click();
         }}
       />
 
@@ -595,31 +654,15 @@ export function AppComposer({
           size="default"
           className="rounded-full"
           onClick={() => {
-            captureAnalyticsEvent("import existing app clicked", {
+            captureAnalyticsEvent("import app clicked", {
               workspace_id: workspaceId,
             });
             setImportDialogOpen(true);
           }}
           disabled={isSubmitting}
         >
-          <Upload className="size-3" strokeWidth={1.8} />
-          Import existing app
-          <span className="ml-0.5 flex items-center gap-1 opacity-60" aria-hidden="true">
-            <Image
-              src="/icons/lovable.svg"
-              alt=""
-              width={12}
-              height={12}
-              className="size-3 grayscale"
-            />
-            <Image
-              src="/icons/base44-icon.svg"
-              alt=""
-              width={12}
-              height={12}
-              className="size-3 grayscale"
-            />
-          </span>
+          <Upload data-icon="inline-start" strokeWidth={1.8} />
+          Import App
         </Button>
         <Button
           type="button"

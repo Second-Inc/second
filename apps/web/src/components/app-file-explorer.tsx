@@ -31,6 +31,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type AppFileExplorerProps = {
+  workspaceId: string;
+  appId: string;
   files: Record<string, string> | null;
 };
 
@@ -56,8 +58,6 @@ type MutableDirectoryNode = DirectoryNode & {
 const DEFAULT_SIDEBAR_WIDTH = 280;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 440;
-const ZIP_DOS_TIME = 0;
-const ZIP_DOS_DATE = 33;
 
 const FILE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   ts: BracesIcon,
@@ -127,130 +127,6 @@ function countLines(text: string | undefined): number {
   return text.split("\n").length;
 }
 
-function zipFilename(path: string | null): string {
-  return `${path ? basename(path) : "sandbox-files"}.zip`;
-}
-
-function createCrc32Table(): Uint32Array {
-  const table = new Uint32Array(256);
-
-  for (let i = 0; i < table.length; i += 1) {
-    let value = i;
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    }
-    table[i] = value >>> 0;
-  }
-
-  return table;
-}
-
-const CRC32_TABLE = createCrc32Table();
-
-function crc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff;
-
-  for (const byte of bytes) {
-    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  }
-
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function makeZipHeader(size: number): {
-  bytes: Uint8Array;
-  view: DataView;
-} {
-  const bytes = new Uint8Array(size);
-  return { bytes, view: new DataView(bytes.buffer) };
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
-}
-
-function collectFilesForZip(
-  files: Record<string, string>,
-  folderPath: string | null,
-): Array<[string, string]> {
-  return Object.entries(files)
-    .filter(([path]) =>
-      folderPath === null ? true : path.startsWith(`${folderPath}/`),
-    )
-    .sort(([a], [b]) => a.localeCompare(b));
-}
-
-function createZipBlob(entries: Array<[string, string]>): Blob {
-  const encoder = new TextEncoder();
-  const localParts: BlobPart[] = [];
-  const centralParts: ArrayBuffer[] = [];
-  let offset = 0;
-  let centralSize = 0;
-
-  for (const [path, content] of entries) {
-    const nameBytes = encoder.encode(path);
-    const contentBytes = encoder.encode(content);
-    const checksum = crc32(contentBytes);
-
-    const local = makeZipHeader(30 + nameBytes.length);
-    local.view.setUint32(0, 0x04034b50, true);
-    local.view.setUint16(4, 20, true);
-    local.view.setUint16(6, 0x0800, true);
-    local.view.setUint16(8, 0, true);
-    local.view.setUint16(10, ZIP_DOS_TIME, true);
-    local.view.setUint16(12, ZIP_DOS_DATE, true);
-    local.view.setUint32(14, checksum, true);
-    local.view.setUint32(18, contentBytes.length, true);
-    local.view.setUint32(22, contentBytes.length, true);
-    local.view.setUint16(26, nameBytes.length, true);
-    local.view.setUint16(28, 0, true);
-    local.bytes.set(nameBytes, 30);
-
-    localParts.push(toArrayBuffer(local.bytes), toArrayBuffer(contentBytes));
-
-    const central = makeZipHeader(46 + nameBytes.length);
-    central.view.setUint32(0, 0x02014b50, true);
-    central.view.setUint16(4, 20, true);
-    central.view.setUint16(6, 20, true);
-    central.view.setUint16(8, 0x0800, true);
-    central.view.setUint16(10, 0, true);
-    central.view.setUint16(12, ZIP_DOS_TIME, true);
-    central.view.setUint16(14, ZIP_DOS_DATE, true);
-    central.view.setUint32(16, checksum, true);
-    central.view.setUint32(20, contentBytes.length, true);
-    central.view.setUint32(24, contentBytes.length, true);
-    central.view.setUint16(28, nameBytes.length, true);
-    central.view.setUint16(30, 0, true);
-    central.view.setUint16(32, 0, true);
-    central.view.setUint16(34, 0, true);
-    central.view.setUint16(36, 0, true);
-    central.view.setUint32(38, 0, true);
-    central.view.setUint32(42, offset, true);
-    central.bytes.set(nameBytes, 46);
-
-    centralParts.push(toArrayBuffer(central.bytes));
-    centralSize += central.bytes.length;
-    offset += local.bytes.length + contentBytes.length;
-  }
-
-  const centralOffset = offset;
-  const end = makeZipHeader(22);
-  end.view.setUint32(0, 0x06054b50, true);
-  end.view.setUint16(4, 0, true);
-  end.view.setUint16(6, 0, true);
-  end.view.setUint16(8, entries.length, true);
-  end.view.setUint16(10, entries.length, true);
-  end.view.setUint32(12, centralSize, true);
-  end.view.setUint32(16, centralOffset, true);
-  end.view.setUint16(20, 0, true);
-
-  return new Blob([...localParts, ...centralParts, toArrayBuffer(end.bytes)], {
-    type: "application/zip",
-  });
-}
-
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -267,15 +143,6 @@ function downloadFile(path: string, content: string) {
     new Blob([content], { type: "text/plain;charset=utf-8" }),
     basename(path),
   );
-}
-
-function downloadZip(
-  files: Record<string, string>,
-  folderPath: string | null = null,
-) {
-  const entries = collectFilesForZip(files, folderPath);
-  if (entries.length === 0) return;
-  downloadBlob(createZipBlob(entries), zipFilename(folderPath));
 }
 
 function createDirectory(name: string, path: string): MutableDirectoryNode {
@@ -380,7 +247,6 @@ function FileTree({
   activeFile,
   expandedPaths,
   onCopyFileContent,
-  onDownloadDirectory,
   onDownloadFile,
   onOpenFileInNewTab,
   onReplaceFile,
@@ -392,7 +258,6 @@ function FileTree({
   activeFile: string | null;
   expandedPaths: Set<string>;
   onCopyFileContent: (path: string) => void;
-  onDownloadDirectory: (path: string) => void;
   onDownloadFile: (path: string) => void;
   onOpenFileInNewTab: (path: string) => void;
   onReplaceFile: (path: string) => void;
@@ -441,13 +306,6 @@ function FileTree({
                     {isExpanded ? <FolderIcon /> : <FolderOpenIcon />}
                     {isExpanded ? "Collapse folder" : "Expand folder"}
                   </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem
-                    onSelect={() => onDownloadDirectory(node.path)}
-                  >
-                    <ArchiveIcon />
-                    Download as ZIP
-                  </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
               {isExpanded && (
@@ -457,7 +315,6 @@ function FileTree({
                   activeFile={activeFile}
                   expandedPaths={expandedPaths}
                   onCopyFileContent={onCopyFileContent}
-                  onDownloadDirectory={onDownloadDirectory}
                   onDownloadFile={onDownloadFile}
                   onOpenFileInNewTab={onOpenFileInNewTab}
                   onReplaceFile={onReplaceFile}
@@ -514,7 +371,11 @@ function FileTree({
   );
 }
 
-export function AppFileExplorer({ files }: AppFileExplorerProps) {
+export function AppFileExplorer({
+  workspaceId,
+  appId,
+  files,
+}: AppFileExplorerProps) {
   const sortedFiles = useMemo(() => {
     if (!files) return [];
     return Object.keys(files).sort((a, b) => a.localeCompare(b));
@@ -617,18 +478,7 @@ export function AppFileExplorer({ files }: AppFileExplorerProps) {
     [files],
   );
 
-  const downloadDirectory = useCallback(
-    (path: string) => {
-      if (!files) return;
-      downloadZip(files, path);
-    },
-    [files],
-  );
-
-  const downloadAllFiles = useCallback(() => {
-    if (!files) return;
-    downloadZip(files);
-  }, [files]);
+  const exportHref = `/api/workspaces/${workspaceId}/apps/${appId}/export`;
 
   const openFileInNewTab = useCallback((path: string) => {
     setDefaultTabDismissed(false);
@@ -739,14 +589,15 @@ export function AppFileExplorer({ files }: AppFileExplorerProps) {
             Sandbox Files
           </span>
           <Button
-            type="button"
+            asChild
             variant="ghost"
             size="xs"
             className="shrink-0 text-muted-foreground"
-            onClick={downloadAllFiles}
           >
-            <ArchiveIcon data-icon="inline-start" />
-            Download as ZIP
+            <a href={exportHref}>
+              <ArchiveIcon data-icon="inline-start" />
+              Export App
+            </a>
           </Button>
         </div>
         <div className="flex-1 overflow-auto py-1">
@@ -756,7 +607,6 @@ export function AppFileExplorer({ files }: AppFileExplorerProps) {
             activeFile={resolvedActiveFile}
             expandedPaths={expandedPaths}
             onCopyFileContent={copyFileContent}
-            onDownloadDirectory={downloadDirectory}
             onDownloadFile={downloadSingleFile}
             onOpenFileInNewTab={openFileInNewTab}
             onReplaceFile={replaceFile}

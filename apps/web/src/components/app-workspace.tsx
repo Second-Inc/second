@@ -2025,7 +2025,11 @@ export function AppWorkspace({
             >
               {/* Source and data inspectors stay draft-only. Sharing an app can expose the app's runtime data to its selected teams today, which is acceptable inside the workspace until app-level RBAC is introduced. */}
               {isDraftVersion && mainView === "files" ? (
-                <AppFileExplorer files={sourceFiles} />
+                <AppFileExplorer
+                  workspaceId={workspaceId}
+                  appId={appId}
+                  files={sourceFiles}
+                />
               ) : isDraftVersion && mainView === "data" ? (
                 <AppDataExplorer
                   workspaceId={workspaceId}
