@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
 import dynamic from "next/dynamic";
-import { Loader2, WaypointsIcon, XIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Loader2, WaypointsIcon } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const AppArchitecture = dynamic(
   () => import("./app-architecture").then((m) => m.AppArchitecture),
@@ -32,36 +36,17 @@ export function AppArchitectureDialog({
   appId,
   appName,
 }: AppArchitectureDialogProps) {
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 animate-in fade-in-0"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div className="absolute inset-2 flex flex-col overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/10 duration-200 animate-in fade-in-0 zoom-in-[0.98] sm:inset-4 md:inset-6 lg:inset-8">
-        {/* Header */}
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-3.5 py-2.5">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="top-2 right-2 bottom-2 left-2 flex h-auto w-auto max-w-none translate-x-0 translate-y-0 flex-col overflow-hidden rounded-2xl p-0 sm:top-4 sm:right-4 sm:bottom-4 sm:left-4 sm:max-w-none md:top-6 md:right-6 md:bottom-6 md:left-6 lg:top-8 lg:right-8 lg:bottom-8 lg:left-8">
+        <DialogHeader className="flex-row items-center gap-2.5 border-b border-border px-3.5 py-2.5 pr-12">
           <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/50 text-foreground/80">
             <WaypointsIcon className="size-4" strokeWidth={1.75} />
           </div>
           <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-[13px] font-semibold tracking-[-0.01em] text-foreground">
+            <DialogTitle className="shrink-0 text-[13px] font-semibold tracking-[-0.01em] text-foreground">
               Architecture
-            </span>
+            </DialogTitle>
             <span
               className="size-1 shrink-0 rounded-full bg-border"
               aria-hidden
@@ -70,22 +55,12 @@ export function AppArchitectureDialog({
               {appName}
             </span>
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="ml-auto shrink-0 rounded-full text-muted-foreground"
-            onClick={onClose}
-            aria-label="Close architecture view"
-          >
-            <XIcon className="size-4" />
-          </Button>
-        </div>
+        </DialogHeader>
 
-        {/* Canvas */}
         <div className="relative min-h-0 flex-1">
           <AppArchitecture workspaceId={workspaceId} appId={appId} />
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

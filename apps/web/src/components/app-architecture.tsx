@@ -511,6 +511,33 @@ function buildGraph(agents: AgentData[]): BuiltGraph {
   };
 }
 
+function architectureGraphKey(agents: AgentData[]): string {
+  return agents
+    .map((agent) =>
+      [
+        agent.id,
+        agent.name,
+        agent.description,
+        (agent.dataCollections ?? []).join(","),
+        (agent.tools ?? [])
+          .map((tool) =>
+            [
+              tool.type,
+              tool.name,
+              tool.displayName ?? "",
+              tool.enabled ? "on" : "off",
+              tool.integration?.name ?? "",
+              tool.integration?.domain ?? "",
+              tool.endpoint?.method ?? "",
+              tool.endpoint?.url ?? "",
+            ].join("~"),
+          )
+          .join(","),
+      ].join(":"),
+    )
+    .join("|");
+}
+
 // ---------------------------------------------------------------------------
 // Agent detail panel
 // ---------------------------------------------------------------------------
@@ -849,9 +876,9 @@ function ArchitectureFlow({
 // ---------------------------------------------------------------------------
 
 type LoadState =
-  | { status: "loading" }
-  | { status: "error" }
-  | { status: "ready"; agents: AgentData[] };
+  | { key: string; status: "loading" }
+  | { key: string; status: "error" }
+  | { key: string; status: "ready"; agents: AgentData[] };
 
 export function AppArchitecture({
   workspaceId,
@@ -860,7 +887,13 @@ export function AppArchitecture({
   workspaceId: string;
   appId: string;
 }) {
-  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const loadKey = `${workspaceId}:${appId}`;
+  const [state, setState] = useState<LoadState>({
+    key: loadKey,
+    status: "loading",
+  });
+  const visibleState: LoadState =
+    state.key === loadKey ? state : { key: loadKey, status: "loading" };
 
   useEffect(() => {
     let cancelled = false;
@@ -876,20 +909,24 @@ export function AppArchitecture({
       })
       .then((data: { agents?: AgentData[] }) => {
         if (cancelled) return;
-        setState({ status: "ready", agents: data.agents ?? [] });
+        setState({
+          key: loadKey,
+          status: "ready",
+          agents: data.agents ?? [],
+        });
       })
       .catch(() => {
         if (cancelled || controller.signal.aborted) return;
-        setState({ status: "error" });
+        setState({ key: loadKey, status: "error" });
       });
 
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [workspaceId, appId]);
+  }, [workspaceId, appId, loadKey]);
 
-  if (state.status === "loading") {
+  if (visibleState.status === "loading") {
     return (
       <div className="flex size-full items-center justify-center">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -897,7 +934,7 @@ export function AppArchitecture({
     );
   }
 
-  if (state.status === "error") {
+  if (visibleState.status === "error") {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-2 text-center">
         <p className="text-sm font-medium text-foreground">
@@ -911,7 +948,7 @@ export function AppArchitecture({
     );
   }
 
-  if (state.agents.length === 0) {
+  if (visibleState.agents.length === 0) {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-3 text-center">
         <div className="flex size-11 items-center justify-center rounded-xl bg-muted/50">
@@ -930,7 +967,11 @@ export function AppArchitecture({
 
   return (
     <ReactFlowProvider>
-      <ArchitectureFlow agents={state.agents} workspaceId={workspaceId} />
+      <ArchitectureFlow
+        key={architectureGraphKey(visibleState.agents)}
+        agents={visibleState.agents}
+        workspaceId={workspaceId}
+      />
     </ReactFlowProvider>
   );
 }
