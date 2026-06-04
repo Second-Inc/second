@@ -14,6 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type ErrorInfo,
 } from "react";
@@ -1150,6 +1151,23 @@ type PendingApproval = {
 const INTEGRATION_SETUP_TOOLTIP_STORAGE_PREFIX =
   "second.integration-setup-callout-seen.v1";
 
+function subscribeIntegrationSetupTooltipStorage(
+  onStoreChange: () => void,
+): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function integrationSetupTooltipWasDismissed(storageKey: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(storageKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function blockingApprovalKind(toolName: string): PendingApproval["kind"] | null {
   if (toolName === "mcp__second__present_plan") return "plan";
   if (toolName === "mcp__second__present_suggestions") return "suggestions";
@@ -1509,26 +1527,12 @@ function IntegrationSetupComposerCallout({
   );
   const tooltipStorageKey =
     `${INTEGRATION_SETUP_TOOLTIP_STORAGE_PREFIX}:${workspaceId}:${appId}`;
-  const [tooltipState, setTooltipState] = useState<{
-    key: string;
-    visible: boolean;
-  }>({ key: "", visible: false });
-
-  useEffect(() => {
-    if (!actionable) {
-      setTooltipState({ key: tooltipStorageKey, visible: false });
-      return;
-    }
-
-    try {
-      setTooltipState({
-        key: tooltipStorageKey,
-        visible: window.localStorage.getItem(tooltipStorageKey) !== "1",
-      });
-    } catch {
-      setTooltipState({ key: tooltipStorageKey, visible: true });
-    }
-  }, [actionable, tooltipStorageKey]);
+  const tooltipDismissedInStorage = useSyncExternalStore(
+    subscribeIntegrationSetupTooltipStorage,
+    () => integrationSetupTooltipWasDismissed(tooltipStorageKey),
+    () => true,
+  );
+  const [dismissedTooltipKey, setDismissedTooltipKey] = useState<string | null>(null);
 
   const acknowledgeTooltip = useCallback(() => {
     try {
@@ -1536,13 +1540,15 @@ function IntegrationSetupComposerCallout({
     } catch {
       // Non-critical hint state; keep navigation working if storage is blocked.
     }
-    setTooltipState({ key: tooltipStorageKey, visible: false });
+    setDismissedTooltipKey(tooltipStorageKey);
   }, [tooltipStorageKey]);
 
   if (integrations.length === 0) return null;
 
   const showFirstLoadTooltipOpen =
-    tooltipState.key === tooltipStorageKey && tooltipState.visible;
+    actionable &&
+    !tooltipDismissedInStorage &&
+    dismissedTooltipKey !== tooltipStorageKey;
   const appReturnTo = `/w/${workspaceId}/apps/${appId}`;
   const connectedAppsTarget = connectableOAuth
     ? `/w/${workspaceId}/settings/connected-apps?integration=${encodeURIComponent(connectableOAuth.id ?? connectableOAuth.domain)}&returnTo=${encodeURIComponent(appReturnTo)}`
