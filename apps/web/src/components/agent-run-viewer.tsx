@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   BotIcon,
   CheckIcon,
   XCircleIcon,
   ClockIcon,
+  WaypointsIcon,
 } from "lucide-react";
 import { AppLoader } from "@/components/app-loader";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ type AgentRunListProps = {
   workspaceId: string;
   appId: string;
   onRunClick?: (run: AgentRunSummary) => void;
+  onOpenArchitecture?: () => void;
 };
 
 const agentRunListCache = new Map<string, AgentRunSummary[]>();
@@ -55,14 +57,17 @@ function TabSwitcher({
   onTabChange,
   runningCount,
   recentCount,
+  onOpenArchitecture,
 }: {
   activeTab: TabValue;
   onTabChange: (tab: TabValue) => void;
   runningCount: number;
   recentCount: number;
+  onOpenArchitecture?: () => void;
 }) {
   return (
-    <div className="relative flex rounded-xl bg-muted/50 p-1">
+    <div className="flex items-center gap-1.5">
+      <div className="relative flex flex-1 rounded-xl bg-muted/50 p-1">
       {/* Sliding pill */}
       <div
         className="absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-[10px] bg-background shadow-sm transition-transform duration-200 ease-out"
@@ -111,6 +116,18 @@ function TabSwitcher({
           {recentCount}
         </span>
       </button>
+      </div>
+
+      {onOpenArchitecture ? (
+        <button
+          type="button"
+          onClick={onOpenArchitecture}
+          className="flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-2 text-[13px] font-medium text-muted-foreground ring-1 ring-border/70 transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          <WaypointsIcon className="size-3.5" strokeWidth={1.75} />
+          Architecture
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -169,6 +186,7 @@ export function AgentRunList({
   workspaceId,
   appId,
   onRunClick,
+  onOpenArchitecture,
 }: AgentRunListProps) {
   const cacheKey = `${workspaceId}:${appId}`;
   const hasCachedResult = agentRunListLoadedCache.has(cacheKey);
@@ -253,8 +271,11 @@ export function AgentRunList({
     };
   }, [workspaceId, appId, cacheKey]);
 
+  const visibleRuns = activeTab === "running" ? activeRuns : pastRuns;
+
+  let body: ReactNode;
   if (loading) {
-    return (
+    body = (
       <div className="flex flex-col items-center justify-center gap-2 px-6 py-12">
         <AppLoader size="xs" interactive={false} label="Loading agent runs" />
         <span className="text-[12px] text-muted-foreground">
@@ -262,11 +283,9 @@ export function AgentRunList({
         </span>
       </div>
     );
-  }
-
-  if (runs.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+  } else if (runs.length === 0) {
+    body = (
+      <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
         <div className="flex size-10 items-center justify-center rounded-xl bg-muted/40">
           <BotIcon
             className="size-5 text-muted-foreground/50"
@@ -285,23 +304,8 @@ export function AgentRunList({
         </div>
       </div>
     );
-  }
-
-  const visibleRuns = activeTab === "running" ? activeRuns : pastRuns;
-
-  return (
-    <div className="flex flex-col">
-      {/* Tab switcher */}
-      <div className="px-3 pt-3 pb-2">
-        <TabSwitcher
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          runningCount={activeRuns.length}
-          recentCount={pastRuns.length}
-        />
-      </div>
-
-      {/* Run list */}
+  } else {
+    body = (
       <div className="px-1.5 pb-2">
         {visibleRuns.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
@@ -321,6 +325,23 @@ export function AgentRunList({
           ))
         )}
       </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      {/* Tab switcher */}
+      <div className="px-3 pt-3 pb-2">
+        <TabSwitcher
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          runningCount={activeRuns.length}
+          recentCount={pastRuns.length}
+          onOpenArchitecture={onOpenArchitecture}
+        />
+      </div>
+
+      {body}
     </div>
   );
 }

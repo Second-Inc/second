@@ -205,6 +205,56 @@ export async function createRun(input: {
   return run;
 }
 
+export async function createCompletedRun(input: {
+  appId: string;
+  workspaceId: string;
+  mode?: AgentRunDocument["mode"];
+  messages: unknown[];
+}): Promise<AgentRunDocument> {
+  const collection = await getAgentRunsCollection();
+  const now = new Date();
+  const run: AgentRunDocument = {
+    _id: new ObjectId().toHexString(),
+    appId: input.appId,
+    workspaceId: input.workspaceId,
+    mode: input.mode ?? "builder",
+    selectedSkillRefs: [],
+    workspaceAgentSnapshot: null,
+    attachments: [],
+    pendingAttachments: [],
+    messages: input.messages,
+    sessionState: null,
+    activeStreamId: null,
+    streamLease: null,
+    failure: null,
+    status: "completed",
+    usage: null,
+    autoStartPrompt: null,
+    recoveryContext: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await collection.insertOne(run);
+  publishWorkspaceEvent({
+    type: "run.created",
+    workspaceId: input.workspaceId,
+    scope: "agent-runs",
+    appId: input.appId,
+    runId: run._id,
+    runStatus: run.status,
+  });
+  publishWorkspaceEvent({
+    type: "run.completed",
+    workspaceId: input.workspaceId,
+    scope: "agent-runs",
+    appId: input.appId,
+    runId: run._id,
+    runStatus: run.status,
+  });
+  return run;
+}
+
 export async function loadRun(
   runId: string,
   workspaceId: string,
