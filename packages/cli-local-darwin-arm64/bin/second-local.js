@@ -5,11 +5,14 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import {
   chmodSync,
+  closeSync,
   createWriteStream,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   rmSync,
+  writeSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
@@ -210,7 +213,7 @@ async function start() {
     leaveFullscreen();
     console.error("Error: Could not find the packaged Next.js web server.");
     console.error(
-      "Build it with: npm --prefix apps/web run build && npm --prefix packages/cli run build",
+      "Build it with: npm --prefix packages/cli-local-darwin-arm64 run build",
     );
     process.exit(1);
   }
@@ -304,6 +307,8 @@ async function start() {
     workerPort,
     controlPort: controlServer.port,
     webServer: webServer.script,
+    mode: headlessSupervisor ? "headless" : "cli",
+    headless: headlessSupervisor,
   });
 
   console.log();
@@ -656,7 +661,10 @@ function requireHeadlessAppPayload(payload) {
 }
 
 async function ensureHeadlessRuntime() {
-  const existingRuntime = await findExistingRuntime();
+  const existingRuntime = await findExistingRuntime({ requireHeadless: true });
+  if (existingRuntime?.headlessCompatible === false) {
+    throw nonHeadlessRuntimeError(existingRuntime);
+  }
   if (existingRuntime?.publicUrl) return existingRuntime.publicUrl;
 
   await spawnHeadlessSupervisor();
@@ -671,30 +679,37 @@ async function ensureHeadlessRuntime() {
 
 async function spawnHeadlessSupervisor() {
   mkdirSync(LOGS_DIR, { recursive: true });
-  const out = createWriteStream(join(LOGS_DIR, "headless-supervisor.log"), {
-    flags: "a",
-  });
-  out.write(`\n[${new Date().toISOString()}] ${process.execPath} ${__filename} start --headless-supervisor\n`);
-  const child = spawn(
-    process.execPath,
-    [
-      __filename,
-      "start",
-      "--port",
-      String(port),
-      "--headless-supervisor",
-    ],
-    {
-      detached: true,
-      stdio: ["ignore", out, out],
-      env: {
-        ...process.env,
-        SECOND_HEADLESS_SUPERVISOR: "1",
-        SECOND_CLI_NO_FULLSCREEN: "1",
-        SECOND_CLI_QUIET: "1",
-      },
-    },
+  const logPath = join(LOGS_DIR, "headless-supervisor.log");
+  const logFd = openSync(logPath, "a", 0o600);
+  writeSync(
+    logFd,
+    `\n[${new Date().toISOString()}] ${process.execPath} ${__filename} start --headless-supervisor\n`,
   );
+  let child;
+  try {
+    child = spawn(
+      process.execPath,
+      [
+        __filename,
+        "start",
+        "--port",
+        String(port),
+        "--headless-supervisor",
+      ],
+      {
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+        env: {
+          ...process.env,
+          SECOND_HEADLESS_SUPERVISOR: "1",
+          SECOND_CLI_NO_FULLSCREEN: "1",
+          SECOND_CLI_QUIET: "1",
+        },
+      },
+    );
+  } finally {
+    closeSync(logFd);
+  }
   child.unref();
   await waitForChildSpawn(child);
 }
@@ -816,17 +831,25 @@ function getStartupTaskName(err) {
   return "Local services";
 }
 
-async function findExistingRuntime() {
+async function findExistingRuntime({ requireHeadless = false } = {}) {
   const state = readRuntimeState({ allowAnyPackageName: true });
   const control = await readHealthyLocalControlState();
 
   if (control) {
-    return runtimeInfoFromState(state, "control server");
+    const info = runtimeInfoFromState(state, "control server");
+    if (requireHeadless && !isHeadlessRuntimeMetadata(state, control)) {
+      return { ...info, headlessCompatible: false };
+    }
+    return info;
   }
 
   if (state) {
     if (isRuntimeStateActive(state)) {
-      return runtimeInfoFromState(state, "runtime state");
+      const info = runtimeInfoFromState(state, "runtime state");
+      if (requireHeadless && !isHeadlessRuntimeMetadata(state)) {
+        return { ...info, headlessCompatible: false };
+      }
+      return info;
     }
 
     await stopRuntimeFromState(state);
@@ -840,7 +863,11 @@ async function findExistingRuntime() {
     lock.supervisorPid !== process.pid &&
     isProcessAlive(lock.supervisorPid)
   ) {
-    return runtimeInfoFromState(lock, "runtime lock");
+    const info = runtimeInfoFromState(lock, "runtime lock");
+    if (requireHeadless && !isHeadlessRuntimeMetadata(lock)) {
+      return { ...info, headlessCompatible: false };
+    }
+    return info;
   }
 
   removeRuntimeLock();
@@ -856,6 +883,24 @@ function runtimeInfoFromState(state, source) {
     publicUrl: runningPort ? `http://localhost:${runningPort}` : null,
     requestedPort: port,
   };
+}
+
+function isHeadlessRuntimeMetadata(...states) {
+  return states.some(
+    (state) =>
+      state &&
+      typeof state === "object" &&
+      (state.headless === true || state.mode === "headless"),
+  );
+}
+
+function nonHeadlessRuntimeError(info) {
+  const target = info?.publicUrl ? ` at ${info.publicUrl}` : "";
+  const err = new Error(
+    `A non-headless Second runtime is already running${target}. Stop it with \`npx --yes @second-inc/cli stop\`, then retry headless start.`,
+  );
+  err.code = "non_headless_runtime_running";
+  return err;
 }
 
 function isRuntimeStateActive(state) {
@@ -916,6 +961,8 @@ function acquireRuntimeLock({ port: webPort }) {
             packageName: packageMetadata.name,
             version: packageMetadata.version,
             runtime: "native",
+            mode: headlessSupervisor ? "headless" : "cli",
+            headless: headlessSupervisor,
             supervisorPid: process.pid,
             port: webPort,
             startedAt: new Date().toISOString(),
@@ -983,7 +1030,16 @@ async function readHealthyLocalControlState() {
     const res = await fetch(`${state.hostUrl}/health`, {
       signal: AbortSignal.timeout(1500),
     });
-    return res.ok ? state : null;
+    if (!res.ok) return null;
+    let health = null;
+    try {
+      health = await res.json();
+    } catch {
+      health = null;
+    }
+    return health && typeof health === "object"
+      ? { ...state, ...health }
+      : state;
   } catch {
     return null;
   }
@@ -1297,6 +1353,8 @@ function startControlServer({
           packageName,
           currentVersion,
           runtime: "native",
+          mode: headlessSupervisor ? "headless" : "cli",
+          headless: headlessSupervisor,
           updating: updateInProgress,
         });
       }
@@ -1770,7 +1828,8 @@ function writeLocalControlState(serverInfo) {
         packageName: packageMetadata.name,
         currentVersion: packageMetadata.version,
         runtime: "native",
-        mode: "cli",
+        mode: headlessSupervisor ? "headless" : "cli",
+        headless: headlessSupervisor,
         writtenAt: new Date().toISOString(),
       },
       null,

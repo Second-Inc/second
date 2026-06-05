@@ -8,7 +8,7 @@
       "name": "second-headless-app-builder",
       "source": {
         "source": "local",
-        "path": "./plugins/second-headless-app-builder"
+        "path": "./second-headless-app-builder"
       },
       "policy": {
         "installation": "AVAILABLE",
