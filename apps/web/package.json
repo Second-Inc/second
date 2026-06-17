@@ -12,7 +12,7 @@
   "dependencies": {
     "@ai-sdk/react": "^3.0.140",
     "@paper-design/shaders-react": "^0.0.76",
-    "@sentry/nextjs": "^10.53.1",
+    "@sentry/nextjs": "^10.58.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
     "@workos-inc/node": "^8.12.0",
@@ -27,7 +27,7 @@
     "mongodb": "^6.21.0",
     "next": "^16.2.6",
     "postcss": "8.5.14",
-    "posthog-js": "^1.374.2",
+    "posthog-js": "^1.388.2",
     "radix-ui": "^1.4.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
