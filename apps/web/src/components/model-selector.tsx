@@ -63,15 +63,37 @@ function RuntimeIcon({
     );
   }
 
-  const width = runtime.id === "opencode" ? Math.round(size * 0.8) : size;
   const className = size === 16 ? "rounded-sm" : "rounded";
+
+  if (runtime.id === "opencode" && runtime.iconDark) {
+    const width = Math.round(size * 0.8);
+
+    return (
+      <span className="inline-flex shrink-0 items-center justify-center">
+        <Image
+          src={runtime.icon}
+          alt={alt}
+          width={width}
+          height={size}
+          className="block h-4 w-auto shrink-0 rounded-none dark:hidden"
+        />
+        <Image
+          src={runtime.iconDark}
+          alt={alt}
+          width={width}
+          height={size}
+          className="hidden h-4 w-auto shrink-0 rounded-none dark:block"
+        />
+      </span>
+    );
+  }
 
   if (!runtime.iconDark) {
     return (
       <Image
         src={runtime.icon}
         alt={alt}
-        width={width}
+        width={size}
         height={size}
         className={className}
       />
@@ -83,14 +105,14 @@ function RuntimeIcon({
       <Image
         src={runtime.icon}
         alt={alt}
-        width={width}
+        width={size}
         height={size}
         className={`${className} dark:hidden`}
       />
       <Image
         src={runtime.iconDark}
         alt={alt}
-        width={width}
+        width={size}
         height={size}
         className={`hidden ${className} dark:block`}
       />
