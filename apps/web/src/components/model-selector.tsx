@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   Check,
   ChevronDown,
-  Code2,
   Info,
   Plus,
   Settings2Icon,
@@ -37,6 +36,7 @@ import {
   getRuntime,
   normalizeRuntimeSettings,
   type AgentRuntimeSettings,
+  type RuntimeRegistryEntry,
 } from "@/lib/agent/runtime-registry";
 import type { OpenCodeDiscoveredModel } from "@/lib/agent/opencode-models";
 
@@ -45,6 +45,58 @@ type ModelSelectorProps = {
   onChange: (value: AgentRuntimeSettings) => void;
   side?: "top" | "bottom";
 };
+
+function RuntimeIcon({
+  runtime,
+  size,
+  alt = "",
+}: {
+  runtime: RuntimeRegistryEntry;
+  size: 16 | 24;
+  alt?: string;
+}) {
+  if (!runtime.icon) {
+    return (
+      <div className="flex size-6 items-center justify-center rounded border bg-muted">
+        <Terminal className="size-3.5 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const width = runtime.id === "opencode" ? Math.round(size * 0.8) : size;
+  const className = size === 16 ? "rounded-sm" : "rounded";
+
+  if (!runtime.iconDark) {
+    return (
+      <Image
+        src={runtime.icon}
+        alt={alt}
+        width={width}
+        height={size}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <span className="inline-flex shrink-0 items-center justify-center">
+      <Image
+        src={runtime.icon}
+        alt={alt}
+        width={width}
+        height={size}
+        className={`${className} dark:hidden`}
+      />
+      <Image
+        src={runtime.iconDark}
+        alt={alt}
+        width={width}
+        height={size}
+        className={`hidden ${className} dark:block`}
+      />
+    </span>
+  );
+}
 
 export function ModelSelector({
   value,
@@ -117,54 +169,27 @@ export function ModelSelector({
               <div key={runtime.id}>
                 {index > 0 ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuLabel className="flex items-center gap-2">
-                  {runtime.icon ? (
-                    <Image
-                      src={runtime.icon}
-                      alt=""
-                      width={16}
-                      height={16}
-                      className="rounded-sm"
-                    />
-                  ) : (
-                    <Code2 className="size-3.5 text-muted-foreground" />
-                  )}
+                  <RuntimeIcon runtime={runtime} size={16} />
                   {runtime.name}
                 </DropdownMenuLabel>
-                {runtime.models.map((model) => (
-                  <DropdownMenuRadioItem
-                    key={`${runtime.id}:${model.id}`}
-                    value={`${runtime.id}:${model.id}`}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="text-xs">{model.name}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {model.description}
-                      </span>
-                    </div>
-                    {"experimental" in model && model.experimental ? (
-                      <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        Experimental
-                      </span>
-                    ) : null}
-                  </DropdownMenuRadioItem>
-                ))}
-                {runtime.id === "opencode" &&
-                value.runtimeId === "opencode" &&
-                !runtime.models.some((model) => model.id === value.model) ? (
-                  <DropdownMenuRadioItem
-                    key={`opencode:${value.model}`}
-                    value={`opencode:${value.model}`}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="text-xs">
-                        {selectedOpenCodeModel?.name ?? value.model}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {selectedOpenCodeModel?.description ?? "OpenCode model"}
-                      </span>
-                    </div>
-                  </DropdownMenuRadioItem>
-                ) : null}
+                {runtime.id === "opencode" ? null : runtime.models.map((model) => (
+                    <DropdownMenuRadioItem
+                      key={`${runtime.id}:${model.id}`}
+                      value={`${runtime.id}:${model.id}`}
+                    >
+                      <div className="flex min-w-0 flex-col">
+                        <span className="text-xs">{model.name}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {model.description}
+                        </span>
+                      </div>
+                      {"experimental" in model && model.experimental ? (
+                        <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          Experimental
+                        </span>
+                      ) : null}
+                    </DropdownMenuRadioItem>
+                  ))}
                 {runtime.id === "opencode" ? (
                   <DropdownMenuItem
                     onSelect={() => {
@@ -232,19 +257,11 @@ export function ModelSelector({
             {AGENT_RUNTIMES.map((runtime) => (
               <div key={runtime.id} className="flex flex-col gap-3 rounded-lg border p-4">
                 <div className="flex items-center gap-3">
-                  {runtime.icon ? (
-                    <Image
-                      src={runtime.icon}
-                      alt={runtime.shortName}
-                      width={24}
-                      height={24}
-                      className="rounded"
-                    />
-                  ) : (
-                    <div className="flex size-6 items-center justify-center rounded border bg-muted">
-                      <Terminal className="size-3.5 text-muted-foreground" />
-                    </div>
-                  )}
+                  <RuntimeIcon
+                    runtime={runtime}
+                    size={24}
+                    alt={runtime.shortName}
+                  />
                   <span className="flex-1 text-sm font-medium">{runtime.name}</span>
                   {runtime.id === selectedRuntime.id ? (
                     <div className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400">

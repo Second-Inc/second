@@ -37,6 +37,7 @@ export type RuntimeRegistryEntry = {
   shortName: string;
   description: string;
   icon?: string;
+  iconDark?: string;
   docsUrl: string;
   detectionKey: "claudeCli" | "codexCli" | "opencodeCli";
   models: readonly RuntimeModel[];
@@ -165,15 +166,12 @@ export const AGENT_RUNTIMES = [
     name: "OpenCode",
     shortName: "OpenCode",
     description: "OpenCode CLI builds with scoped Second MCP tools.",
-    icon: undefined,
+    icon: "/icons/opencode-light.svg",
+    iconDark: "/icons/opencode-dark.svg",
     docsUrl: "https://opencode.ai/docs/cli/",
     detectionKey: "opencodeCli",
     defaultModel: "openai/gpt-5.5",
-    models: [
-      { id: "openai/gpt-5.5", name: "OpenAI GPT-5.5", description: "OpenAI through OpenCode" },
-      { id: "openai/gpt-5.4", name: "OpenAI GPT-5.4", description: "OpenAI through OpenCode" },
-      { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", description: "Anthropic through OpenCode" },
-    ],
+    models: [],
     params: [
       {
         id: "variant",
@@ -218,6 +216,8 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = Object.fromEntries(
 );
 
 const MODEL_DISPLAY_NAME_ALIASES: Record<string, string> = {
+  "openai/gpt-5.5": "OpenAI GPT-5.5",
+  "openai/gpt-5.4": "OpenAI GPT-5.4",
   "anthropic/claude-opus-4-8": "Claude Opus 4.8",
   "claude-opus-4-6-20251101": "Opus 4.6",
   "claude-sonnet-4-6-20251101": "Sonnet 4.6",
@@ -255,9 +255,11 @@ export function isAgentRuntimeId(value: unknown): value is AgentRuntimeId {
 
 export function findRuntimeForModel(model: string): RuntimeRegistryEntry | null {
   const normalizedModel = normalizeRuntimeModelId(model);
-  return AGENT_RUNTIMES.find((runtime) =>
+  const staticRuntime = AGENT_RUNTIMES.find((runtime) =>
     runtime.models.some((candidate) => candidate.id === normalizedModel),
-  ) ?? null;
+  );
+  if (staticRuntime) return staticRuntime;
+  return isOpenCodeModelId(model) ? getRuntime("opencode") : null;
 }
 
 export function getModelDisplayName(model: string): string {
