@@ -6,8 +6,8 @@ import Image from "next/image";
 import {
   ArrowRightIcon,
   CheckIcon,
-  KeyRoundIcon,
-  TerminalIcon,
+  // KeyRoundIcon,
+  // TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -207,6 +207,27 @@ function ProviderCard({
   );
 }
 
+function OpenCodeIcon({ alt = "" }: { alt?: string }) {
+  return (
+    <span className="flex size-11 shrink-0 items-center justify-center">
+      <Image
+        src="/icons/opencode-light.svg"
+        alt={alt}
+        width={26}
+        height={32}
+        className="h-8 w-auto rounded-none dark:hidden"
+      />
+      <Image
+        src="/icons/opencode-dark.svg"
+        alt={alt}
+        width={26}
+        height={32}
+        className="hidden h-8 w-auto rounded-none dark:block"
+      />
+    </span>
+  );
+}
+
 export function ProviderSetup() {
   const [detection, setDetection] = useState<DetectionResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -276,7 +297,8 @@ export function ProviderSetup() {
 
   return (
     <div className="w-full">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {/*
         <ProviderCard
           loading={loading}
           icon={
@@ -298,6 +320,7 @@ export function ProviderSetup() {
           }
           actionLabel="Deployment only"
         />
+        */}
 
         <ProviderCard
           loading={loading}
@@ -398,11 +421,7 @@ export function ProviderSetup() {
 
         <ProviderCard
           loading={loading}
-          icon={
-            <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-background shadow-sm">
-              <TerminalIcon className="size-5 text-muted-foreground" />
-            </div>
-          }
+          icon={<OpenCodeIcon alt="OpenCode" />}
           name="OpenCode CLI"
           tagline="OpenCode · provider/model"
           detected={opencodeRuntimeReady}
