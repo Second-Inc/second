@@ -10,12 +10,14 @@ import {
   // TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+import { OpenCodeModelDialog } from "@/components/opencode-model-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isOpenCodeModelId } from "@/lib/agent/opencode-models";
 import {
   getDefaultRuntimeSettings,
-  type AgentRuntimeId,
+  type AgentRuntimeSettings,
   writePreferredRuntimeSettings,
 } from "@/lib/agent/runtime-registry";
 import { cn } from "@/lib/utils";
@@ -228,10 +230,19 @@ function OpenCodeIcon({ alt = "" }: { alt?: string }) {
   );
 }
 
+const OPENCODE_MODEL_SELECTION_SETTINGS: AgentRuntimeSettings = {
+  runtimeId: "opencode",
+  model: "",
+  params: { variant: "auto" },
+};
+
 export function ProviderSetup() {
   const [detection, setDetection] = useState<DetectionResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [choosing, setChoosing] = useState(false);
+  const [openCodeDialogOpen, setOpenCodeDialogOpen] = useState(false);
+  const [openCodeRuntimeSettings, setOpenCodeRuntimeSettings] =
+    useState<AgentRuntimeSettings>(OPENCODE_MODEL_SELECTION_SETTINGS);
 
   useEffect(() => {
     detect();
@@ -263,11 +274,11 @@ export function ProviderSetup() {
     detection?.runtimes?.["codex-cli"]?.available ||
     detection?.runtimes?.opencode?.available;
 
-  async function continueToStart(runtimeId?: AgentRuntimeId) {
+  async function continueToStart(runtimeSettings?: AgentRuntimeSettings) {
     if (choosing) return;
     setChoosing(true);
-    if (runtimeId) {
-      writePreferredRuntimeSettings(getDefaultRuntimeSettings(runtimeId));
+    if (runtimeSettings) {
+      writePreferredRuntimeSettings(runtimeSettings);
     }
     await fetch("/api/onboarding/step", {
       method: "POST",
@@ -294,6 +305,12 @@ export function ProviderSetup() {
     !!opencodeRuntime?.auth.envKeyConfigured ||
     !!opencodeRuntime?.auth.localAuthConfigured;
   // const apiKeyReady = !!detection?.apiKeyConfigured;
+
+  function chooseOpenCode() {
+    if (!opencodeRuntimeReady || choosing) return;
+    setOpenCodeRuntimeSettings(OPENCODE_MODEL_SELECTION_SETTINGS);
+    setOpenCodeDialogOpen(true);
+  }
 
   return (
     <div className="w-full">
@@ -368,7 +385,9 @@ export function ProviderSetup() {
             )
           }
           onChoose={
-            claudeDetected ? () => void continueToStart("claude-code") : undefined
+            claudeDetected
+              ? () => void continueToStart(getDefaultRuntimeSettings("claude-code"))
+              : undefined
           }
         />
 
@@ -415,7 +434,9 @@ export function ProviderSetup() {
             )
           }
           onChoose={
-            codexRuntimeReady ? () => void continueToStart("codex-cli") : undefined
+            codexRuntimeReady
+              ? () => void continueToStart(getDefaultRuntimeSettings("codex-cli"))
+              : undefined
           }
         />
 
@@ -473,11 +494,24 @@ export function ProviderSetup() {
               </span>
             )
           }
-          onChoose={
-            opencodeRuntimeReady ? () => void continueToStart("opencode") : undefined
-          }
+          actionLabel={opencodeRuntimeReady ? "Choose model" : undefined}
+          onChoose={opencodeRuntimeReady ? chooseOpenCode : undefined}
         />
       </div>
+
+      <OpenCodeModelDialog
+        open={openCodeDialogOpen}
+        value={openCodeRuntimeSettings}
+        onOpenChange={(nextOpen) => {
+          setOpenCodeDialogOpen(nextOpen);
+          if (nextOpen || !isOpenCodeModelId(openCodeRuntimeSettings.model)) return;
+          void continueToStart(openCodeRuntimeSettings);
+        }}
+        onChange={(settings) => {
+          setOpenCodeRuntimeSettings(settings);
+          writePreferredRuntimeSettings(settings);
+        }}
+      />
 
       {!loading && detection?.error && (
         <p
