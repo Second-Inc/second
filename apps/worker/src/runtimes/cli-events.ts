@@ -19,6 +19,36 @@ export type CliRuntimeOptions = {
   signal?: AbortSignal;
 };
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === "string" && value ? value : null;
+}
+
+function errorFromJsonEvent(event: unknown): Error | null {
+  const record = asRecord(event);
+  const type = stringField(record, "type") ?? stringField(record, "event");
+  const rawError = asRecord(record.error);
+  const nestedError = asRecord(rawError.error);
+  const errorRecord = Object.keys(nestedError).length > 0 ? nestedError : rawError;
+
+  if (type !== "error" && Object.keys(errorRecord).length === 0) return null;
+
+  const code = stringField(errorRecord, "code");
+  const message =
+    stringField(errorRecord, "message") ??
+    stringField(rawError, "message") ??
+    stringField(record, "message") ??
+    "Runtime emitted an error event.";
+  const details = code ? `${code}: ${message}` : message;
+  return new Error(`${details}`);
+}
+
 function toolResult(message: RuntimeRunResultMessage): {
   id: string;
   content: unknown;
@@ -62,6 +92,7 @@ export async function* runJsonlCliRuntime(
   let processDone = false;
   let processError: Error | null = null;
   let cancelled = false;
+  let stopAfterApprovalTool = false;
 
   const cancelProcess = () => {
     cancelled = true;
@@ -85,11 +116,20 @@ export async function* runJsonlCliRuntime(
 
   function handleJsonLine(line: string) {
     if (!line.trim()) return;
+    if (stopAfterApprovalTool) return;
     let event: unknown;
     try {
       event = JSON.parse(line);
     } catch {
       push({ type: "tool_use_summary", summary: line });
+      return;
+    }
+
+    const eventError = errorFromJsonEvent(event);
+    if (eventError) {
+      processError = eventError;
+      if (!child.killed) child.kill("SIGTERM");
+      queueResolver?.();
       return;
     }
 
@@ -114,7 +154,9 @@ export async function* runJsonlCliRuntime(
         );
       push(message);
       if (shouldStopAfterTool && !child.killed) {
+        stopAfterApprovalTool = true;
         child.kill("SIGTERM");
+        break;
       }
     }
   }

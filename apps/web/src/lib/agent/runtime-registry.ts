@@ -168,7 +168,7 @@ export const AGENT_RUNTIMES = [
     icon: undefined,
     docsUrl: "https://opencode.ai/docs/cli/",
     detectionKey: "opencodeCli",
-    defaultModel: "openai/gpt-5.4",
+    defaultModel: "openai/gpt-5.5",
     models: [
       { id: "openai/gpt-5.5", name: "OpenAI GPT-5.5", description: "OpenAI through OpenCode" },
       { id: "openai/gpt-5.4", name: "OpenAI GPT-5.4", description: "OpenAI through OpenCode" },

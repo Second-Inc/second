@@ -102,6 +102,50 @@ export function openCodeAuthEnvKeysForModel(model: string): string[] {
   return [];
 }
 
+export function openCodeAuthEnvConfiguredForModel(model: string): boolean {
+  return openCodeAuthEnvKeysForModel(model).some((key) => {
+    const value = process.env[key];
+    return typeof value === "string" && value.length > 0;
+  });
+}
+
+function openCodeLocalAuthSeedingEnabled(): boolean {
+  return (
+    process.env.SECOND_ALLOW_OPENCODE_LOCAL_AUTH === "1" ||
+    process.env.NODE_ENV !== "production"
+  );
+}
+
+function openCodeLocalAuthSourcePath(): string {
+  const explicitAuthFile = process.env.SECOND_OPENCODE_AUTH_FILE?.trim();
+  if (explicitAuthFile) return explicitAuthFile;
+
+  const dataHome =
+    process.env.SECOND_OPENCODE_DATA_HOME?.trim() ||
+    process.env.XDG_DATA_HOME?.trim() ||
+    join(homedir(), ".local", "share");
+
+  return join(dataHome, "opencode", "auth.json");
+}
+
+export function openCodeLocalAuthAvailable(): boolean {
+  return openCodeLocalAuthSeedingEnabled() && existsSync(openCodeLocalAuthSourcePath());
+}
+
+export function seedOpenCodeAuthFromLocalLogin(runtimeDir: string): void {
+  if (!openCodeLocalAuthSeedingEnabled()) return;
+
+  const sourcePath = openCodeLocalAuthSourcePath();
+  if (!existsSync(sourcePath)) return;
+
+  const targetDir = join(runtimeDir, ".local", "share", "opencode");
+  mkdirSync(targetDir, { recursive: true, mode: 0o700 });
+  const targetPath = join(targetDir, "auth.json");
+  if (sourcePath === targetPath) return;
+  copyFileSync(sourcePath, targetPath);
+  chmodSync(targetPath, 0o600);
+}
+
 export function writePrivateJsonFile(
   dir: string,
   filename: string,

@@ -7,6 +7,7 @@ import {
   ArrowRightIcon,
   CheckIcon,
   KeyRoundIcon,
+  TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +35,11 @@ type DetectionResult = {
         linuxBubblewrapRequired?: boolean;
         linuxBubblewrapAvailable?: boolean;
       };
-      auth: { envKeyConfigured: boolean; cliLikelyConfigured: boolean };
+      auth: {
+        envKeyConfigured: boolean;
+        cliLikelyConfigured: boolean;
+        localAuthConfigured?: boolean;
+      };
       error?: string;
     }
   >;
@@ -234,7 +239,8 @@ export function ProviderSetup() {
 
   const hasAny =
     detection?.runtimes?.["claude-code"]?.available ||
-    detection?.runtimes?.["codex-cli"]?.available;
+    detection?.runtimes?.["codex-cli"]?.available ||
+    detection?.runtimes?.opencode?.available;
 
   async function continueToStart(runtimeId?: AgentRuntimeId) {
     if (choosing) return;
@@ -259,11 +265,18 @@ export function ProviderSetup() {
   const claudeInstalled = !!detection?.claudeCli.available;
   const codexRuntimeReady = !!detection?.runtimes?.["codex-cli"]?.available;
   const codexInstalled = !!detection?.codexCli.available;
+  const opencodeRuntime = detection?.runtimes?.opencode;
+  const opencodeRuntimeReady = !!opencodeRuntime?.available;
+  const opencodeInstalled = !!detection?.opencodeCli.available;
+  const opencodeJsonEvents = !!opencodeRuntime?.features?.jsonEvents;
+  const opencodeConfigured =
+    !!opencodeRuntime?.auth.envKeyConfigured ||
+    !!opencodeRuntime?.auth.localAuthConfigured;
   // const apiKeyReady = !!detection?.apiKeyConfigured;
 
   return (
     <div className="w-full">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <ProviderCard
           loading={loading}
           icon={
@@ -380,6 +393,69 @@ export function ProviderSetup() {
           }
           onChoose={
             codexRuntimeReady ? () => void continueToStart("codex-cli") : undefined
+          }
+        />
+
+        <ProviderCard
+          loading={loading}
+          icon={
+            <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-background shadow-sm">
+              <TerminalIcon className="size-5 text-muted-foreground" />
+            </div>
+          }
+          name="OpenCode CLI"
+          tagline="OpenCode · provider/model"
+          detected={opencodeRuntimeReady}
+          statusState={
+            opencodeRuntimeReady ? "ready" : opencodeInstalled ? "warn" : "missing"
+          }
+          statusLabel={
+            opencodeRuntimeReady
+              ? "Detected"
+              : opencodeInstalled && !opencodeJsonEvents
+                ? "Upgrade required"
+                : opencodeInstalled && !opencodeConfigured
+                  ? "Needs auth"
+                  : "Not found"
+          }
+          description={
+            opencodeRuntimeReady
+              ? "Uses OpenCode CLI with scoped Second MCP tools."
+              : opencodeInstalled && !opencodeJsonEvents
+                ? "OpenCode is installed, but this version cannot stream JSON events."
+                : opencodeInstalled
+                  ? "OpenCode is installed, but no provider credentials were found."
+                  : "Uses OpenCode with provider/model IDs such as openai/gpt-5.5."
+          }
+          hint={
+            opencodeRuntimeReady ? (
+              <span>
+                <code>opencode</code> found
+                {detection?.opencodeCli.version
+                  ? `: ${detection.opencodeCli.version}`
+                  : ""}
+                {opencodeRuntime?.auth.localAuthConfigured
+                  ? "; using local OpenCode auth"
+                  : ""}
+              </span>
+            ) : opencodeInstalled && !opencodeJsonEvents ? (
+              <span>
+                Upgrade OpenCode until <code>opencode run --help</code> lists{" "}
+                <code>--format json</code>
+              </span>
+            ) : opencodeInstalled ? (
+              <span>
+                Run <code>opencode auth login</code> or set{" "}
+                <code>OPENAI_API_KEY</code>
+              </span>
+            ) : (
+              <span>
+                Install OpenCode, then run <code>opencode auth login</code>
+              </span>
+            )
+          }
+          onChoose={
+            opencodeRuntimeReady ? () => void continueToStart("opencode") : undefined
           }
         />
       </div>

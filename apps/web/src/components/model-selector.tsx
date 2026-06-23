@@ -30,12 +30,6 @@ import {
   type AgentRuntimeSettings,
 } from "@/lib/agent/runtime-registry";
 
-// OpenCode remains wired in the runtime layer, but it is still under
-// development and will be exposed in the picker once deployment is ready.
-const VISIBLE_AGENT_RUNTIMES = AGENT_RUNTIMES.filter(
-  (runtime) => runtime.id !== "opencode",
-);
-
 type ModelSelectorProps = {
   value: AgentRuntimeSettings;
   onChange: (value: AgentRuntimeSettings) => void;
@@ -70,7 +64,7 @@ export function ModelSelector({
             value={`${value.runtimeId}:${value.model}`}
             onValueChange={(nextValue) => {
               const [runtimeId, model] = nextValue.split(":");
-              const runtime = VISIBLE_AGENT_RUNTIMES.find(
+              const runtime = AGENT_RUNTIMES.find(
                 (entry) => entry.id === runtimeId,
               );
               if (!runtime || !model) return;
@@ -82,7 +76,7 @@ export function ModelSelector({
               );
             }}
           >
-            {VISIBLE_AGENT_RUNTIMES.map((runtime, index) => (
+            {AGENT_RUNTIMES.map((runtime, index) => (
               <div key={runtime.id}>
                 {index > 0 ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuLabel className="flex items-center gap-2">
@@ -171,7 +165,7 @@ export function ModelSelector({
               Configured
             </div>
 
-            {VISIBLE_AGENT_RUNTIMES.map((runtime) => (
+            {AGENT_RUNTIMES.map((runtime) => (
               <div key={runtime.id} className="flex flex-col gap-3 rounded-lg border p-4">
                 <div className="flex items-center gap-3">
                   {runtime.icon ? (

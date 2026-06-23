@@ -1,9 +1,12 @@
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { createToolBrokerSession, deleteToolBrokerSession } from "../tool-broker.js";
 import {
   buildRuntimeProcessEnv,
   createStableRuntimeDir,
+  openCodeAuthEnvConfiguredForModel,
   openCodeAuthEnvKeysForModel,
+  seedOpenCodeAuthFromLocalLogin,
   writePrivateJsonFile,
 } from "./process-env.js";
 import { runJsonlCliRuntime } from "./cli-events.js";
@@ -22,17 +25,37 @@ function toolNamespaceAllowed(
   return allowedTools.some((toolName) => toolName.startsWith(`mcp__${namespace}__`));
 }
 
+export function buildOpenCodeToolConfig(allowedTools: string[] | undefined) {
+  return {
+    write: toolAllowed(allowedTools, "Write"),
+    edit: toolAllowed(allowedTools, "Edit"),
+    read: toolAllowed(allowedTools, "Read"),
+    grep: toolAllowed(allowedTools, "Grep"),
+    glob: toolAllowed(allowedTools, "Glob"),
+    bash: toolAllowed(allowedTools, "Bash"),
+    webfetch: toolAllowed(allowedTools, "WebFetch"),
+    websearch: toolAllowed(allowedTools, "WebSearch"),
+    task: toolAllowed(allowedTools, "Task"),
+    todowrite: toolAllowed(allowedTools, "TodoWrite"),
+    skill: toolAllowed(allowedTools, "Skill"),
+    apply_patch: toolAllowed(allowedTools, "Edit"),
+    second: toolNamespaceAllowed(allowedTools, "second"),
+    app_tools: toolNamespaceAllowed(allowedTools, "app_tools"),
+    app_data: toolNamespaceAllowed(allowedTools, "app_data"),
+  };
+}
+
 function opencodeCommand(): string {
   return process.env.SECOND_OPENCODE_PATH?.trim() || "opencode";
 }
 
 function opencodeRunSupportsJsonFormat(command: string): boolean {
   try {
-    const help = execFileSync(command, ["run", "--help"], {
+    const help = spawnSync(command, ["run", "--help"], {
       encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    return help.includes("--format");
+    return `${help.stdout ?? ""}\n${help.stderr ?? ""}`.includes("--format");
   } catch {
     return false;
   }
@@ -50,6 +73,9 @@ export const openCodeRuntimeAdapter: RuntimeAdapter = {
 
     const runKey = input.config.runtimeSessionKey ?? input.config.appId ?? "builder";
     const runtimeDir = createStableRuntimeDir("opencode", runKey);
+    if (!openCodeAuthEnvConfiguredForModel(input.settings.model)) {
+      seedOpenCodeAuthFromLocalLogin(runtimeDir);
+    }
     const broker = createToolBrokerSession({
       runtimeId: "opencode",
       config: input.config,
@@ -84,19 +110,7 @@ export const openCodeRuntimeAdapter: RuntimeAdapter = {
         agent: {
           "second-builder": {
             prompt: input.config.systemPrompt,
-            tools: {
-              write: toolAllowed(allowedTools, "Write"),
-              edit: toolAllowed(allowedTools, "Edit"),
-              read: toolAllowed(allowedTools, "Read"),
-              grep: toolAllowed(allowedTools, "Grep"),
-              glob: toolAllowed(allowedTools, "Glob"),
-              bash: toolAllowed(allowedTools, "Bash"),
-              webfetch: toolAllowed(allowedTools, "WebFetch"),
-              websearch: toolAllowed(allowedTools, "WebSearch"),
-              second: toolNamespaceAllowed(allowedTools, "second"),
-              app_tools: toolNamespaceAllowed(allowedTools, "app_tools"),
-              app_data: toolNamespaceAllowed(allowedTools, "app_data"),
-            },
+            tools: buildOpenCodeToolConfig(allowedTools),
           },
         },
         permission: {
@@ -112,6 +126,7 @@ export const openCodeRuntimeAdapter: RuntimeAdapter = {
         extraEnv: {
           HOME: runtimeDir,
           XDG_CONFIG_HOME: runtimeDir,
+          XDG_DATA_HOME: join(runtimeDir, ".local", "share"),
           OPENCODE_CONFIG: configPath,
           OPENCODE_CONFIG_DIR: runtimeDir,
           OPENCODE_CONFIG_CONTENT: JSON.stringify(openCodeConfig),
