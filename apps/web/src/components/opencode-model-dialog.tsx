@@ -627,6 +627,7 @@ export function OpenCodeModelDialog({
                     groupedModels[group].length > 0 ? (
                       <div key={group} className="flex flex-col gap-1.5">
                         <div className="flex items-center gap-1.5 px-1.5">
+                          {/* Support category icons are intentionally hidden.
                           {(() => {
                             const StatusIcon = STATUS_META[group].icon;
                             return (
@@ -637,7 +638,7 @@ export function OpenCodeModelDialog({
                                 )}
                               />
                             );
-                          })()}
+                          })()} */}
                           <span className="text-[11px] font-medium text-foreground/80">
                             {STATUS_META[group].label}
                           </span>
@@ -648,7 +649,6 @@ export function OpenCodeModelDialog({
                         {groupedModels[group].map((model) => {
                           const selected = model.id === value.model;
                           const contextLimit = formatTokenLimit(model.contextLimit);
-                          const statusMeta = STATUS_META[model.supportStatus];
 
                           return (
                             <button
@@ -673,15 +673,17 @@ export function OpenCodeModelDialog({
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                  {/* Support labels are intentionally hidden in rows.
                                   <span className="inline-flex items-center gap-1">
                                     <span
                                       className={cn(
                                         "size-1.5 rounded-full",
-                                        statusMeta.dot,
+                                        STATUS_META[model.supportStatus].dot,
                                       )}
                                     />
                                     {model.supportLabel}
                                   </span>
+                                  */}
                                   {model.reasoning ? (
                                     <span className="inline-flex items-center gap-0.5">
                                       <BrainIcon className="size-2.5" />
@@ -732,6 +734,7 @@ export function OpenCodeModelDialog({
                   </div>
                 </div>
 
+                {/* Support classification callout is intentionally hidden.
                 <div
                   className={cn(
                     "flex gap-2.5 rounded-xl border p-3",
@@ -758,6 +761,7 @@ export function OpenCodeModelDialog({
                     </p>
                   </div>
                 </div>
+                */}
 
                 <div className="flex flex-wrap gap-1.5">
                   <CapabilityChip icon={WrenchIcon}>Tool calls</CapabilityChip>
