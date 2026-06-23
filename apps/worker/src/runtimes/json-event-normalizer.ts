@@ -57,6 +57,9 @@ function normalizeToolName(rawName: string, runtimeId: AgentRuntimeId): string {
   if (rawName.startsWith("second.")) return `mcp__second__${rawName.slice("second.".length)}`;
   if (rawName.startsWith("app_tools.")) return `mcp__app_tools__${rawName.slice("app_tools.".length)}`;
   if (rawName.startsWith("app_data.")) return `mcp__app_data__${rawName.slice("app_data.".length)}`;
+  if (rawName.startsWith("second_")) return `mcp__second__${rawName.slice("second_".length)}`;
+  if (rawName.startsWith("app_tools_")) return `mcp__app_tools__${rawName.slice("app_tools_".length)}`;
+  if (rawName.startsWith("app_data_")) return `mcp__app_data__${rawName.slice("app_data_".length)}`;
   const lower = rawName.toLowerCase();
   const builtin: Record<string, string> = {
     bash: "Bash",
@@ -165,6 +168,12 @@ export function generateSyntheticSdkMessagesFromJsonEvent(
   const type = String(event.type ?? event.event ?? event.kind ?? "");
   const item = asRecord(event.item);
   const data = asRecord(event.data);
+  const part = asRecord(event.part);
+  const partState = asRecord(part.state);
+  const partMetadata = asRecord(partState.metadata);
+  const partTokens = asRecord(part.tokens);
+  const partCache = asRecord(partTokens.cache);
+  const partType = String(part.type ?? "");
   const messages: RuntimeRunResultMessage[] = [];
 
   const sessionId =
@@ -175,22 +184,42 @@ export function generateSyntheticSdkMessagesFromJsonEvent(
     data.sessionID ??
     data.sessionId ??
     item.thread_id ??
-    item.sessionID;
+    item.sessionID ??
+    part.sessionID ??
+    part.sessionId;
   if (typeof sessionId === "string" && sessionId) {
-    messages.push({
-      type: "system",
-      subtype: "init",
-      session_id: sessionId,
-      providerSessionState: {
-        runtimeId: input.runtimeId,
-        sessionId,
-        format: `${input.runtimeId}-session`,
-      },
-    });
+    const alreadyKnownSession = input.sessionState?.sessionId === sessionId;
+    if (!alreadyKnownSession) {
+      messages.push({
+        type: "system",
+        subtype: "init",
+        session_id: sessionId,
+        providerSessionState: {
+          runtimeId: input.runtimeId,
+          sessionId,
+          format: `${input.runtimeId}-session`,
+        },
+      });
+    }
   }
 
-  const usage = asRecord(event.usage ?? data.usage ?? item.usage);
-  if (Object.keys(usage).length > 0 || type.includes("turn.completed")) {
+  const rawUsage = asRecord(event.usage ?? data.usage ?? item.usage ?? part.usage);
+  const usage = Object.keys(rawUsage).length > 0
+    ? rawUsage
+    : Object.keys(partTokens).length > 0
+      ? {
+          inputTokens: partTokens.input,
+          outputTokens: partTokens.output,
+          cache_read_input_tokens: partCache.read,
+          cache_creation_input_tokens: partCache.write,
+          costUsd: part.cost,
+        }
+      : rawUsage;
+  if (
+    Object.keys(usage).length > 0 ||
+    type.includes("turn.completed") ||
+    partType === "step-finish"
+  ) {
     messages.push(usageMessage(input.settings, usage));
   }
 
@@ -199,6 +228,7 @@ export function generateSyntheticSdkMessagesFromJsonEvent(
     textFrom(event.message) ??
     textFrom(event.text) ??
     textFrom(data.part) ??
+    textFrom(part) ??
     textFrom(item);
   const isTextEvent =
     /message|text|assistant|output|response/.test(type) &&
@@ -210,17 +240,22 @@ export function generateSyntheticSdkMessagesFromJsonEvent(
     event.tool_name ??
     event.toolName ??
     rawTool.name ??
+    part.tool ??
     item.name ??
     data.name;
   const hasToolShape =
     typeof rawName === "string" ||
-    /tool|command|bash|exec|mcp/.test(type);
+    /tool|command|bash|exec|mcp/.test(type) ||
+    partType === "tool";
   if (hasToolShape && !/result|output|completed|finish/.test(type)) {
     const toolCallId = String(
       event.call_id ??
       event.callId ??
+      part.callID ??
+      part.callId ??
       event.id ??
       item.id ??
+      part.id ??
       nextId("tool"),
     );
     const toolName = normalizeToolName(
@@ -232,6 +267,8 @@ export function generateSyntheticSdkMessagesFromJsonEvent(
       event.input ??
       data.input ??
       item.input ??
+      partState.input ??
+      part.input ??
       rawTool.input ??
       {};
     input.pendingToolCalls.set(toolCallId, toolName);
@@ -244,16 +281,23 @@ export function generateSyntheticSdkMessagesFromJsonEvent(
     data.output ??
     data.result ??
     item.output ??
-    item.result;
+    item.result ??
+    partState.output ??
+    partMetadata.output;
   if (
     maybeToolResult !== undefined &&
-    (/tool|command|bash|exec|mcp|completed/.test(type) || input.pendingToolCalls.size > 0)
+    (/tool|command|bash|exec|mcp|completed/.test(type) ||
+      partType === "tool" ||
+      input.pendingToolCalls.size > 0)
   ) {
     const toolCallId = String(
       event.call_id ??
       event.callId ??
+      part.callID ??
+      part.callId ??
       event.id ??
       item.id ??
+      part.id ??
       Array.from(input.pendingToolCalls.keys()).at(-1) ??
       nextId("tool"),
     );

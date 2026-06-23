@@ -47,6 +47,8 @@ import {
   type ProviderSessionState,
 } from "./runtimes/index.js";
 import { claudeSubprocessIsolationStatus } from "./runtimes/claude-env.js";
+import { openCodeLocalAuthAvailable } from "./runtimes/process-env.js";
+import { discoverOpenCodeModels } from "./runtimes/opencode-models.js";
 
 function resolveWorkspaceDir(appId: string): string {
   return process.env.WORKSPACES_DIR
@@ -913,12 +915,12 @@ function binaryHelpIncludes(binary: string, args: string[], expected: string): b
   if (!resolved) return false;
 
   try {
-    return execFileSync(resolved, args, {
+    const result = spawnSync(resolved, args, {
       timeout: 3000,
-      stdio: "pipe",
-    })
-      .toString()
-      .includes(expected);
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return `${result.stdout ?? ""}\n${result.stderr ?? ""}`.includes(expected);
   } catch {
     return false;
   }
@@ -959,6 +961,19 @@ function claudeEnvConfigured(): boolean {
   );
 }
 
+function opencodeEnvConfigured(): boolean {
+  return Boolean(
+    process.env.OPENAI_API_KEY ||
+      process.env.ANTHROPIC_API_KEY ||
+      (process.env.CLAUDE_CODE_USE_BEDROCK &&
+        (process.env.AWS_BEARER_TOKEN_BEDROCK ||
+          process.env.AWS_ACCESS_KEY_ID ||
+          process.env.AWS_PROFILE)) ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GEMINI_API_KEY,
+  );
+}
+
 app.get("/detect-provider", (c) => {
   const claudeCommand = runtimeBinary("SECOND_CLAUDE_PATH", "claude");
   const codexCommand = runtimeBinary("SECOND_CODEX_PATH", "codex");
@@ -972,6 +987,11 @@ app.get("/detect-provider", (c) => {
   const opencodeJsonEvents =
     opencodeCli.available &&
     binaryHelpIncludes(opencodeCommand, ["run", "--help"], "--format");
+  const opencodeEnvAuthConfigured = opencodeEnvConfigured();
+  const opencodeLocalAuthConfigured = openCodeLocalAuthAvailable();
+  const opencodeLikelyConfigured =
+    opencodeCli.available &&
+    (opencodeEnvAuthConfigured || opencodeLocalAuthConfigured);
 
   return c.json({
     runtimes: {
@@ -1001,20 +1021,12 @@ app.get("/detect-provider", (c) => {
       },
       opencode: {
         ...opencodeCli,
-        available: opencodeCli.available && opencodeJsonEvents,
+        available: opencodeCli.available && opencodeJsonEvents && opencodeLikelyConfigured,
         features: { jsonEvents: opencodeJsonEvents },
         auth: {
-          envKeyConfigured: Boolean(
-            process.env.OPENAI_API_KEY ||
-              process.env.ANTHROPIC_API_KEY ||
-              (process.env.CLAUDE_CODE_USE_BEDROCK &&
-                (process.env.AWS_BEARER_TOKEN_BEDROCK ||
-                  process.env.AWS_ACCESS_KEY_ID ||
-                  process.env.AWS_PROFILE)) ||
-              process.env.GOOGLE_API_KEY ||
-              process.env.GEMINI_API_KEY,
-          ),
-          cliLikelyConfigured: opencodeCli.available,
+          envKeyConfigured: opencodeEnvAuthConfigured,
+          cliLikelyConfigured: opencodeLikelyConfigured,
+          localAuthConfigured: opencodeLocalAuthConfigured,
         },
       },
     },
@@ -1023,6 +1035,44 @@ app.get("/detect-provider", (c) => {
     opencodeCli,
     apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
   });
+});
+
+app.get("/opencode/models", (c) => {
+  const opencodeCommand = runtimeBinary("SECOND_OPENCODE_PATH", "opencode");
+  const opencodeCli = detectBinary(opencodeCommand);
+  const opencodeJsonEvents =
+    opencodeCli.available &&
+    binaryHelpIncludes(opencodeCommand, ["run", "--help"], "--format");
+
+  if (!opencodeCli.available) {
+    return c.json({
+      available: false,
+      models: [],
+      totalCount: 0,
+      filteredOutCount: 0,
+      refreshed: false,
+      error: "OpenCode CLI not found.",
+    });
+  }
+
+  if (!opencodeJsonEvents) {
+    return c.json({
+      available: false,
+      models: [],
+      totalCount: 0,
+      filteredOutCount: 0,
+      refreshed: false,
+      error:
+        "Installed OpenCode CLI does not support `opencode run --format json`.",
+    });
+  }
+
+  return c.json(
+    discoverOpenCodeModels({
+      command: opencodeCommand,
+      refresh: c.req.query("refresh") === "1",
+    }),
+  );
 });
 
 app.get("/health", (c) => {

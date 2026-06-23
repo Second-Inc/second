@@ -17,7 +17,11 @@ type DetectionResult = {
       available: boolean;
       version?: string;
       features?: { jsonEvents?: boolean };
-      auth: { envKeyConfigured: boolean; cliLikelyConfigured: boolean };
+      auth: {
+        envKeyConfigured: boolean;
+        cliLikelyConfigured: boolean;
+        localAuthConfigured?: boolean;
+      };
     }
   >;
   apiKeyConfigured: boolean;
@@ -60,6 +64,7 @@ function workerUnavailableProviderResult(error: string): DetectionResult {
               process.env.GEMINI_API_KEY,
           ),
           cliLikelyConfigured: false,
+          localAuthConfigured: false,
         },
       },
     },

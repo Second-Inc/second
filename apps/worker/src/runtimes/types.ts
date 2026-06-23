@@ -79,10 +79,13 @@ export function normalizeRuntimeSettings(
   }
 
   if (settings.runtimeId === "opencode") {
+    const variant = settings.params.variant?.trim();
     return {
       runtimeId: "opencode",
-      model: settings.model || "openai/gpt-5.4",
-      params: {},
+      model: settings.model || "openai/gpt-5.5",
+      params: {
+        variant: variant || "auto",
+      },
     };
   }
 
