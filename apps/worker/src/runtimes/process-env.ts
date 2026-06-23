@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -126,6 +127,119 @@ function openCodeLocalAuthSourcePath(): string {
     join(homedir(), ".local", "share");
 
   return join(dataHome, "opencode", "auth.json");
+}
+
+function openCodeConfigSourcePaths(): string[] {
+  const paths: string[] = [];
+  const explicitConfig = process.env.SECOND_OPENCODE_CONFIG_FILE?.trim() ||
+    process.env.OPENCODE_CONFIG?.trim();
+  if (explicitConfig) paths.push(explicitConfig);
+
+  const configHome =
+    process.env.SECOND_OPENCODE_CONFIG_HOME?.trim() ||
+    process.env.XDG_CONFIG_HOME?.trim() ||
+    join(homedir(), ".config");
+  paths.push(
+    join(configHome, "opencode", "opencode.json"),
+    join(configHome, "opencode", "opencode.jsonc"),
+  );
+
+  return [...new Set(paths)];
+}
+
+function stripJsonComments(value: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index] ?? "";
+    const next = value[index + 1] ?? "";
+
+    if (inLineComment) {
+      if (char === "\n") {
+        inLineComment = false;
+        output += char;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (!inString && char === "/" && next === "/") {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (!inString && char === "/" && next === "*") {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    output += char;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+    }
+  }
+
+  return output.replace(/,\s*([}\]])/g, "$1");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeRecords(
+  base: Record<string, unknown>,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(next)) {
+    const current = merged[key];
+    merged[key] = isRecord(current) && isRecord(value)
+      ? mergeRecords(current, value)
+      : value;
+  }
+  return merged;
+}
+
+export function readOpenCodeProviderConfig(): Record<string, unknown> {
+  let provider: Record<string, unknown> = {};
+
+  for (const path of openCodeConfigSourcePaths()) {
+    if (!existsSync(path)) continue;
+
+    try {
+      const parsed = JSON.parse(stripJsonComments(readFileSync(path, "utf-8")));
+      if (isRecord(parsed) && isRecord(parsed.provider)) {
+        provider = mergeRecords(provider, parsed.provider);
+      }
+    } catch {
+      // User OpenCode config parsing is best-effort. OpenCode itself will still
+      // report configuration errors when run directly.
+    }
+  }
+
+  return Object.keys(provider).length > 0 ? { provider } : {};
 }
 
 export function openCodeLocalAuthAvailable(): boolean {

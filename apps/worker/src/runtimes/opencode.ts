@@ -6,9 +6,14 @@ import {
   createStableRuntimeDir,
   openCodeAuthEnvConfiguredForModel,
   openCodeAuthEnvKeysForModel,
+  readOpenCodeProviderConfig,
   seedOpenCodeAuthFromLocalLogin,
   writePrivateJsonFile,
 } from "./process-env.js";
+import {
+  buildOpenCodeRunArgs,
+  resolveOpenCodeVariant,
+} from "./opencode-models.js";
 import { runJsonlCliRuntime } from "./cli-events.js";
 import type { RuntimeAdapter } from "./types.js";
 
@@ -89,6 +94,7 @@ export const openCodeRuntimeAdapter: RuntimeAdapter = {
       const allowedTools = input.config.allowedTools;
       const openCodeConfig = {
         $schema: "https://opencode.ai/config.json",
+        ...readOpenCodeProviderConfig(),
         model: input.settings.model,
         mcp: {
           second: {
@@ -138,17 +144,18 @@ export const openCodeRuntimeAdapter: RuntimeAdapter = {
         input.sessionState?.runtimeId === "opencode"
           ? input.sessionState.sessionId
           : null;
-      const args = [
-        "run",
-        "--format",
-        "json",
-        "--model",
-        input.settings.model,
-        "--agent",
-        "second-builder",
-        ...(resumeSessionId ? ["--session", resumeSessionId] : []),
-        input.prompt,
-      ];
+      const variant = resolveOpenCodeVariant({
+        command,
+        model: input.settings.model,
+        requested: input.settings.params.variant,
+      });
+      const args = buildOpenCodeRunArgs({
+        model: input.settings.model,
+        agent: "second-builder",
+        sessionId: resumeSessionId,
+        prompt: input.prompt,
+        variant,
+      });
 
       for await (const message of runJsonlCliRuntime({
         runtimeId: "opencode",

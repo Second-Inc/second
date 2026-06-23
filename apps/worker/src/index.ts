@@ -48,6 +48,7 @@ import {
 } from "./runtimes/index.js";
 import { claudeSubprocessIsolationStatus } from "./runtimes/claude-env.js";
 import { openCodeLocalAuthAvailable } from "./runtimes/process-env.js";
+import { discoverOpenCodeModels } from "./runtimes/opencode-models.js";
 
 function resolveWorkspaceDir(appId: string): string {
   return process.env.WORKSPACES_DIR
@@ -1034,6 +1035,44 @@ app.get("/detect-provider", (c) => {
     opencodeCli,
     apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
   });
+});
+
+app.get("/opencode/models", (c) => {
+  const opencodeCommand = runtimeBinary("SECOND_OPENCODE_PATH", "opencode");
+  const opencodeCli = detectBinary(opencodeCommand);
+  const opencodeJsonEvents =
+    opencodeCli.available &&
+    binaryHelpIncludes(opencodeCommand, ["run", "--help"], "--format");
+
+  if (!opencodeCli.available) {
+    return c.json({
+      available: false,
+      models: [],
+      totalCount: 0,
+      filteredOutCount: 0,
+      refreshed: false,
+      error: "OpenCode CLI not found.",
+    });
+  }
+
+  if (!opencodeJsonEvents) {
+    return c.json({
+      available: false,
+      models: [],
+      totalCount: 0,
+      filteredOutCount: 0,
+      refreshed: false,
+      error:
+        "Installed OpenCode CLI does not support `opencode run --format json`.",
+    });
+  }
+
+  return c.json(
+    discoverOpenCodeModels({
+      command: opencodeCommand,
+      refresh: c.req.query("refresh") === "1",
+    }),
+  );
 });
 
 app.get("/health", (c) => {

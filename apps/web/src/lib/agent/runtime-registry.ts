@@ -174,7 +174,24 @@ export const AGENT_RUNTIMES = [
       { id: "openai/gpt-5.4", name: "OpenAI GPT-5.4", description: "OpenAI through OpenCode" },
       { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", description: "Anthropic through OpenCode" },
     ],
-    params: [],
+    params: [
+      {
+        id: "variant",
+        name: "Variant",
+        description: "OpenCode model variant or intelligence level.",
+        icon: "brain",
+        defaultValue: "auto",
+        options: [
+          { id: "auto", name: "Auto", description: "Use the model's OpenCode default" },
+          { id: "none", name: "None", description: "No extra reasoning effort when supported" },
+          { id: "low", name: "Low", description: "Faster, lighter reasoning" },
+          { id: "medium", name: "Medium", description: "Balanced reasoning" },
+          { id: "high", name: "High", description: "Deeper reasoning" },
+          { id: "xhigh", name: "Extra high", description: "Maximum OpenAI reasoning when supported" },
+          { id: "max", name: "Max", description: "Maximum OpenCode variant when supported" },
+        ],
+      },
+    ],
   },
 ] as const satisfies readonly RuntimeRegistryEntry[];
 
@@ -259,6 +276,10 @@ export function getRuntimeModel(
   return getRuntime(runtimeId).models.find((candidate) => candidate.id === model) ?? null;
 }
 
+function isOpenCodeModelId(model: string): boolean {
+  return /^[a-z0-9_.-]+\/[^/\s]+$/i.test(model);
+}
+
 export function getDefaultRuntimeSettings(
   runtimeId: AgentRuntimeId = DEFAULT_RUNTIME_SETTINGS.runtimeId,
 ): AgentRuntimeSettings {
@@ -276,9 +297,12 @@ export function normalizeRuntimeSettings(
   settings: AgentRuntimeSettings,
 ): AgentRuntimeSettings {
   const runtime = getRuntime(settings.runtimeId);
-  const model = getRuntimeModel(settings.runtimeId, settings.model)
-    ? settings.model
-    : runtime.defaultModel;
+  const model =
+    settings.runtimeId === "opencode" && isOpenCodeModelId(settings.model)
+      ? settings.model
+      : getRuntimeModel(settings.runtimeId, settings.model)
+        ? settings.model
+        : runtime.defaultModel;
   const params: Record<string, string> = {};
 
   for (const control of runtime.params) {

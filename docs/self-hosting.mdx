@@ -112,11 +112,14 @@ TOOL_EXECUTE_URL=http://web:3000/api/internal/tool-execute
 # SECOND_ALLOW_OPENCODE_LOCAL_AUTH=1
 # SECOND_OPENCODE_DATA_HOME=/home/second/.local/share
 # SECOND_OPENCODE_AUTH_FILE=/home/second/.local/share/opencode/auth.json
+# Optional; points dynamic OpenCode provider discovery/runtime mirroring at a mounted config:
+# SECOND_OPENCODE_CONFIG_HOME=/home/second/.config
+# SECOND_OPENCODE_CONFIG_FILE=/home/second/.config/opencode/opencode.jsonc
 ```
 
 `INTERNAL_API_TOKEN` authenticates internal web↔worker calls. The worker uses it for web internal APIs (tool execution, agent completion callbacks, app data reads/writes), and the web server uses it when calling the worker HTTP API. Use a strong random secret and set the same value on both services.
 
-The worker must never pass `INTERNAL_API_TOKEN`, MongoDB URLs, Redis URLs, WorkOS secrets, cookies, headers, or integration secret values into CLI runtimes. Codex CLI and OpenCode are launched with an allowlisted environment plus private per app/run `HOME` and config/data directories. The only token they receive for Second tools is a short-lived scoped MCP broker token. Codex receives an OpenAI key through app-server login instead of through the spawned process environment, and Codex shell commands get a separate shell `HOME` plus key/token/secret environment exclusions. In local Codex login mode, the private Codex home is seeded with only the local Codex `auth.json`; in local OpenCode login mode, the private OpenCode data directory is seeded with only OpenCode `auth.json`. Production deployments should prefer explicit provider keys, and local auth seeding is disabled by default under `NODE_ENV=production`.
+The worker must never pass `INTERNAL_API_TOKEN`, MongoDB URLs, Redis URLs, WorkOS secrets, cookies, headers, or integration secret values into CLI runtimes. Codex CLI and OpenCode are launched with an allowlisted environment plus private per app/run `HOME` and config/data directories. The only token they receive for Second tools is a short-lived scoped MCP broker token. Codex receives an OpenAI key through app-server login instead of through the spawned process environment, and Codex shell commands get a separate shell `HOME` plus key/token/secret environment exclusions. In local Codex login mode, the private Codex home is seeded with only the local Codex `auth.json`; in local OpenCode login mode, the private OpenCode data directory is seeded with only OpenCode `auth.json`. If custom OpenCode providers are configured, Second mirrors only the OpenCode `provider` config object into the private runtime config so selected `provider/model` IDs resolve without inheriting user MCP servers or plugins. Production deployments should prefer explicit provider keys, and local auth seeding is disabled by default under `NODE_ENV=production`.
 
 Claude Code runs with subprocess environment scrubbing enabled by default. On
 Linux workers, that requires the `bubblewrap` package (`bwrap` executable). Keep

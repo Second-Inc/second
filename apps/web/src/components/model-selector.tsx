@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Check, ChevronDown, Code2, Info, Plus, Terminal } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Code2,
+  Info,
+  Plus,
+  Settings2Icon,
+  Terminal,
+} from "lucide-react";
+import { OpenCodeModelDialog } from "@/components/opencode-model-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,6 +38,7 @@ import {
   normalizeRuntimeSettings,
   type AgentRuntimeSettings,
 } from "@/lib/agent/runtime-registry";
+import type { OpenCodeDiscoveredModel } from "@/lib/agent/opencode-models";
 
 type ModelSelectorProps = {
   value: AgentRuntimeSettings;
@@ -42,8 +52,33 @@ export function ModelSelector({
   side = "top",
 }: ModelSelectorProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [openCodeDialogOpen, setOpenCodeDialogOpen] = useState(false);
+  const [openCodeModels, setOpenCodeModels] = useState<OpenCodeDiscoveredModel[]>([]);
   const selectedRuntime = getRuntime(value.runtimeId);
   const selectedModel = selectedRuntime.models.find((m) => m.id === value.model);
+  const selectedOpenCodeModel = value.runtimeId === "opencode"
+    ? openCodeModels.find((model) => model.id === value.model)
+    : null;
+  const selectedLabel =
+    selectedModel?.name ?? selectedOpenCodeModel?.name ?? getModelDisplayName(value.model);
+
+  useEffect(() => {
+    if (value.runtimeId !== "opencode" && !openCodeDialogOpen) return;
+
+    let cancelled = false;
+    void fetch("/api/runtime/opencode/models", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: { models?: OpenCodeDiscoveredModel[] }) => {
+        if (!cancelled && Array.isArray(data.models)) {
+          setOpenCodeModels(data.models);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [openCodeDialogOpen, value.runtimeId]);
 
   return (
     <>
@@ -55,7 +90,7 @@ export function ModelSelector({
             size="default"
             className="gap-1 text-muted-foreground"
           >
-            {selectedModel?.name ?? getModelDisplayName(value.model)}
+            {selectedLabel}
             <ChevronDown className="size-3" strokeWidth={2} />
           </Button>
         </DropdownMenuTrigger>
@@ -63,7 +98,9 @@ export function ModelSelector({
           <DropdownMenuRadioGroup
             value={`${value.runtimeId}:${value.model}`}
             onValueChange={(nextValue) => {
-              const [runtimeId, model] = nextValue.split(":");
+              const separator = nextValue.indexOf(":");
+              const runtimeId = nextValue.slice(0, separator);
+              const model = nextValue.slice(separator + 1);
               const runtime = AGENT_RUNTIMES.find(
                 (entry) => entry.id === runtimeId,
               );
@@ -111,6 +148,33 @@ export function ModelSelector({
                     ) : null}
                   </DropdownMenuRadioItem>
                 ))}
+                {runtime.id === "opencode" &&
+                value.runtimeId === "opencode" &&
+                !runtime.models.some((model) => model.id === value.model) ? (
+                  <DropdownMenuRadioItem
+                    key={`opencode:${value.model}`}
+                    value={`opencode:${value.model}`}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="text-xs">
+                        {selectedOpenCodeModel?.name ?? value.model}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {selectedOpenCodeModel?.description ?? "OpenCode model"}
+                      </span>
+                    </div>
+                  </DropdownMenuRadioItem>
+                ) : null}
+                {runtime.id === "opencode" ? (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setOpenCodeDialogOpen(true);
+                    }}
+                  >
+                    <Settings2Icon />
+                    <span>Configure OpenCode</span>
+                  </DropdownMenuItem>
+                ) : null}
               </div>
             ))}
           </DropdownMenuRadioGroup>
@@ -206,6 +270,14 @@ export function ModelSelector({
           </div>
         </DialogContent>
       </Dialog>
+
+      <OpenCodeModelDialog
+        open={openCodeDialogOpen}
+        value={value.runtimeId === "opencode" ? value : getDefaultRuntimeSettings("opencode")}
+        onOpenChange={setOpenCodeDialogOpen}
+        onChange={onChange}
+        onModelsLoaded={setOpenCodeModels}
+      />
     </>
   );
 }
