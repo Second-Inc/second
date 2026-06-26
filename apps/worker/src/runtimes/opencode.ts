@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { createToolBrokerSession, deleteToolBrokerSession } from "../tool-broker.js";
 import {
@@ -10,6 +9,7 @@ import {
   seedOpenCodeAuthFromLocalLogin,
   writePrivateJsonFile,
 } from "./process-env.js";
+import { detectOpenCodeRunJsonSupport } from "./opencode-cli.js";
 import {
   buildOpenCodeRunArgs,
   resolveOpenCodeVariant,
@@ -54,26 +54,13 @@ function opencodeCommand(): string {
   return process.env.SECOND_OPENCODE_PATH?.trim() || "opencode";
 }
 
-function opencodeRunSupportsJsonFormat(command: string): boolean {
-  try {
-    const help = spawnSync(command, ["run", "--help"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return `${help.stdout ?? ""}\n${help.stderr ?? ""}`.includes("--format");
-  } catch {
-    return false;
-  }
-}
-
 export const openCodeRuntimeAdapter: RuntimeAdapter = {
   id: "opencode",
   async *run(input) {
     const command = opencodeCommand();
-    if (!opencodeRunSupportsJsonFormat(command)) {
-      throw new Error(
-        "Installed OpenCode CLI does not support `opencode run --format json`. Upgrade OpenCode before using the OpenCode runtime.",
-      );
+    const jsonSupport = detectOpenCodeRunJsonSupport(command);
+    if (!jsonSupport.supported && jsonSupport.definitive) {
+      throw new Error(jsonSupport.message);
     }
 
     const runKey = input.config.runtimeSessionKey ?? input.config.appId ?? "builder";

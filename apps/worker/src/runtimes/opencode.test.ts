@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import {
+  clearOpenCodeJsonSupportCache,
+  detectOpenCodeRunJsonSupport,
+} from "./opencode-cli.js";
 import { buildOpenCodeToolConfig } from "./opencode.js";
 import {
   buildOpenCodeRunArgs,
   parseOpenCodeModelsVerbose,
 } from "./opencode-models.js";
 import { openCodeAuthEnvKeysForModel } from "./process-env.js";
+
+function writeProbeScript(contents: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "second-opencode-probe-"));
+  const script = join(dir, "opencode");
+  writeFileSync(script, contents, "utf-8");
+  chmodSync(script, 0o755);
+  return script;
+}
 
 test("OpenCode tool config disables unsupported built-ins for restricted runs", () => {
   const tools = buildOpenCodeToolConfig([
@@ -136,4 +151,84 @@ test("OpenCode Bedrock models receive AWS auth env keys", () => {
       "AWS_SESSION_TOKEN",
     ],
   );
+});
+
+test("OpenCode JSON support probe detects supported run help", () => {
+  clearOpenCodeJsonSupportCache();
+  const command = writeProbeScript(`#!/bin/sh
+echo "opencode run"
+echo "  --format  format: default or json"
+`);
+
+  const result = detectOpenCodeRunJsonSupport(command);
+
+  assert.equal(result.supported, true);
+  assert.equal(result.definitive, true);
+});
+
+test("OpenCode JSON support probe treats completed help without format as unsupported", () => {
+  clearOpenCodeJsonSupportCache();
+  const command = writeProbeScript(`#!/bin/sh
+echo "opencode run"
+echo "  --model  model to use"
+`);
+
+  const result = detectOpenCodeRunJsonSupport(command);
+
+  if (result.supported) assert.fail("expected unsupported OpenCode help");
+  assert.equal(result.definitive, true);
+  assert.equal(result.reason, "unsupported");
+});
+
+test("OpenCode JSON support probe treats timeout as non-definitive", () => {
+  clearOpenCodeJsonSupportCache();
+  const previousTimeout = process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS;
+  process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS = "50";
+  const command = writeProbeScript(`#!/bin/sh
+"${process.execPath}" -e "setTimeout(() => {}, 500)"
+`);
+
+  try {
+    const result = detectOpenCodeRunJsonSupport(command);
+
+    if (result.supported) assert.fail("expected non-definitive probe failure");
+    assert.equal(result.definitive, false);
+    assert.equal(result.reason, "probe_failed");
+  } finally {
+    if (previousTimeout === undefined) {
+      delete process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS;
+    } else {
+      process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS = previousTimeout;
+    }
+  }
+});
+
+test("OpenCode JSON support probe caches positive support", () => {
+  clearOpenCodeJsonSupportCache();
+  const previousTimeout = process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS;
+  const command = writeProbeScript(`#!/bin/sh
+echo "opencode run --format json"
+`);
+
+  try {
+    assert.equal(detectOpenCodeRunJsonSupport(command).supported, true);
+    process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS = "50";
+
+    writeFileSync(
+      command,
+      `#!/bin/sh
+"${process.execPath}" -e "setTimeout(() => {}, 500)"
+`,
+      "utf-8",
+    );
+    chmodSync(command, 0o755);
+
+    assert.equal(detectOpenCodeRunJsonSupport(command).supported, true);
+  } finally {
+    if (previousTimeout === undefined) {
+      delete process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS;
+    } else {
+      process.env.SECOND_OPENCODE_HELP_TIMEOUT_MS = previousTimeout;
+    }
+  }
 });
