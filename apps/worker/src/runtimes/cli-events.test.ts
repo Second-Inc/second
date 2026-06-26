@@ -110,3 +110,62 @@ test("throws when a CLI JSON stream emits a provider error event", async () => {
     /server_is_overloaded: Our servers are currently overloaded/,
   );
 });
+
+test("throws useful text for string-shaped CLI error events", async () => {
+  const script = `
+    console.log(JSON.stringify({
+      type: "error",
+      error: "Provider rejected the selected model."
+    }));
+    setTimeout(() => {}, 1000);
+  `;
+
+  await assert.rejects(
+    async () => {
+      for await (const _message of runJsonlCliRuntime({
+        runtimeId: "opencode",
+        command: process.execPath,
+        args: ["-e", script],
+        cwd: tmpdir(),
+        env: process.env as Record<string, string>,
+        settings,
+      })) {
+        // Drain the stream until it throws.
+      }
+    },
+    /Provider rejected the selected model/,
+  );
+});
+
+test("throws useful text for nested OpenCode runtime error events", async () => {
+  const script = `
+    console.log(JSON.stringify({
+      type: "error",
+      properties: {
+        code: "authentication_failed",
+        data: {
+          error: {
+            message: "Bedrock bearer token is expired."
+          }
+        }
+      }
+    }));
+    setTimeout(() => {}, 1000);
+  `;
+
+  await assert.rejects(
+    async () => {
+      for await (const _message of runJsonlCliRuntime({
+        runtimeId: "opencode",
+        command: process.execPath,
+        args: ["-e", script],
+        cwd: tmpdir(),
+        env: process.env as Record<string, string>,
+        settings,
+      })) {
+        // Drain the stream until it throws.
+      }
+    },
+    /authentication_failed: Bedrock bearer token is expired/,
+  );
+});

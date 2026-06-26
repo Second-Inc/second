@@ -5,6 +5,7 @@ import {
   buildOpenCodeRunArgs,
   parseOpenCodeModelsVerbose,
 } from "./opencode-models.js";
+import { openCodeAuthEnvKeysForModel } from "./process-env.js";
 
 test("OpenCode tool config disables unsupported built-ins for restricted runs", () => {
   const tools = buildOpenCodeToolConfig([
@@ -118,6 +119,21 @@ test("OpenCode run args include variant only when selected", () => {
       "--session",
       "ses_123",
       "hello",
+    ],
+  );
+});
+
+test("OpenCode Bedrock models receive AWS auth env keys", () => {
+  assert.deepEqual(
+    openCodeAuthEnvKeysForModel("amazon-bedrock/anthropic.claude-opus-4-6-v1"),
+    [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AWS_PROFILE",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
     ],
   );
 });
