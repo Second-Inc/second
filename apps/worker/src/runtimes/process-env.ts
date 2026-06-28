@@ -97,6 +97,17 @@ export function openCodeAuthEnvKeysForModel(model: string): string[] {
   const provider = model.split("/")[0]?.toLowerCase();
   if (provider === "openai") return ["OPENAI_API_KEY"];
   if (provider === "anthropic") return ["ANTHROPIC_API_KEY"];
+  if (provider === "amazon-bedrock" || provider === "bedrock" || provider === "aws-bedrock") {
+    return [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AWS_PROFILE",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+    ];
+  }
   if (provider === "google" || provider === "gemini") {
     return ["GOOGLE_API_KEY", "GEMINI_API_KEY"];
   }

@@ -30,6 +30,154 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
   return typeof value === "string" && value ? value : null;
 }
 
+const ERROR_TEXT_KEYS = new Set([
+  "message",
+  "error",
+  "errorMessage",
+  "error_message",
+  "description",
+  "detail",
+  "details",
+  "reason",
+  "stderr",
+  "output",
+  "body",
+]);
+
+const ERROR_CONTAINER_KEYS = new Set([
+  "error",
+  "errors",
+  "data",
+  "cause",
+  "properties",
+  "metadata",
+  "response",
+  "result",
+]);
+
+const ERROR_CODE_KEYS = new Set([
+  "code",
+  "status",
+  "statusCode",
+  "status_code",
+  "name",
+  "type",
+]);
+
+function cleanRuntimeErrorText(value: string): string | null {
+  const trimmed = value.replace(/\u0000/g, "").replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  return trimmed
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,})\b/g, "[redacted-key]")
+    .replace(/\b(AKIA[0-9A-Z]{12,})\b/g, "[redacted-aws-key]")
+    .slice(0, 800);
+}
+
+function parseJsonString(value: string): unknown | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function isSensitiveErrorKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return (
+    normalized.includes("token") ||
+    normalized.includes("secret") ||
+    normalized.includes("password") ||
+    normalized.endsWith("apikey") ||
+    normalized.endsWith("api_key") ||
+    normalized === "authorization" ||
+    normalized === "cookie"
+  );
+}
+
+function collectErrorText(
+  value: unknown,
+  key: string,
+  depth = 0,
+): string | null {
+  if (depth > 5 || isSensitiveErrorKey(key)) return null;
+
+  if (typeof value === "string") {
+    const parsed = parseJsonString(value);
+    if (parsed !== null) {
+      const parsedText = collectErrorText(parsed, key, depth + 1);
+      if (parsedText) return parsedText;
+    }
+    return ERROR_TEXT_KEYS.has(key) ? cleanRuntimeErrorText(value) : null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = collectErrorText(item, key, depth + 1);
+      if (text) return text;
+    }
+    return null;
+  }
+
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return null;
+
+  const priorityKeys = [
+    "message",
+    "errorMessage",
+    "error_message",
+    "description",
+    "detail",
+    "details",
+    "reason",
+    "error",
+    "errors",
+    "cause",
+    "data",
+    "properties",
+    "response",
+    "result",
+    "stderr",
+    "output",
+    "body",
+  ];
+  for (const childKey of priorityKeys) {
+    if (!(childKey in record)) continue;
+    const text = collectErrorText(record[childKey], childKey, depth + 1);
+    if (text) return text;
+  }
+
+  for (const [childKey, childValue] of Object.entries(record)) {
+    if (!ERROR_CONTAINER_KEYS.has(childKey) && !ERROR_TEXT_KEYS.has(childKey)) {
+      continue;
+    }
+    const text = collectErrorText(childValue, childKey, depth + 1);
+    if (text) return text;
+  }
+
+  return null;
+}
+
+function collectErrorCode(value: unknown, depth = 0): string | null {
+  if (depth > 4) return null;
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return null;
+
+  for (const key of ERROR_CODE_KEYS) {
+    const candidate = stringField(record, key);
+    if (candidate && candidate !== "error") return cleanRuntimeErrorText(candidate);
+  }
+
+  for (const key of ERROR_CONTAINER_KEYS) {
+    if (!(key in record)) continue;
+    const code = collectErrorCode(record[key], depth + 1);
+    if (code) return code;
+  }
+
+  return null;
+}
+
 function errorFromJsonEvent(event: unknown): Error | null {
   const record = asRecord(event);
   const type = stringField(record, "type") ?? stringField(record, "event");
@@ -39,13 +187,13 @@ function errorFromJsonEvent(event: unknown): Error | null {
 
   if (type !== "error" && Object.keys(errorRecord).length === 0) return null;
 
-  const code = stringField(errorRecord, "code");
+  const code = collectErrorCode(errorRecord) ?? collectErrorCode(record);
   const message =
-    stringField(errorRecord, "message") ??
-    stringField(rawError, "message") ??
-    stringField(record, "message") ??
+    collectErrorText(errorRecord, "error") ??
+    collectErrorText(record.error, "error") ??
+    collectErrorText(record, "error") ??
     "Runtime emitted an error event.";
-  const details = code ? `${code}: ${message}` : message;
+  const details = code && !message.includes(code) ? `${code}: ${message}` : message;
   return new Error(`${details}`);
 }
 

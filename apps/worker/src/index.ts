@@ -48,6 +48,7 @@ import {
 } from "./runtimes/index.js";
 import { claudeSubprocessIsolationStatus } from "./runtimes/claude-env.js";
 import { openCodeLocalAuthAvailable } from "./runtimes/process-env.js";
+import { detectOpenCodeRunJsonSupport } from "./runtimes/opencode-cli.js";
 import { discoverOpenCodeModels } from "./runtimes/opencode-models.js";
 
 function resolveWorkspaceDir(appId: string): string {
@@ -910,22 +911,6 @@ function detectBinary(binary: string, versionArgs = ["--version"]) {
   return { available, ...(version ? { version } : {}) };
 }
 
-function binaryHelpIncludes(binary: string, args: string[], expected: string): boolean {
-  const resolved = resolveBinaryPath(binary);
-  if (!resolved) return false;
-
-  try {
-    const result = spawnSync(resolved, args, {
-      timeout: 3000,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return `${result.stdout ?? ""}\n${result.stderr ?? ""}`.includes(expected);
-  } catch {
-    return false;
-  }
-}
-
 function codexLocalAuthSeedingEnabled(): boolean {
   return (
     process.env.SECOND_ALLOW_CODEX_LOCAL_AUTH === "1" ||
@@ -984,9 +969,10 @@ app.get("/detect-provider", (c) => {
   const claudeIsolation = claudeSubprocessIsolationStatus();
   const claudeAvailable = claudeCli.available && claudeIsolation.available;
   const codexAuthenticated = codexCli.available && codexCliAuthenticated(codexCommand);
-  const opencodeJsonEvents =
-    opencodeCli.available &&
-    binaryHelpIncludes(opencodeCommand, ["run", "--help"], "--format");
+  const opencodeJsonSupport = opencodeCli.available
+    ? detectOpenCodeRunJsonSupport(opencodeCommand)
+    : null;
+  const opencodeJsonEvents = Boolean(opencodeJsonSupport?.supported);
   const opencodeEnvAuthConfigured = opencodeEnvConfigured();
   const opencodeLocalAuthConfigured = openCodeLocalAuthAvailable();
   const opencodeLikelyConfigured =
@@ -1023,6 +1009,9 @@ app.get("/detect-provider", (c) => {
         ...opencodeCli,
         available: opencodeCli.available && opencodeJsonEvents && opencodeLikelyConfigured,
         features: { jsonEvents: opencodeJsonEvents },
+        ...(!opencodeJsonEvents && opencodeJsonSupport
+          ? { error: opencodeJsonSupport.message }
+          : {}),
         auth: {
           envKeyConfigured: opencodeEnvAuthConfigured,
           cliLikelyConfigured: opencodeLikelyConfigured,
@@ -1040,9 +1029,6 @@ app.get("/detect-provider", (c) => {
 app.get("/opencode/models", (c) => {
   const opencodeCommand = runtimeBinary("SECOND_OPENCODE_PATH", "opencode");
   const opencodeCli = detectBinary(opencodeCommand);
-  const opencodeJsonEvents =
-    opencodeCli.available &&
-    binaryHelpIncludes(opencodeCommand, ["run", "--help"], "--format");
 
   if (!opencodeCli.available) {
     return c.json({
@@ -1055,15 +1041,15 @@ app.get("/opencode/models", (c) => {
     });
   }
 
-  if (!opencodeJsonEvents) {
+  const opencodeJsonSupport = detectOpenCodeRunJsonSupport(opencodeCommand);
+  if (!opencodeJsonSupport.supported && opencodeJsonSupport.definitive) {
     return c.json({
       available: false,
       models: [],
       totalCount: 0,
       filteredOutCount: 0,
       refreshed: false,
-      error:
-        "Installed OpenCode CLI does not support `opencode run --format json`.",
+      error: opencodeJsonSupport.message,
     });
   }
 
