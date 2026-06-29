@@ -26,7 +26,6 @@ Second is a factory for custom internal software,<br>purpose-built for human2age
 
 <a href="#quick-start"><strong>Quick Start</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 
-[![Sponsor](https://readme.cash/i/dj6ivxwysy.svg)](https://readme.cash/c/dj6ivxwysy)
 
 </div>
 
