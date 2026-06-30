@@ -33,7 +33,11 @@ import {
   type StartRunStreamResult,
 } from "@/lib/db";
 import { classifyBuilderRunTerminalState } from "@/lib/agent/builder-run-terminal";
-import { isWorkerRestoreNeeded, streamFromWorker } from "@/lib/agent/worker-bridge";
+import {
+  isWorkerRestoreNeeded,
+  streamFromWorker,
+  type WorkerRuntimeTerminal,
+} from "@/lib/agent/worker-bridge";
 import { tryReadAgentsJsonSnapshot } from "@/lib/agents/agents-governance";
 import { parseRuntimeSettings } from "@/lib/agent/runtime-registry";
 import {
@@ -88,6 +92,7 @@ const REVIEW_INVALIDATED_MESSAGE =
 const CHAT_CLAIM_RESULT_HEADER = "x-second-chat-claim-result";
 const CHAT_RETRYABLE_HEADER = "x-second-chat-retryable";
 const CHAT_ERROR_CODE_HEADER = "x-second-chat-error-code";
+const BUILDER_MAX_TURNS = 500;
 
 type RouteIds = {
   workspaceId: string;
@@ -184,6 +189,41 @@ function streamLeaseStillOwned(
 
 function isUserStoppedFailure(failure: AgentRunFailure | null | undefined): boolean {
   return failure?.code === "user_stopped" || failure?.code === "worker_cancel_failed";
+}
+
+function isMaxTurnsTerminal(terminal: WorkerRuntimeTerminal | null): boolean {
+  if (!terminal?.subtype) return false;
+  return /max[-_]?turns?/i.test(terminal.subtype);
+}
+
+function builderRuntimeFailure(input: {
+  terminal: WorkerRuntimeTerminal | null;
+  maxTurns: number;
+}): { message: string; metadata: Record<string, unknown> } | null {
+  if (!input.terminal) {
+    return {
+      message:
+        "The agent runtime stream ended without a final result before the app was ready. Retry to continue from the latest code.",
+      metadata: {
+        runtimeTerminalSeen: false,
+        maxTurns: input.maxTurns,
+      },
+    };
+  }
+
+  if (isMaxTurnsTerminal(input.terminal)) {
+    return {
+      message: `The agent reached the builder turn limit (${input.maxTurns}) before finishing the app. Retry to continue from the latest code.`,
+      metadata: {
+        runtimeTerminalSeen: true,
+        runtimeTerminalSubtype: input.terminal.subtype,
+        runtimeTerminalTurns: input.terminal.numTurns,
+        maxTurns: input.maxTurns,
+      },
+    };
+  }
+
+  return null;
 }
 
 function createChatErrorStreamResponse(input: {
@@ -945,6 +985,9 @@ export async function POST(request: Request, context: ChatRouteContext) {
   const streamId = generateId();
   const skipFinishPersistence = { current: false };
   const terminalFailure = { current: null as AgentRunFailure | null };
+  const terminalFailureMetadata = {
+    current: null as Record<string, unknown> | null,
+  };
   let latestSessionState: ProviderSessionState | null = null;
   const workspaceAgentAllowedTools = run.workspaceAgentSnapshot
     ? [
@@ -1001,6 +1044,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
           runtimeMode: isWorkspaceAgentRun ? "workspace_agent" : "builder",
           selectedSkills: runtimeSkills,
           allowedTools: isWorkspaceAgentRun ? workspaceAgentAllowedTools : undefined,
+          maxTurns: isWorkspaceAgentRun ? undefined : BUILDER_MAX_TURNS,
           sessionState: selectedSessionState ?? undefined,
           sourceFiles: !isWorkspaceAgentRun
             ? existingSourceFiles ?? undefined
@@ -1200,15 +1244,37 @@ export async function POST(request: Request, context: ChatRouteContext) {
           toolCalls: bridgeResult.toolCalls,
         });
         if (terminalDecision.status === "failed") {
+          const runtimeFailure = builderRuntimeFailure({
+            terminal: bridgeResult.runtimeTerminal,
+            maxTurns: BUILDER_MAX_TURNS,
+          });
+          const message = runtimeFailure?.message ?? terminalDecision.message;
+          if (runtimeFailure) {
+            terminalFailureMetadata.current = {
+              reason: "builder_runtime_terminal",
+              ...runtimeFailure.metadata,
+              runtimeId: runtimeSettings.runtimeId,
+              runtimeModel: runtimeSettings.model,
+              observedToolNames: [
+                ...new Set(bridgeResult.toolCalls.map((tool) => tool.toolName)),
+              ].slice(0, 20),
+            };
+            console.warn("[chat] Builder runtime stopped before app completion", {
+              workspaceId: workspaceContext.workspaceId,
+              appId,
+              runId,
+              ...terminalFailureMetadata.current,
+            });
+          }
           terminalFailure.current = createFailure({
-            code: terminalDecision.code,
+            code: runtimeFailure ? "worker_stream_failed" : terminalDecision.code,
             phase: "worker_stream",
-            message: terminalDecision.message,
+            message,
             retryable: true,
           });
           writer.write({
             type: "error",
-            errorText: terminalDecision.message,
+            errorText: message,
           });
         }
       }
@@ -1270,6 +1336,9 @@ export async function POST(request: Request, context: ChatRouteContext) {
               finalMessageCount: finalMessagesForPersistence.length,
               hadSessionState: Boolean(latestSessionState),
               streamLeaseHash: auditSha256(streamLeaseId),
+              ...(terminalFailureMetadata.current
+                ? { runtime: terminalFailureMetadata.current }
+                : {}),
             },
             relatedIds: { appId, runId },
           });

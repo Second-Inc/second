@@ -1,6 +1,7 @@
 export {
   accumulateRunUsage,
   completeRun,
+  createCompletedRun,
   createRun,
   failRun,
   getActiveStreamId,
@@ -101,6 +102,7 @@ export {
   approveCurrentAppAgentsJson,
   createAppForWorkspace,
   deleteApp,
+  SourceFilesLimitError,
   type AppMetadata,
   appHasPublishedVersion,
   appHasUnpublishedChanges,

@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -96,10 +97,178 @@ export function openCodeAuthEnvKeysForModel(model: string): string[] {
   const provider = model.split("/")[0]?.toLowerCase();
   if (provider === "openai") return ["OPENAI_API_KEY"];
   if (provider === "anthropic") return ["ANTHROPIC_API_KEY"];
+  if (provider === "amazon-bedrock" || provider === "bedrock" || provider === "aws-bedrock") {
+    return [
+      "AWS_BEARER_TOKEN_BEDROCK",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION",
+      "AWS_PROFILE",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+    ];
+  }
   if (provider === "google" || provider === "gemini") {
     return ["GOOGLE_API_KEY", "GEMINI_API_KEY"];
   }
   return [];
+}
+
+export function openCodeAuthEnvConfiguredForModel(model: string): boolean {
+  return openCodeAuthEnvKeysForModel(model).some((key) => {
+    const value = process.env[key];
+    return typeof value === "string" && value.length > 0;
+  });
+}
+
+function openCodeLocalAuthSeedingEnabled(): boolean {
+  return (
+    process.env.SECOND_ALLOW_OPENCODE_LOCAL_AUTH === "1" ||
+    process.env.NODE_ENV !== "production"
+  );
+}
+
+function openCodeLocalAuthSourcePath(): string {
+  const explicitAuthFile = process.env.SECOND_OPENCODE_AUTH_FILE?.trim();
+  if (explicitAuthFile) return explicitAuthFile;
+
+  const dataHome =
+    process.env.SECOND_OPENCODE_DATA_HOME?.trim() ||
+    process.env.XDG_DATA_HOME?.trim() ||
+    join(homedir(), ".local", "share");
+
+  return join(dataHome, "opencode", "auth.json");
+}
+
+function openCodeConfigSourcePaths(): string[] {
+  const paths: string[] = [];
+  const explicitConfig = process.env.SECOND_OPENCODE_CONFIG_FILE?.trim() ||
+    process.env.OPENCODE_CONFIG?.trim();
+  if (explicitConfig) paths.push(explicitConfig);
+
+  const configHome =
+    process.env.SECOND_OPENCODE_CONFIG_HOME?.trim() ||
+    process.env.XDG_CONFIG_HOME?.trim() ||
+    join(homedir(), ".config");
+  paths.push(
+    join(configHome, "opencode", "opencode.json"),
+    join(configHome, "opencode", "opencode.jsonc"),
+  );
+
+  return [...new Set(paths)];
+}
+
+function stripJsonComments(value: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index] ?? "";
+    const next = value[index + 1] ?? "";
+
+    if (inLineComment) {
+      if (char === "\n") {
+        inLineComment = false;
+        output += char;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (!inString && char === "/" && next === "/") {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (!inString && char === "/" && next === "*") {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    output += char;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+    }
+  }
+
+  return output.replace(/,\s*([}\]])/g, "$1");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeRecords(
+  base: Record<string, unknown>,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(next)) {
+    const current = merged[key];
+    merged[key] = isRecord(current) && isRecord(value)
+      ? mergeRecords(current, value)
+      : value;
+  }
+  return merged;
+}
+
+export function readOpenCodeProviderConfig(): Record<string, unknown> {
+  let provider: Record<string, unknown> = {};
+
+  for (const path of openCodeConfigSourcePaths()) {
+    if (!existsSync(path)) continue;
+
+    try {
+      const parsed = JSON.parse(stripJsonComments(readFileSync(path, "utf-8")));
+      if (isRecord(parsed) && isRecord(parsed.provider)) {
+        provider = mergeRecords(provider, parsed.provider);
+      }
+    } catch {
+      // User OpenCode config parsing is best-effort. OpenCode itself will still
+      // report configuration errors when run directly.
+    }
+  }
+
+  return Object.keys(provider).length > 0 ? { provider } : {};
+}
+
+export function openCodeLocalAuthAvailable(): boolean {
+  return openCodeLocalAuthSeedingEnabled() && existsSync(openCodeLocalAuthSourcePath());
+}
+
+export function seedOpenCodeAuthFromLocalLogin(runtimeDir: string): void {
+  if (!openCodeLocalAuthSeedingEnabled()) return;
+
+  const sourcePath = openCodeLocalAuthSourcePath();
+  if (!existsSync(sourcePath)) return;
+
+  const targetDir = join(runtimeDir, ".local", "share", "opencode");
+  mkdirSync(targetDir, { recursive: true, mode: 0o700 });
+  const targetPath = join(targetDir, "auth.json");
+  if (sourcePath === targetPath) return;
+  copyFileSync(sourcePath, targetPath);
+  chmodSync(targetPath, 0o600);
 }
 
 export function writePrivateJsonFile(

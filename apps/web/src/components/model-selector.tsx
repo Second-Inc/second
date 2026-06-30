@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Check, ChevronDown, Code2, Info, Plus, Terminal } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Info,
+  Plus,
+  Settings2Icon,
+  Terminal,
+} from "lucide-react";
+import { OpenCodeModelDialog } from "@/components/opencode-model-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,13 +36,9 @@ import {
   getRuntime,
   normalizeRuntimeSettings,
   type AgentRuntimeSettings,
+  type RuntimeRegistryEntry,
 } from "@/lib/agent/runtime-registry";
-
-// OpenCode remains wired in the runtime layer, but it is still under
-// development and will be exposed in the picker once deployment is ready.
-const VISIBLE_AGENT_RUNTIMES = AGENT_RUNTIMES.filter(
-  (runtime) => runtime.id !== "opencode",
-);
+import type { OpenCodeDiscoveredModel } from "@/lib/agent/opencode-models";
 
 type ModelSelectorProps = {
   value: AgentRuntimeSettings;
@@ -42,14 +46,113 @@ type ModelSelectorProps = {
   side?: "top" | "bottom";
 };
 
+function RuntimeIcon({
+  runtime,
+  size,
+  alt = "",
+}: {
+  runtime: RuntimeRegistryEntry;
+  size: 16 | 24;
+  alt?: string;
+}) {
+  if (!runtime.icon) {
+    return (
+      <div className="flex size-6 items-center justify-center rounded border bg-muted">
+        <Terminal className="size-3.5 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const className = size === 16 ? "rounded-sm" : "rounded";
+
+  if (runtime.id === "opencode" && runtime.iconDark) {
+    const width = Math.round(size * 0.8);
+
+    return (
+      <span className="inline-flex shrink-0 items-center justify-center">
+        <Image
+          src={runtime.icon}
+          alt={alt}
+          width={width}
+          height={size}
+          className="block h-4 w-auto shrink-0 rounded-none dark:hidden"
+        />
+        <Image
+          src={runtime.iconDark}
+          alt={alt}
+          width={width}
+          height={size}
+          className="hidden h-4 w-auto shrink-0 rounded-none dark:block"
+        />
+      </span>
+    );
+  }
+
+  if (!runtime.iconDark) {
+    return (
+      <Image
+        src={runtime.icon}
+        alt={alt}
+        width={size}
+        height={size}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <span className="inline-flex shrink-0 items-center justify-center">
+      <Image
+        src={runtime.icon}
+        alt={alt}
+        width={size}
+        height={size}
+        className={`${className} dark:hidden`}
+      />
+      <Image
+        src={runtime.iconDark}
+        alt={alt}
+        width={size}
+        height={size}
+        className={`hidden ${className} dark:block`}
+      />
+    </span>
+  );
+}
+
 export function ModelSelector({
   value,
   onChange,
   side = "top",
 }: ModelSelectorProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [openCodeDialogOpen, setOpenCodeDialogOpen] = useState(false);
+  const [openCodeModels, setOpenCodeModels] = useState<OpenCodeDiscoveredModel[]>([]);
   const selectedRuntime = getRuntime(value.runtimeId);
   const selectedModel = selectedRuntime.models.find((m) => m.id === value.model);
+  const selectedOpenCodeModel = value.runtimeId === "opencode"
+    ? openCodeModels.find((model) => model.id === value.model)
+    : null;
+  const selectedLabel =
+    selectedModel?.name ?? selectedOpenCodeModel?.name ?? getModelDisplayName(value.model);
+
+  useEffect(() => {
+    if (value.runtimeId !== "opencode" && !openCodeDialogOpen) return;
+
+    let cancelled = false;
+    void fetch("/api/runtime/opencode/models", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: { models?: OpenCodeDiscoveredModel[] }) => {
+        if (!cancelled && Array.isArray(data.models)) {
+          setOpenCodeModels(data.models);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [openCodeDialogOpen, value.runtimeId]);
 
   return (
     <>
@@ -61,7 +164,7 @@ export function ModelSelector({
             size="default"
             className="gap-1 text-muted-foreground"
           >
-            {selectedModel?.name ?? getModelDisplayName(value.model)}
+            {selectedLabel}
             <ChevronDown className="size-3" strokeWidth={2} />
           </Button>
         </DropdownMenuTrigger>
@@ -69,8 +172,10 @@ export function ModelSelector({
           <DropdownMenuRadioGroup
             value={`${value.runtimeId}:${value.model}`}
             onValueChange={(nextValue) => {
-              const [runtimeId, model] = nextValue.split(":");
-              const runtime = VISIBLE_AGENT_RUNTIMES.find(
+              const separator = nextValue.indexOf(":");
+              const runtimeId = nextValue.slice(0, separator);
+              const model = nextValue.slice(separator + 1);
+              const runtime = AGENT_RUNTIMES.find(
                 (entry) => entry.id === runtimeId,
               );
               if (!runtime || !model) return;
@@ -82,41 +187,41 @@ export function ModelSelector({
               );
             }}
           >
-            {VISIBLE_AGENT_RUNTIMES.map((runtime, index) => (
+            {AGENT_RUNTIMES.map((runtime, index) => (
               <div key={runtime.id}>
                 {index > 0 ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuLabel className="flex items-center gap-2">
-                  {runtime.icon ? (
-                    <Image
-                      src={runtime.icon}
-                      alt=""
-                      width={16}
-                      height={16}
-                      className="rounded-sm"
-                    />
-                  ) : (
-                    <Code2 className="size-3.5 text-muted-foreground" />
-                  )}
+                  <RuntimeIcon runtime={runtime} size={16} />
                   {runtime.name}
                 </DropdownMenuLabel>
-                {runtime.models.map((model) => (
-                  <DropdownMenuRadioItem
-                    key={`${runtime.id}:${model.id}`}
-                    value={`${runtime.id}:${model.id}`}
+                {runtime.id === "opencode" ? null : runtime.models.map((model) => (
+                    <DropdownMenuRadioItem
+                      key={`${runtime.id}:${model.id}`}
+                      value={`${runtime.id}:${model.id}`}
+                    >
+                      <div className="flex min-w-0 flex-col">
+                        <span className="text-xs">{model.name}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {model.description}
+                        </span>
+                      </div>
+                      {"experimental" in model && model.experimental ? (
+                        <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          Experimental
+                        </span>
+                      ) : null}
+                    </DropdownMenuRadioItem>
+                  ))}
+                {runtime.id === "opencode" ? (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setOpenCodeDialogOpen(true);
+                    }}
                   >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="text-xs">{model.name}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {model.description}
-                      </span>
-                    </div>
-                    {"experimental" in model && model.experimental ? (
-                      <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        Experimental
-                      </span>
-                    ) : null}
-                  </DropdownMenuRadioItem>
-                ))}
+                    <Settings2Icon />
+                    <span>Configure OpenCode</span>
+                  </DropdownMenuItem>
+                ) : null}
               </div>
             ))}
           </DropdownMenuRadioGroup>
@@ -171,22 +276,14 @@ export function ModelSelector({
               Configured
             </div>
 
-            {VISIBLE_AGENT_RUNTIMES.map((runtime) => (
+            {AGENT_RUNTIMES.map((runtime) => (
               <div key={runtime.id} className="flex flex-col gap-3 rounded-lg border p-4">
                 <div className="flex items-center gap-3">
-                  {runtime.icon ? (
-                    <Image
-                      src={runtime.icon}
-                      alt={runtime.shortName}
-                      width={24}
-                      height={24}
-                      className="rounded"
-                    />
-                  ) : (
-                    <div className="flex size-6 items-center justify-center rounded border bg-muted">
-                      <Terminal className="size-3.5 text-muted-foreground" />
-                    </div>
-                  )}
+                  <RuntimeIcon
+                    runtime={runtime}
+                    size={24}
+                    alt={runtime.shortName}
+                  />
                   <span className="flex-1 text-sm font-medium">{runtime.name}</span>
                   {runtime.id === selectedRuntime.id ? (
                     <div className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400">
@@ -212,6 +309,14 @@ export function ModelSelector({
           </div>
         </DialogContent>
       </Dialog>
+
+      <OpenCodeModelDialog
+        open={openCodeDialogOpen}
+        value={value.runtimeId === "opencode" ? value : getDefaultRuntimeSettings("opencode")}
+        onOpenChange={setOpenCodeDialogOpen}
+        onChange={onChange}
+        onModelsLoaded={setOpenCodeModels}
+      />
     </>
   );
 }

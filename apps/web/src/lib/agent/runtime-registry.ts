@@ -37,6 +37,7 @@ export type RuntimeRegistryEntry = {
   shortName: string;
   description: string;
   icon?: string;
+  iconDark?: string;
   docsUrl: string;
   detectionKey: "claudeCli" | "codexCli" | "opencodeCli";
   models: readonly RuntimeModel[];
@@ -165,16 +166,30 @@ export const AGENT_RUNTIMES = [
     name: "OpenCode",
     shortName: "OpenCode",
     description: "OpenCode CLI builds with scoped Second MCP tools.",
-    icon: undefined,
+    icon: "/icons/opencode-light.svg",
+    iconDark: "/icons/opencode-dark.svg",
     docsUrl: "https://opencode.ai/docs/cli/",
     detectionKey: "opencodeCli",
-    defaultModel: "openai/gpt-5.4",
-    models: [
-      { id: "openai/gpt-5.5", name: "OpenAI GPT-5.5", description: "OpenAI through OpenCode" },
-      { id: "openai/gpt-5.4", name: "OpenAI GPT-5.4", description: "OpenAI through OpenCode" },
-      { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", description: "Anthropic through OpenCode" },
+    defaultModel: "openai/gpt-5.5",
+    models: [],
+    params: [
+      {
+        id: "variant",
+        name: "Variant",
+        description: "OpenCode model variant or intelligence level.",
+        icon: "brain",
+        defaultValue: "auto",
+        options: [
+          { id: "auto", name: "Auto", description: "Use the model's OpenCode default" },
+          { id: "none", name: "None", description: "No extra reasoning effort when supported" },
+          { id: "low", name: "Low", description: "Faster, lighter reasoning" },
+          { id: "medium", name: "Medium", description: "Balanced reasoning" },
+          { id: "high", name: "High", description: "Deeper reasoning" },
+          { id: "xhigh", name: "Extra high", description: "Maximum OpenAI reasoning when supported" },
+          { id: "max", name: "Max", description: "Maximum OpenCode variant when supported" },
+        ],
+      },
     ],
-    params: [],
   },
 ] as const satisfies readonly RuntimeRegistryEntry[];
 
@@ -201,6 +216,8 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = Object.fromEntries(
 );
 
 const MODEL_DISPLAY_NAME_ALIASES: Record<string, string> = {
+  "openai/gpt-5.5": "OpenAI GPT-5.5",
+  "openai/gpt-5.4": "OpenAI GPT-5.4",
   "anthropic/claude-opus-4-8": "Claude Opus 4.8",
   "claude-opus-4-6-20251101": "Opus 4.6",
   "claude-sonnet-4-6-20251101": "Sonnet 4.6",
@@ -238,9 +255,11 @@ export function isAgentRuntimeId(value: unknown): value is AgentRuntimeId {
 
 export function findRuntimeForModel(model: string): RuntimeRegistryEntry | null {
   const normalizedModel = normalizeRuntimeModelId(model);
-  return AGENT_RUNTIMES.find((runtime) =>
+  const staticRuntime = AGENT_RUNTIMES.find((runtime) =>
     runtime.models.some((candidate) => candidate.id === normalizedModel),
-  ) ?? null;
+  );
+  if (staticRuntime) return staticRuntime;
+  return isOpenCodeModelId(model) ? getRuntime("opencode") : null;
 }
 
 export function getModelDisplayName(model: string): string {
@@ -257,6 +276,10 @@ export function getRuntimeModel(
   model: string,
 ): RuntimeModel | null {
   return getRuntime(runtimeId).models.find((candidate) => candidate.id === model) ?? null;
+}
+
+function isOpenCodeModelId(model: string): boolean {
+  return /^[a-z0-9_.-]+\/[^/\s]+$/i.test(model);
 }
 
 export function getDefaultRuntimeSettings(
@@ -276,9 +299,12 @@ export function normalizeRuntimeSettings(
   settings: AgentRuntimeSettings,
 ): AgentRuntimeSettings {
   const runtime = getRuntime(settings.runtimeId);
-  const model = getRuntimeModel(settings.runtimeId, settings.model)
-    ? settings.model
-    : runtime.defaultModel;
+  const model =
+    settings.runtimeId === "opencode" && isOpenCodeModelId(settings.model)
+      ? settings.model
+      : getRuntimeModel(settings.runtimeId, settings.model)
+        ? settings.model
+        : runtime.defaultModel;
   const params: Record<string, string> = {};
 
   for (const control of runtime.params) {

@@ -47,6 +47,9 @@ import {
   type ProviderSessionState,
 } from "./runtimes/index.js";
 import { claudeSubprocessIsolationStatus } from "./runtimes/claude-env.js";
+import { openCodeLocalAuthAvailable } from "./runtimes/process-env.js";
+import { detectOpenCodeRunJsonSupport } from "./runtimes/opencode-cli.js";
+import { discoverOpenCodeModels } from "./runtimes/opencode-models.js";
 
 function resolveWorkspaceDir(appId: string): string {
   return process.env.WORKSPACES_DIR
@@ -908,22 +911,6 @@ function detectBinary(binary: string, versionArgs = ["--version"]) {
   return { available, ...(version ? { version } : {}) };
 }
 
-function binaryHelpIncludes(binary: string, args: string[], expected: string): boolean {
-  const resolved = resolveBinaryPath(binary);
-  if (!resolved) return false;
-
-  try {
-    return execFileSync(resolved, args, {
-      timeout: 3000,
-      stdio: "pipe",
-    })
-      .toString()
-      .includes(expected);
-  } catch {
-    return false;
-  }
-}
-
 function codexLocalAuthSeedingEnabled(): boolean {
   return (
     process.env.SECOND_ALLOW_CODEX_LOCAL_AUTH === "1" ||
@@ -959,6 +946,19 @@ function claudeEnvConfigured(): boolean {
   );
 }
 
+function opencodeEnvConfigured(): boolean {
+  return Boolean(
+    process.env.OPENAI_API_KEY ||
+      process.env.ANTHROPIC_API_KEY ||
+      (process.env.CLAUDE_CODE_USE_BEDROCK &&
+        (process.env.AWS_BEARER_TOKEN_BEDROCK ||
+          process.env.AWS_ACCESS_KEY_ID ||
+          process.env.AWS_PROFILE)) ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GEMINI_API_KEY,
+  );
+}
+
 app.get("/detect-provider", (c) => {
   const claudeCommand = runtimeBinary("SECOND_CLAUDE_PATH", "claude");
   const codexCommand = runtimeBinary("SECOND_CODEX_PATH", "codex");
@@ -969,9 +969,15 @@ app.get("/detect-provider", (c) => {
   const claudeIsolation = claudeSubprocessIsolationStatus();
   const claudeAvailable = claudeCli.available && claudeIsolation.available;
   const codexAuthenticated = codexCli.available && codexCliAuthenticated(codexCommand);
-  const opencodeJsonEvents =
+  const opencodeJsonSupport = opencodeCli.available
+    ? detectOpenCodeRunJsonSupport(opencodeCommand)
+    : null;
+  const opencodeJsonEvents = Boolean(opencodeJsonSupport?.supported);
+  const opencodeEnvAuthConfigured = opencodeEnvConfigured();
+  const opencodeLocalAuthConfigured = openCodeLocalAuthAvailable();
+  const opencodeLikelyConfigured =
     opencodeCli.available &&
-    binaryHelpIncludes(opencodeCommand, ["run", "--help"], "--format");
+    (opencodeEnvAuthConfigured || opencodeLocalAuthConfigured);
 
   return c.json({
     runtimes: {
@@ -1001,20 +1007,15 @@ app.get("/detect-provider", (c) => {
       },
       opencode: {
         ...opencodeCli,
-        available: opencodeCli.available && opencodeJsonEvents,
+        available: opencodeCli.available && opencodeJsonEvents && opencodeLikelyConfigured,
         features: { jsonEvents: opencodeJsonEvents },
+        ...(!opencodeJsonEvents && opencodeJsonSupport
+          ? { error: opencodeJsonSupport.message }
+          : {}),
         auth: {
-          envKeyConfigured: Boolean(
-            process.env.OPENAI_API_KEY ||
-              process.env.ANTHROPIC_API_KEY ||
-              (process.env.CLAUDE_CODE_USE_BEDROCK &&
-                (process.env.AWS_BEARER_TOKEN_BEDROCK ||
-                  process.env.AWS_ACCESS_KEY_ID ||
-                  process.env.AWS_PROFILE)) ||
-              process.env.GOOGLE_API_KEY ||
-              process.env.GEMINI_API_KEY,
-          ),
-          cliLikelyConfigured: opencodeCli.available,
+          envKeyConfigured: opencodeEnvAuthConfigured,
+          cliLikelyConfigured: opencodeLikelyConfigured,
+          localAuthConfigured: opencodeLocalAuthConfigured,
         },
       },
     },
@@ -1023,6 +1024,41 @@ app.get("/detect-provider", (c) => {
     opencodeCli,
     apiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
   });
+});
+
+app.get("/opencode/models", (c) => {
+  const opencodeCommand = runtimeBinary("SECOND_OPENCODE_PATH", "opencode");
+  const opencodeCli = detectBinary(opencodeCommand);
+
+  if (!opencodeCli.available) {
+    return c.json({
+      available: false,
+      models: [],
+      totalCount: 0,
+      filteredOutCount: 0,
+      refreshed: false,
+      error: "OpenCode CLI not found.",
+    });
+  }
+
+  const opencodeJsonSupport = detectOpenCodeRunJsonSupport(opencodeCommand);
+  if (!opencodeJsonSupport.supported && opencodeJsonSupport.definitive) {
+    return c.json({
+      available: false,
+      models: [],
+      totalCount: 0,
+      filteredOutCount: 0,
+      refreshed: false,
+      error: opencodeJsonSupport.message,
+    });
+  }
+
+  return c.json(
+    discoverOpenCodeModels({
+      command: opencodeCommand,
+      refresh: c.req.query("refresh") === "1",
+    }),
+  );
 });
 
 app.get("/health", (c) => {

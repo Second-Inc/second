@@ -71,10 +71,22 @@ export type QueryUsage = {
 export type WorkerBridgeResult = {
   sessionState: ProviderSessionState | null;
   usage: QueryUsage | null;
+  /** Runtime terminal result observed before the worker sent [DONE]. */
+  runtimeTerminal: WorkerRuntimeTerminal | null;
   /** Source files collected after agent called done_building */
   sourceFiles: Record<string, string> | null;
   /** Tool calls observed while translating worker events into UI message parts. */
   toolCalls: WorkerToolCallSummary[];
+};
+
+export type WorkerRuntimeTerminal = {
+  type: "result";
+  subtype?: string;
+  result?: string;
+  numTurns?: number;
+  durationMs?: number;
+  durationApiMs?: number;
+  totalCostUsd?: number;
 };
 
 export type WorkerToolCallSummary = {
@@ -131,6 +143,33 @@ function asTraceRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function runtimeTerminalFromMessage(
+  msg: Record<string, unknown>,
+): WorkerRuntimeTerminal {
+  const terminal: WorkerRuntimeTerminal = { type: "result" };
+  const subtype = optionalString(msg.subtype);
+  const result = traceString(msg.result, 240);
+  const numTurns = optionalNumber(msg.num_turns);
+  const durationMs = optionalNumber(msg.duration_ms);
+  const durationApiMs = optionalNumber(msg.duration_api_ms);
+  const totalCostUsd = optionalNumber(msg.total_cost_usd);
+  if (subtype) terminal.subtype = subtype;
+  if (result) terminal.result = result;
+  if (numTurns !== undefined) terminal.numTurns = numTurns;
+  if (durationMs !== undefined) terminal.durationMs = durationMs;
+  if (durationApiMs !== undefined) terminal.durationApiMs = durationApiMs;
+  if (totalCostUsd !== undefined) terminal.totalCostUsd = totalCostUsd;
+  return terminal;
 }
 
 function summarizeToolInputForTrace(input: unknown): Record<string, unknown> {
@@ -743,6 +782,7 @@ export async function streamFromWorker(
 
   // --- Usage tracking ---
   let queryUsage: QueryUsage | null = null;
+  let runtimeTerminal: WorkerRuntimeTerminal | null = null;
 
   // --- Build completion tracking ---
   let buildComplete = false;
@@ -1218,6 +1258,7 @@ export async function streamFromWorker(
 
       // Result message — contains cost/token data for this query() call
       if (msg.type === "result") {
+        runtimeTerminal = runtimeTerminalFromMessage(msg);
         const modelUsageRaw = msg.modelUsage as
           | Record<
               string,
@@ -1326,6 +1367,7 @@ export async function streamFromWorker(
   return {
     sessionState,
     usage: queryUsage,
+    runtimeTerminal,
     sourceFiles,
     toolCalls: [...observedToolCalls.values()],
   };

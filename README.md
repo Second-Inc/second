@@ -26,6 +26,7 @@ Second is a factory for custom internal software,<br>purpose-built for human2age
 
 <a href="#quick-start"><strong>Quick Start</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 
+
 </div>
 
 ## Quick Start
@@ -176,6 +177,15 @@ Every app you build in Second gets a real-time DB, audit logs, RBAC, agent RBAC,
 | **📚 Workspace Skills** | Define instructions once, then attach them to agents across the workspace |
 | **⏲️ Scheduled Agent Jobs** | Agents run on a schedule for periodic research, monitoring, and background tasks |
 | **🚀 One-Command Setup** | From zero to running with `npx @second-inc/cli` |
+
+## Share and use pre-built apps
+
+Download pre-built apps as ZIP files from our catalog, then click **Import App** to load one into your workspace.
+
+Available Apps (1):
+- [Polsia](https://github.com/Second-Inc/second-apps/releases/download/polsia-v1/Polsia.second-app.zip)
+
+![Import App button](docs/assets/import-app.png)
 
 ## What You Can Build
 
