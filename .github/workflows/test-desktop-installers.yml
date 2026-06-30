@@ -2,6 +2,9 @@ name: Test Mac Desktop Installer
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "codex/add-windows-support"
 
 permissions:
   contents: read
