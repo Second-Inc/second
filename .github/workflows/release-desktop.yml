@@ -3,7 +3,7 @@ name: Release Desktop
 on:
   push:
     tags:
-      - "desktop-v*"
+      - "v*"
 
 permissions:
   contents: write
@@ -16,9 +16,9 @@ env:
   NODE_VERSION: "24"
 
 jobs:
-  build-wsl-rootfs:
-    name: Build managed WSL2 rootfs
-    runs-on: ubuntu-latest
+  build-mac-arm64:
+    name: Build mac-arm64 DMG
+    runs-on: macos-15
 
     steps:
       - name: Checkout
@@ -29,113 +29,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install Linux binary patcher
-        shell: bash
-        run: sudo apt-get update && sudo apt-get install -y patchelf
-
       - name: Derive version
         id: release
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#desktop-v}"
+          VERSION="${GITHUB_REF_NAME#v}"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid desktop release version: $VERSION" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          npm ci --prefix apps/web
-          npm ci --prefix apps/worker
-          npm ci --prefix packages/cli
-
-      - name: Build Linux payload
-        shell: bash
-        run: |
-          npm --prefix packages/cli-local-linux-x64 pkg set version="${{ steps.release.outputs.version }}"
-          npm --prefix packages/cli-local-linux-x64 run build
-
-      - name: Build managed WSL2 rootfs
-        shell: bash
-        run: node apps/desktop/scripts/build-wsl-rootfs.mjs
-
-      - name: Upload managed WSL2 rootfs
-        uses: actions/upload-artifact@v4
-        with:
-          name: managed-wsl2-rootfs
-          path: apps/desktop/resources/wsl/second-wsl-rootfs.tar
-          if-no-files-found: error
-
-  build-installers:
-    name: Build ${{ matrix.artifact_platform }}
-    needs: build-wsl-rootfs
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - artifact_platform: mac-arm64
-            runner: macos-15
-            runtime_id: darwin-arm64
-            payload_dir: packages/cli-local-darwin-arm64
-            builder_args: --mac dmg --arm64
-            expected_ext: dmg
-            signing: mac
-          - artifact_platform: mac-x64
-            runner: macos-15
-            runtime_id: darwin-x64
-            payload_dir: packages/cli-local-darwin-x64
-            builder_args: --mac dmg --x64
-            expected_ext: dmg
-            signing: mac
-          - artifact_platform: windows-x64
-            runner: windows-latest
-            runtime_id: linux-x64
-            payload_dir: packages/cli-local-linux-x64
-            builder_args: --win nsis --x64
-            expected_ext: exe
-            signing: windows
-          - artifact_platform: linux-x64
-            runner: ubuntu-latest
-            runtime_id: linux-x64
-            payload_dir: packages/cli-local-linux-x64
-            builder_args: --linux AppImage --x64
-            expected_ext: AppImage
-            signing: none
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install Linux binary patcher
-        if: runner.os == 'Linux'
-        shell: bash
-        run: sudo apt-get update && sudo apt-get install -y patchelf
-
-      - name: Derive version
-        id: release
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#desktop-v}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid desktop release version: $VERSION" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Download managed WSL2 rootfs
-        if: matrix.artifact_platform == 'windows-x64'
-        uses: actions/download-artifact@v4
-        with:
-          name: managed-wsl2-rootfs
-          path: apps/desktop/resources/wsl
 
       - name: Install dependencies
         shell: bash
@@ -145,18 +48,17 @@ jobs:
           npm ci --prefix packages/cli
           npm ci --prefix apps/desktop
 
-      - name: Build local payload
-        if: matrix.artifact_platform != 'windows-x64'
+      - name: Build macOS arm64 payload
         shell: bash
         run: |
-          npm --prefix "${{ matrix.payload_dir }}" pkg set version="${{ steps.release.outputs.version }}"
-          npm --prefix "${{ matrix.payload_dir }}" run build
+          npm --prefix packages/cli-local-darwin-arm64 pkg set version="${{ steps.release.outputs.version }}"
+          npm --prefix packages/cli-local-darwin-arm64 run build
 
       - name: Set desktop package version
         shell: bash
         run: npm --prefix apps/desktop pkg set version="${{ steps.release.outputs.version }}"
 
-      - name: Validate signing configuration
+      - name: Validate macOS signing configuration
         shell: bash
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
@@ -164,141 +66,96 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          if [[ "${{ matrix.signing }}" == "mac" ]]; then
-            test -n "$MACOS_CERTIFICATE" || { echo "Missing MACOS_CERTIFICATE" >&2; exit 1; }
-            test -n "$MACOS_CERTIFICATE_PASSWORD" || { echo "Missing MACOS_CERTIFICATE_PASSWORD" >&2; exit 1; }
-            test -n "$APPLE_ID" || { echo "Missing APPLE_ID" >&2; exit 1; }
-            test -n "$APPLE_APP_SPECIFIC_PASSWORD" || { echo "Missing APPLE_APP_SPECIFIC_PASSWORD" >&2; exit 1; }
-            test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID" >&2; exit 1; }
-          fi
-          if [[ "${{ matrix.signing }}" == "windows" ]]; then
-            test -n "$WINDOWS_CERTIFICATE" || { echo "Missing WINDOWS_CERTIFICATE" >&2; exit 1; }
-            test -n "$WINDOWS_CERTIFICATE_PASSWORD" || { echo "Missing WINDOWS_CERTIFICATE_PASSWORD" >&2; exit 1; }
-          fi
+          test -n "$MACOS_CERTIFICATE" || { echo "Missing MACOS_CERTIFICATE" >&2; exit 1; }
+          test -n "$MACOS_CERTIFICATE_PASSWORD" || { echo "Missing MACOS_CERTIFICATE_PASSWORD" >&2; exit 1; }
+          test -n "$APPLE_ID" || { echo "Missing APPLE_ID" >&2; exit 1; }
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD" || { echo "Missing APPLE_APP_SPECIFIC_PASSWORD" >&2; exit 1; }
+          test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID" >&2; exit 1; }
 
       - name: Export signing environment
         shell: bash
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          if [[ "${{ matrix.signing }}" == "mac" ]]; then
-            export CERT_P12="$RUNNER_TEMP/second-macos-certificate.p12"
-            python3 -c 'import base64, os, pathlib; pathlib.Path(os.environ["CERT_P12"]).write_bytes(base64.b64decode(os.environ["MACOS_CERTIFICATE"].strip(), validate=True))'
-            openssl pkcs12 \
-              -in "$CERT_P12" \
-              -nokeys \
-              -passin env:MACOS_CERTIFICATE_PASSWORD \
-              -info \
-              -noout >/dev/null
-            echo "CSC_LINK=$CERT_P12" >> "$GITHUB_ENV"
-            {
-              echo "CSC_KEY_PASSWORD<<__SECOND_CSC_KEY_PASSWORD__"
-              printf '%s\n' "$MACOS_CERTIFICATE_PASSWORD"
-              echo "__SECOND_CSC_KEY_PASSWORD__"
-            } >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.signing }}" == "windows" ]]; then
-            echo "CSC_LINK=$WINDOWS_CERTIFICATE" >> "$GITHUB_ENV"
-            echo "CSC_KEY_PASSWORD=$WINDOWS_CERTIFICATE_PASSWORD" >> "$GITHUB_ENV"
-          else
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
-          fi
+          export CERT_P12="$RUNNER_TEMP/second-macos-certificate.p12"
+          python3 -c 'import base64, os, pathlib; pathlib.Path(os.environ["CERT_P12"]).write_bytes(base64.b64decode(os.environ["MACOS_CERTIFICATE"].strip(), validate=True))'
+          openssl pkcs12 \
+            -in "$CERT_P12" \
+            -nokeys \
+            -passin env:MACOS_CERTIFICATE_PASSWORD \
+            -info \
+            -noout >/dev/null
+          echo "CSC_LINK=$CERT_P12" >> "$GITHUB_ENV"
+          {
+            echo "CSC_KEY_PASSWORD<<__SECOND_CSC_KEY_PASSWORD__"
+            printf '%s\n' "$MACOS_CERTIFICATE_PASSWORD"
+            echo "__SECOND_CSC_KEY_PASSWORD__"
+          } >> "$GITHUB_ENV"
 
       - name: Validate desktop shell
         shell: bash
         env:
-          SECOND_DESKTOP_RUNTIME_ID: ${{ matrix.runtime_id }}
-          SECOND_DESKTOP_ARTIFACT_PLATFORM: ${{ matrix.artifact_platform }}
+          SECOND_DESKTOP_RUNTIME_ID: darwin-arm64
+          SECOND_DESKTOP_ARTIFACT_PLATFORM: mac-arm64
         run: npm --prefix apps/desktop run build
 
-      - name: Build installer
+      - name: Build DMG
         shell: bash
         env:
-          SECOND_DESKTOP_RUNTIME_ID: ${{ matrix.runtime_id }}
-          SECOND_DESKTOP_ARTIFACT_PLATFORM: ${{ matrix.artifact_platform }}
+          SECOND_DESKTOP_RUNTIME_ID: darwin-arm64
+          SECOND_DESKTOP_ARTIFACT_PLATFORM: mac-arm64
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm --prefix apps/desktop run make -- ${{ matrix.builder_args }}
+        run: npm --prefix apps/desktop run make -- --mac dmg --arm64
 
-      - name: Collect installer
-        id: collect
+      - name: Collect DMG
         shell: bash
         run: |
           VERSION="${{ steps.release.outputs.version }}"
-          ARTIFACT="Second-${VERSION}-${{ matrix.artifact_platform }}.${{ matrix.expected_ext }}"
           mkdir -p desktop-artifacts
-          cp "apps/desktop/release/${ARTIFACT}" "desktop-artifacts/${ARTIFACT}"
-          echo "artifact=${ARTIFACT}" >> "$GITHUB_OUTPUT"
+          cp "apps/desktop/release/Second-${VERSION}-mac-arm64.dmg" "desktop-artifacts/Second-mac-arm64.dmg"
 
-      - name: Upload installer artifact
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.artifact_platform }}
-          path: desktop-artifacts/${{ steps.collect.outputs.artifact }}
+          name: desktop-mac-arm64
+          path: desktop-artifacts/Second-mac-arm64.dmg
           if-no-files-found: error
 
   publish-release:
-    name: Publish GitHub Release
-    needs: build-installers
+    name: Attach DMG to GitHub Release
+    needs: build-mac-arm64
     runs-on: ubuntu-latest
 
     steps:
-      - name: Derive version
-        id: release
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#desktop-v}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid desktop release version: $VERSION" >&2
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Download installer artifacts
+      - name: Download DMG artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: desktop-*
+          name: desktop-mac-arm64
           path: artifacts
-          merge-multiple: true
 
-      - name: Verify deterministic artifact set
+      - name: Verify artifact set
         shell: bash
-        run: |
-          VERSION="${{ steps.release.outputs.version }}"
-          required=(
-            "Second-${VERSION}-mac-arm64.dmg"
-            "Second-${VERSION}-mac-x64.dmg"
-            "Second-${VERSION}-windows-x64.exe"
-            "Second-${VERSION}-linux-x64.AppImage"
-          )
-          for file in "${required[@]}"; do
-            test -f "artifacts/${file}" || { echo "Missing ${file}" >&2; exit 1; }
-          done
-          find artifacts -maxdepth 1 -type f | sort
+        run: test -f artifacts/Second-mac-arm64.dmg
 
-      - name: Generate checksums
+      - name: Generate checksum
         shell: bash
         run: |
           cd artifacts
-          sha256sum Second-* > checksums.txt
+          sha256sum Second-mac-arm64.dmg > Second-mac-arm64.dmg.sha256
 
-      - name: Create or update GitHub Release
+      - name: Attach to GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ steps.release.outputs.version }}"
-          TITLE="Second Desktop v${VERSION}"
-          NOTES="Deterministic desktop installer release for Second ${VERSION}."
+          VERSION="${GITHUB_REF_NAME#v}"
+          TITLE="v${VERSION}"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --title "$TITLE" --notes "$NOTES"
-            gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
+            gh release upload "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --clobber
           else
-            gh release create "$GITHUB_REF_NAME" artifacts/* --title "$TITLE" --notes "$NOTES"
+            gh release create "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --title "$TITLE" --notes "Second ${VERSION}"
           fi
