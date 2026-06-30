@@ -104,10 +104,7 @@ jobs:
           SECOND_DESKTOP_RUNTIME_ID: darwin-arm64
           SECOND_DESKTOP_ARTIFACT_PLATFORM: mac-arm64
           SECOND_DESKTOP_SKIP_NOTARIZE: "1"
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm --prefix apps/desktop run make -- --mac dmg --arm64
+        run: npm --prefix apps/desktop run make -- --mac dmg --arm64 --publish never
 
       - name: Collect DMG
         shell: bash
