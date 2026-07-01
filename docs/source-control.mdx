@@ -157,7 +157,7 @@ The manifest makes the repository self-describing:
   "sourceControl": {
     "provider": "github",
     "owner": "acme",
-    "repo": "customer-console-second-app",
+    "repo": "second-app-customer-console",
     "tag": "second-app-v12",
     "version": 12,
     "commitSha": "...",
@@ -229,6 +229,10 @@ Repository visibility defaults to private.
 
 User-owned repositories must be owned by the authenticated provider account.
 For organization-owned repositories, configure the organization owner.
+
+Repo name prefix is optional. When it is blank, new repositories use
+`second-app-<app-name>`, for example `second-app-customer-console`. When a prefix
+is configured, new repositories use `<prefix>-<app-name>`.
 
 ## Secret handling
 

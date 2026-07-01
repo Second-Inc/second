@@ -84,14 +84,14 @@ function encodePath(path: string): string {
     .join("/");
 }
 
-function repoSlug(value: string): string {
+function repoSlug(value: string, fallback = "second-app"): string {
   const normalized = value
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
-  return normalized || "second-app";
+  return normalized || fallback;
 }
 
 function tagVersion(tag: string): number | null {
@@ -105,11 +105,9 @@ function repoNameCandidates(input: {
   appName: string;
   prefix?: string | null;
 }): string[] {
-  const basePrefix = repoSlug(input.prefix ?? "");
-  const app = repoSlug(input.appName);
-  const base = repoSlug(
-    [basePrefix, app, "second-app"].filter(Boolean).join("-"),
-  );
+  const basePrefix = repoSlug(input.prefix ?? "", "second-app");
+  const app = repoSlug(input.appName, "app");
+  const base = repoSlug([basePrefix, app].filter(Boolean).join("-"));
   return [base, ...Array.from({ length: 20 }, (_, index) => `${base}-${index + 2}`)];
 }
 

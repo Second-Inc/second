@@ -543,11 +543,12 @@ export default function GitHubSourceControlClient({
                   id="source-control-repo-prefix"
                   value={repoNamePrefix}
                   onChange={(event) => setRepoNamePrefix(event.target.value)}
-                  placeholder="second"
+                  placeholder="second-app"
                   disabled={!canManage || saving}
                 />
                 <FieldDescription>
-                  Optional prefix for new app repositories.
+                  Leave blank to use second-app as the prefix. New repositories
+                  will look like second-app-&lt;app-name&gt;.
                 </FieldDescription>
               </Field>
 

@@ -444,7 +444,7 @@ Proposed manifest extension:
   "sourceControl": {
     "provider": "github",
     "owner": "acme",
-    "repo": "customer-console-second-app",
+    "repo": "second-app-customer-console",
     "tag": "second-app-v12",
     "version": 12,
     "commitSha": "...",
