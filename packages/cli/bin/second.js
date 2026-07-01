@@ -124,13 +124,14 @@ function resolvePayloadPackage() {
       binName: "second-local",
     };
   }
-  if (runtimeId === "win32-x64") {
-    return {
-      runtimeId,
-      packageName: "@second-inc/cli-local-win32-x64",
-      binName: "second-local",
-    };
-  }
+  // Windows is not part of the public release yet.
+  // if (runtimeId === "win32-x64") {
+  //   return {
+  //     runtimeId,
+  //     packageName: "@second-inc/cli-local-win32-x64",
+  //     binName: "second-local",
+  //   };
+  // }
   return null;
 }
 
@@ -416,11 +417,11 @@ function printUnsupportedPlatform() {
     eyebrow: "unsupported platform",
     title: "Second is not available here yet",
     subtitle:
-      "The local installer currently ships for macOS, Linux x64, and Windows x64.",
+      "The local installer currently ships for macOS and Linux x64.",
     quote: "\"Detected a runtime we do not package yet.\"",
     rows: [
       ["detected", currentRuntimeId()],
-      ["supported", "darwin-arm64, darwin-x64, linux-x64, win32-x64"],
+      ["supported", "darwin-arm64, darwin-x64, linux-x64"],
     ],
     tone: "error",
   });
