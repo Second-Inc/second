@@ -154,8 +154,21 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           TITLE="v${VERSION}"
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "Second ${VERSION}"
+
+          if RELEASE_JSON="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft,isImmutable 2>/dev/null)"; then
+            IS_DRAFT="$(jq -r '.isDraft' <<< "$RELEASE_JSON")"
+            IS_IMMUTABLE="$(jq -r '.isImmutable' <<< "$RELEASE_JSON")"
+
+            if [[ "$IS_DRAFT" == "true" ]]; then
+              gh release upload "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --repo "$GITHUB_REPOSITORY" --clobber
+              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest --title "$TITLE" --notes "Second ${VERSION}"
+            elif [[ "$IS_IMMUTABLE" == "true" ]]; then
+              echo "::error::Release $GITHUB_REF_NAME is already published and immutable, so assets cannot be attached. Delete the GitHub Release and rerun this job, or create releases as drafts before this workflow runs."
+              exit 1
+            else
+              gh release upload "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --repo "$GITHUB_REPOSITORY" --clobber
+            fi
+            exit 0
           fi
+
+          gh release create "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "Second ${VERSION}"
