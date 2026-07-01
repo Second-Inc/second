@@ -44,6 +44,25 @@ type RawOpenCodeModel = {
   variants?: unknown;
 };
 
+export function parseOpenCodeModelId(
+  value: string,
+): { providerId: string; modelId: string } | null {
+  const trimmed = value.trim();
+  const separatorIndex = trimmed.indexOf("/");
+  if (separatorIndex <= 0 || separatorIndex >= trimmed.length - 1) return null;
+
+  const providerId = trimmed.slice(0, separatorIndex);
+  const modelId = trimmed.slice(separatorIndex + 1);
+  if (!/^[a-z0-9_.-]+$/i.test(providerId)) return null;
+  if (!modelId || /\s/.test(modelId)) return null;
+
+  return { providerId, modelId };
+}
+
+export function isOpenCodeModelId(value: string): boolean {
+  return parseOpenCodeModelId(value) !== null;
+}
+
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, "");
 }
@@ -92,13 +111,17 @@ export function parseOpenCodeModelsVerbose(output: string): OpenCodeDiscoveredMo
 
   for (let index = 0; index < lines.length; index += 1) {
     const fullId = lines[index]?.trim() ?? "";
-    if (!/^[a-z0-9_.-]+\/[^/\s]+$/i.test(fullId)) continue;
+    if (!isOpenCodeModelId(fullId)) continue;
 
     let jsonStart = index + 1;
     while (jsonStart < lines.length && !lines[jsonStart]?.trim()) {
       jsonStart += 1;
     }
-    if (lines[jsonStart]?.trim() !== "{") continue;
+    if (lines[jsonStart]?.trim() !== "{") {
+      const fallback = normalizeOpenCodeModel(fullId, {});
+      if (fallback) models.push(fallback);
+      continue;
+    }
 
     const jsonLines: string[] = [];
     let depth = 0;
@@ -127,12 +150,12 @@ function normalizeOpenCodeModel(
   fullId: string,
   raw: RawOpenCodeModel,
 ): OpenCodeDiscoveredModel | null {
-  const [providerIdFromLine, modelIdFromLine] = fullId.split("/");
-  if (!providerIdFromLine || !modelIdFromLine) return null;
+  const parsedId = parseOpenCodeModelId(fullId);
+  if (!parsedId) return null;
 
-  const providerId = stringValue(raw.providerID) ?? providerIdFromLine;
-  const modelId = stringValue(raw.id) ?? modelIdFromLine;
-  const name = stringValue(raw.name) ?? modelIdFromLine;
+  const providerId = stringValue(raw.providerID) ?? parsedId.providerId;
+  const modelId = stringValue(raw.id) ?? parsedId.modelId;
+  const name = stringValue(raw.name) ?? parsedId.modelId;
   const family = stringValue(raw.family);
   const status = stringValue(raw.status);
   const capabilities = isRecord(raw.capabilities) ? raw.capabilities : {};
@@ -155,7 +178,7 @@ function normalizeOpenCodeModel(
     name,
     ...(family ? { family } : {}),
     ...(status ? { status } : {}),
-    toolcall: capabilities.toolcall === true,
+    toolcall: Object.keys(capabilities).length === 0 ? true : capabilities.toolcall === true,
     reasoning: capabilities.reasoning === true,
     attachment: capabilities.attachment === true,
     ...(numberValue(limit.context) !== undefined

@@ -41,6 +41,7 @@ type DetectionResult = {
         envKeyConfigured: boolean;
         cliLikelyConfigured: boolean;
         localAuthConfigured?: boolean;
+        modelsDiscovered?: boolean;
       };
       error?: string;
     }
@@ -303,7 +304,13 @@ export function ProviderSetup() {
   const opencodeJsonEvents = !!opencodeRuntime?.features?.jsonEvents;
   const opencodeConfigured =
     !!opencodeRuntime?.auth.envKeyConfigured ||
-    !!opencodeRuntime?.auth.localAuthConfigured;
+    !!opencodeRuntime?.auth.localAuthConfigured ||
+    !!opencodeRuntime?.auth.modelsDiscovered;
+  const opencodeReadyHint = opencodeRuntime?.auth.localAuthConfigured
+    ? "; using local OpenCode auth"
+    : opencodeRuntime?.auth.modelsDiscovered
+      ? "; using OpenCode model config"
+      : "";
   // const apiKeyReady = !!detection?.apiKeyConfigured;
 
   function chooseOpenCode() {
@@ -455,7 +462,7 @@ export function ProviderSetup() {
               : opencodeInstalled && !opencodeJsonEvents
                 ? "Upgrade required"
                 : opencodeInstalled && !opencodeConfigured
-                  ? "Needs auth"
+                  ? "Needs setup"
                   : "Not found"
           }
           description={
@@ -464,7 +471,7 @@ export function ProviderSetup() {
               : opencodeInstalled && !opencodeJsonEvents
                 ? "OpenCode is installed, but this version cannot stream JSON events."
                 : opencodeInstalled
-                  ? "OpenCode is installed, but no provider credentials were found."
+                  ? "OpenCode is installed, but no configured models were found."
                   : "Uses OpenCode with provider/model IDs such as openai/gpt-5.5."
           }
           hint={
@@ -474,9 +481,7 @@ export function ProviderSetup() {
                 {detection?.opencodeCli.version
                   ? `: ${detection.opencodeCli.version}`
                   : ""}
-                {opencodeRuntime?.auth.localAuthConfigured
-                  ? "; using local OpenCode auth"
-                  : ""}
+                {opencodeReadyHint}
               </span>
             ) : opencodeInstalled && !opencodeJsonEvents ? (
               <span>
@@ -485,12 +490,12 @@ export function ProviderSetup() {
               </span>
             ) : opencodeInstalled ? (
               <span>
-                Run <code>opencode auth login</code> or set{" "}
-                <code>OPENAI_API_KEY</code>
+                Run <code>opencode models</code> to verify your provider setup,
+                then retry.
               </span>
             ) : (
               <span>
-                Install OpenCode, then run <code>opencode auth login</code>
+                Install OpenCode, then configure a provider.
               </span>
             )
           }

@@ -32,7 +32,7 @@ The local onboarding runtime choice is also saved as a browser preference so the
 
 Claude uses the Claude Agent SDK. Codex is launched through the Codex CLI app-server protocol over stdio, which is the same local Codex runtime surface used by the Codex SDK but without adding an extra SDK dependency in the worker. OpenCode is launched in non-interactive JSON mode. The worker normalizes all runtime output into the same Claude-shaped worker SSE events so the existing chat bridge and AI element cards continue to render streamed text, plans, terminal commands, file edits, app data tools, integration setup, and `done_building`.
 
-OpenCode support requires an OpenCode CLI version whose `opencode run --help` includes `--format json`. Older OpenCode binaries are reported during onboarding as installed but not usable for the OpenCode runtime, and the worker returns a clear runtime error instead of starting a non-streamable plain-text run. OpenCode model discovery uses `opencode models --verbose`, filters to models whose metadata reports `capabilities.toolcall: true`, and exposes each model's `variants` as the OpenCode intelligence control. The selected variant is passed to `opencode run --variant`; `auto` omits the flag and lets OpenCode choose the model default.
+OpenCode support requires an OpenCode CLI version whose `opencode run --help` includes `--format json`. Older OpenCode binaries are reported during onboarding as installed but not usable for the OpenCode runtime, and the worker returns a clear runtime error instead of starting a non-streamable plain-text run. OpenCode readiness is based on the CLI's own configured model list: if `opencode models --verbose` can return usable models, Second treats OpenCode as configured even when the setup uses custom providers such as LiteLLM, vLLM, or another OpenAI-compatible gateway instead of `opencode auth login`. Model discovery exposes each model's `variants` as the OpenCode intelligence control. The selected variant is passed to `opencode run --variant`; `auto` omits the flag and lets OpenCode choose the model default.
 
 ### Claude Agent SDK
 
@@ -181,7 +181,7 @@ During onboarding in local mode (`SECOND_AUTH_MODE=none`), a provider setup scre
 
 1. **Claude CLI on PATH** — checked via `which claude` on the worker, or `SECOND_CLAUDE_PATH` when an operator pins a custom executable path
 2. **Codex CLI on PATH** — checked via `which codex` on the worker, or `SECOND_CODEX_PATH` when configured
-3. **OpenCode CLI on PATH with JSON events** — checked via `which opencode` and `opencode run --help` on the worker, or `SECOND_OPENCODE_PATH` when configured. OpenCode model discovery is available through the worker's `/opencode/models` endpoint and returns only model metadata, not auth files or config contents.
+3. **OpenCode CLI on PATH with JSON events and configured models** — checked via `which opencode`, `opencode run --help`, and `opencode models --verbose` on the worker, or `SECOND_OPENCODE_PATH` when configured. OpenCode model discovery is available through the worker's `/opencode/models` endpoint and returns only model metadata, not auth files or config contents.
 4. **Runtime auth env hints** — `ANTHROPIC_API_KEY`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, and `GEMINI_API_KEY` are reported only as booleans, never values
 
 If the Claude CLI is installed and the user has logged in (`claude login`), everything works automatically — no API key needed. The SDK spawns the user's local `claude` binary, which uses their existing auth.

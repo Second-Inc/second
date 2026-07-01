@@ -10,6 +10,7 @@ import {
 import { buildOpenCodeToolConfig } from "./opencode.js";
 import {
   buildOpenCodeRunArgs,
+  isOpenCodeModelId,
   parseOpenCodeModelsVerbose,
 } from "./opencode-models.js";
 import { openCodeAuthEnvKeysForModel } from "./process-env.js";
@@ -94,6 +95,37 @@ opencode/qwen-coder-free
   assert.equal(models[2]?.supportStatus, "supported");
 });
 
+test("OpenCode model IDs can include nested provider model paths", () => {
+  assert.equal(isOpenCodeModelId("vllm//models/Qwen/Qwen3-Coder-30B-A3B-Instruct"), true);
+  assert.equal(isOpenCodeModelId("openrouter/google/gemini-2.5-flash"), true);
+  assert.equal(isOpenCodeModelId("vllm/"), false);
+  assert.equal(isOpenCodeModelId("/models/Qwen/Qwen3"), false);
+});
+
+test("OpenCode verbose parser accepts nested and plain model output", () => {
+  const models = parseOpenCodeModelsVerbose(`
+vllm//models/Qwen/Qwen3-Coder-30B-A3B-Instruct
+{
+  "id": "/models/Qwen/Qwen3-Coder-30B-A3B-Instruct",
+  "providerID": "vllm",
+  "name": "Qwen3 Coder 30B",
+  "family": "qwen",
+  "status": "active",
+  "capabilities": { "toolcall": true, "reasoning": true, "attachment": false },
+  "variants": {}
+}
+llm//models/openai/gpt-oss-120b
+`);
+
+  assert.equal(models.length, 2);
+  assert.equal(models[0]?.id, "vllm//models/Qwen/Qwen3-Coder-30B-A3B-Instruct");
+  assert.equal(models[0]?.providerId, "vllm");
+  assert.equal(models[0]?.modelId, "/models/Qwen/Qwen3-Coder-30B-A3B-Instruct");
+  assert.equal(models[0]?.supportStatus, "recommended");
+  assert.equal(models[1]?.id, "llm//models/openai/gpt-oss-120b");
+  assert.equal(models[1]?.toolcall, true);
+});
+
 test("OpenCode run args include variant only when selected", () => {
   assert.deepEqual(
     buildOpenCodeRunArgs({
@@ -151,6 +183,53 @@ test("OpenCode Bedrock models receive AWS auth env keys", () => {
       "AWS_SESSION_TOKEN",
     ],
   );
+});
+
+test("OpenCode custom providers receive env keys referenced in provider config", () => {
+  const command = writeProbeScript("#!/bin/sh\nexit 0\n");
+  const configPath = join(command, "..", "opencode.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      provider: {
+        vllm: {
+          options: {
+            baseURL: "https://models.example.test/v1",
+            apiKey: "{env:VLLM_API_KEY}",
+            headers: {
+              "x-litellm-token": "{env:LITELLM_TOKEN}",
+              authorization: "Bearer {env:INTERNAL_API_TOKEN}",
+            },
+          },
+          models: {
+            "/models/Qwen/Qwen3-Coder": {},
+          },
+        },
+        openai: {
+          options: {
+            apiKey: "{env:OPENAI_BACKUP_KEY}",
+          },
+        },
+      },
+    }),
+    "utf-8",
+  );
+
+  const previousConfigFile = process.env.SECOND_OPENCODE_CONFIG_FILE;
+  process.env.SECOND_OPENCODE_CONFIG_FILE = configPath;
+
+  try {
+    assert.deepEqual(
+      openCodeAuthEnvKeysForModel("vllm//models/Qwen/Qwen3-Coder").sort(),
+      ["LITELLM_TOKEN", "VLLM_API_KEY"].sort(),
+    );
+  } finally {
+    if (previousConfigFile === undefined) {
+      delete process.env.SECOND_OPENCODE_CONFIG_FILE;
+    } else {
+      process.env.SECOND_OPENCODE_CONFIG_FILE = previousConfigFile;
+    }
+  }
 });
 
 test("OpenCode JSON support probe detects supported run help", () => {

@@ -97,11 +97,19 @@ export function buildRuntimeProcessEnv(
 }
 
 export function openCodeAuthEnvKeysForModel(model: string): string[] {
-  const provider = model.split("/")[0]?.toLowerCase();
-  if (provider === "openai") return ["OPENAI_API_KEY"];
-  if (provider === "anthropic") return ["ANTHROPIC_API_KEY"];
-  if (provider === "amazon-bedrock" || provider === "bedrock" || provider === "aws-bedrock") {
-    return [
+  const provider = openCodeProviderIdFromModel(model);
+  const envKeys = new Set<string>();
+
+  if (provider === "openai") {
+    envKeys.add("OPENAI_API_KEY");
+  } else if (provider === "anthropic") {
+    envKeys.add("ANTHROPIC_API_KEY");
+  } else if (
+    provider === "amazon-bedrock" ||
+    provider === "bedrock" ||
+    provider === "aws-bedrock"
+  ) {
+    for (const key of [
       "AWS_BEARER_TOKEN_BEDROCK",
       "AWS_REGION",
       "AWS_DEFAULT_REGION",
@@ -109,12 +117,19 @@ export function openCodeAuthEnvKeysForModel(model: string): string[] {
       "AWS_ACCESS_KEY_ID",
       "AWS_SECRET_ACCESS_KEY",
       "AWS_SESSION_TOKEN",
-    ];
+    ]) {
+      envKeys.add(key);
+    }
+  } else if (provider === "google" || provider === "gemini") {
+    envKeys.add("GOOGLE_API_KEY");
+    envKeys.add("GEMINI_API_KEY");
   }
-  if (provider === "google" || provider === "gemini") {
-    return ["GOOGLE_API_KEY", "GEMINI_API_KEY"];
+
+  for (const key of openCodeProviderConfigEnvKeysForModel(model)) {
+    envKeys.add(key);
   }
-  return [];
+
+  return [...envKeys];
 }
 
 export function openCodeAuthEnvConfiguredForModel(model: string): boolean {
@@ -159,6 +174,12 @@ function openCodeConfigSourcePaths(): string[] {
   );
 
   return [...new Set(paths)];
+}
+
+function openCodeProviderIdFromModel(model: string): string {
+  const separatorIndex = model.indexOf("/");
+  const provider = separatorIndex > 0 ? model.slice(0, separatorIndex) : model;
+  return provider.trim().toLowerCase();
 }
 
 function stripJsonComments(value: string): string {
@@ -253,7 +274,52 @@ export function readOpenCodeProviderConfig(): Record<string, unknown> {
     }
   }
 
+  const inlineConfig = process.env.OPENCODE_CONFIG_CONTENT?.trim();
+  if (inlineConfig) {
+    try {
+      const parsed = JSON.parse(stripJsonComments(inlineConfig));
+      if (isRecord(parsed) && isRecord(parsed.provider)) {
+        provider = mergeRecords(provider, parsed.provider);
+      }
+    } catch {
+      // OpenCode will report invalid inline config when run directly.
+    }
+  }
+
   return Object.keys(provider).length > 0 ? { provider } : {};
+}
+
+function collectEnvReferences(value: unknown, keys: Set<string>): void {
+  if (typeof value === "string") {
+    for (const match of value.matchAll(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
+      const key = match[1];
+      if (key) keys.add(key);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectEnvReferences(item, keys);
+    return;
+  }
+
+  if (isRecord(value)) {
+    for (const item of Object.values(value)) collectEnvReferences(item, keys);
+  }
+}
+
+function openCodeProviderConfigEnvKeysForModel(model: string): string[] {
+  const providerId = openCodeProviderIdFromModel(model);
+  const providerConfig = readOpenCodeProviderConfig().provider;
+  if (!isRecord(providerConfig)) return [];
+
+  const selectedProviderConfig = providerConfig[providerId];
+  const keys = new Set<string>();
+  collectEnvReferences(selectedProviderConfig, keys);
+
+  return [...keys].filter(
+    (key) => !RUNTIME_FORBIDDEN_ENV_KEYS.includes(key as typeof RUNTIME_FORBIDDEN_ENV_KEYS[number]),
+  );
 }
 
 export function openCodeLocalAuthAvailable(): boolean {

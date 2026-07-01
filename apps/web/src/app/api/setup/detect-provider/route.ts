@@ -21,6 +21,7 @@ type DetectionResult = {
         envKeyConfigured: boolean;
         cliLikelyConfigured: boolean;
         localAuthConfigured?: boolean;
+        modelsDiscovered?: boolean;
       };
     }
   >;
@@ -65,6 +66,7 @@ function workerUnavailableProviderResult(error: string): DetectionResult {
           ),
           cliLikelyConfigured: false,
           localAuthConfigured: false,
+          modelsDiscovered: false,
         },
       },
     },
