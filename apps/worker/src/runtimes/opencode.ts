@@ -9,6 +9,7 @@ import {
   seedOpenCodeAuthFromLocalLogin,
   writePrivateJsonFile,
 } from "./process-env.js";
+import { runtimeBinary } from "./runtime-binary.js";
 import { detectOpenCodeRunJsonSupport } from "./opencode-cli.js";
 import {
   buildOpenCodeRunArgs,
@@ -51,7 +52,7 @@ export function buildOpenCodeToolConfig(allowedTools: string[] | undefined) {
 }
 
 function opencodeCommand(): string {
-  return process.env.SECOND_OPENCODE_PATH?.trim() || "opencode";
+  return runtimeBinary("SECOND_OPENCODE_PATH", "opencode");
 }
 
 export const openCodeRuntimeAdapter: RuntimeAdapter = {

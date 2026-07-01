@@ -1,8 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  accessSync,
-  constants,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -50,6 +48,11 @@ import { claudeSubprocessIsolationStatus } from "./runtimes/claude-env.js";
 import { openCodeLocalAuthAvailable } from "./runtimes/process-env.js";
 import { detectOpenCodeRunJsonSupport } from "./runtimes/opencode-cli.js";
 import { discoverOpenCodeModels } from "./runtimes/opencode-models.js";
+import {
+  resolveRuntimeBinary,
+  runtimeBinary,
+  runtimeBinaryEnv,
+} from "./runtimes/runtime-binary.js";
 
 function resolveWorkspaceDir(appId: string): string {
   return process.env.WORKSPACES_DIR
@@ -841,63 +844,15 @@ app.get("/sessions/:appId/agent-run/:runId/events", async (c) => {
   return new Response(stream, { headers: SSE_HEADERS });
 });
 
-function runtimeBinary(envKey: string, fallback: string): string {
-  return process.env[envKey]?.trim() || fallback;
-}
-
-function commonBinaryCandidates(binary: string): string[] {
-  if (process.platform !== "darwin" || binary !== "claude") return [];
-  return [
-    join(homedir(), ".local", "bin", "claude"),
-    "/opt/homebrew/bin/claude",
-    "/usr/local/bin/claude",
-  ];
-}
-
-function resolveBinaryPath(binary: string): string | null {
-  if (binary.includes("/")) {
-    try {
-      accessSync(binary, constants.X_OK);
-      return binary;
-    } catch {
-      return null;
-    }
-  }
-
-  try {
-    const resolved = execFileSync("which", [binary], {
-      timeout: 3000,
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-      .toString()
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean);
-    if (resolved) return resolved;
-  } catch {
-    // Fall back to common installer paths below.
-  }
-
-  for (const candidate of commonBinaryCandidates(binary)) {
-    try {
-      accessSync(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // Try the next candidate.
-    }
-  }
-
-  return null;
-}
-
 function detectBinary(binary: string, versionArgs = ["--version"]) {
-  const resolved = resolveBinaryPath(binary);
+  const resolved = resolveRuntimeBinary(binary);
   const available = Boolean(resolved);
   let version: string | undefined;
 
   if (resolved) {
     try {
       version = execFileSync(resolved, versionArgs, {
+        env: runtimeBinaryEnv(),
         timeout: 3000,
         stdio: "pipe",
       })
@@ -922,12 +877,13 @@ function codexCliAuthenticated(binary: string): boolean {
   if (process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY) return true;
   if (!codexLocalAuthSeedingEnabled()) return false;
 
-  const resolved = resolveBinaryPath(binary);
+  const resolved = resolveRuntimeBinary(binary);
   if (!resolved) return false;
 
   const status = spawnSync(resolved, ["login", "status"], {
     timeout: 3000,
     encoding: "utf-8",
+    env: runtimeBinaryEnv(),
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (status.error || status.status !== 0) return false;

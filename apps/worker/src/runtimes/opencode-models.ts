@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { runtimeBinaryEnv } from "./runtime-binary.js";
 
 export type OpenCodeModelSupportStatus =
   | "supported"
@@ -267,6 +268,7 @@ export function discoverOpenCodeModels(input: {
   const result = spawnSync(input.command, args, {
     timeout: input.refresh ? 20_000 : 10_000,
     encoding: "utf-8",
+    env: runtimeBinaryEnv(),
     stdio: ["ignore", "pipe", "pipe"],
   });
 

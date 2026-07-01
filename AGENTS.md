@@ -35,6 +35,14 @@ It's also very important to keep everything very secure and go with the security
 - When testing app-building flows, keep prompts intentionally tiny so runs finish quickly: ask for a tiny to-do list with minimal UI and no agents.
 - Unless explicitly requested, send the message and verify the response starts successfully, but do not approve or complete the build.
 
+# When making changes that are directly related to the desktop app:
+- If the bug only appears in the packaged desktop app but not in `npx --yes @second-inc/cli` or browser localhost, first suspect desktop runtime environment differences such as PATH, app sandbox/signing, packaged resources, or lifecycle.
+- For macOS provider subprocess bugs, remember Finder-launched apps do not inherit the user's terminal PATH; resolve CLI tools through the login shell or common install paths before changing provider logic.
+- Do the smallest source fix plus quick validation, then hand the exact local build command to the human for manual app testing when they are actively testing the DMG/app.
+- Do not keep running long DMG/notarization/build-test loops unless explicitly asked; stop once the code is ready for the requested manual test.
+- If the human asks you to build it yourself then run, install and test it, run the following command: `cd /Users/omervexler/.codex/worktrees/<current-worktree>/second
+SECOND_DESKTOP_SKIP_NOTARIZE=1 npm --prefix apps/desktop run make -- --mac dmg --arm64 --publish never` . The DMG will then be here: "/Users/omervexler/.codex/worktrees/<current-worktree>/second/apps/desktop/release/Second-0.2.0-mac-arm64.dmg"
+
 # About QA guides
 - For broad manual QA, use the `QA/` folder. Keep a reusable date-prefixed E2E guide such as `QA/YYYY-MM-DD-E2E.md`, and create a separate date-prefixed task guide such as `QA/YYYY-MM-DD-<feature-or-merge>-qa.md` for the current feature, branch, or merge.
 - When a user asks for both a general E2E pass and a feature-specific QA pass, run the general E2E guide first, then the feature-specific guide, and record results in the feature-specific QA file.

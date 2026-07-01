@@ -208,6 +208,8 @@ function createRuntime() {
     env: {
       SECOND_DESKTOP: "1",
       SECOND_LOCAL_NO_OPEN: "1",
+      SECOND_ALLOW_CODEX_LOCAL_AUTH: "1",
+      SECOND_ALLOW_OPENCODE_LOCAL_AUTH: "1",
     },
   });
 }

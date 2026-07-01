@@ -11,6 +11,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentRuntimeId } from "./types.js";
+import { runtimeSearchPath } from "./runtime-binary.js";
 
 const BASE_ENV_ALLOWLIST = [
   "PATH",
@@ -76,6 +77,8 @@ export function buildRuntimeProcessEnv(
     const value = process.env[key];
     if (typeof value === "string" && value.length > 0) env[key] = value;
   }
+  env.HOME = env.HOME || homedir();
+  env.PATH = runtimeSearchPath();
 
   for (const key of options.authEnvKeys ?? []) {
     const value = process.env[key];

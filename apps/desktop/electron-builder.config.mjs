@@ -59,6 +59,7 @@ export default {
     category: "public.app-category.developer-tools",
     hardenedRuntime: true,
     gatekeeperAssess: false,
+    icon: "resources/icon.icns",
     identity: macIdentity,
     entitlements: "resources/entitlements.mac.plist",
     entitlementsInherit: "resources/entitlements.mac.plist",
