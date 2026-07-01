@@ -79,6 +79,21 @@ export async function getValidSourceControlConnection(
   return connection?.status === "valid" ? connection : null;
 }
 
+export async function hasValidSourceControlConnection(
+  input: ProviderInput,
+): Promise<boolean> {
+  const collection = await getSourceControlConnectionsCollection();
+  const connection = await collection.findOne(
+    {
+      workspaceId: input.workspaceId,
+      provider: providerFromInput(input),
+      status: "valid",
+    },
+    { projection: { _id: 1 } },
+  );
+  return Boolean(connection);
+}
+
 export async function upsertSourceControlConnection(input: {
   workspaceId: string;
   provider: SourceControlProviderKey;

@@ -176,6 +176,8 @@ export function WorkspaceSidebar({
     apps.some((app) => app.hasPublishedVersion),
   );
   const [sidebarApps, setSidebarApps] = useState<SidebarApp[]>(apps);
+  const [liveShowAvailableApps, setLiveShowAvailableApps] =
+    useState(showAvailableApps);
   const [liveMemberCount, setLiveMemberCount] = useState(activeMemberCount);
   const [livePendingReviewCount, setLivePendingReviewCount] =
     useState(pendingReviewCount);
@@ -222,13 +224,14 @@ export function WorkspaceSidebar({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setSidebarApps(apps);
+      setLiveShowAvailableApps(showAvailableApps);
       setLiveMemberCount(activeMemberCount);
       setLivePendingReviewCount(pendingReviewCount);
       setRunStatuses(sidebarRunStatusMap(apps));
       setToolRecoveryStatuses(sidebarToolRecoveryStatusMap(apps));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [activeMemberCount, apps, pendingReviewCount]);
+  }, [activeMemberCount, apps, pendingReviewCount, showAvailableApps]);
 
   useEffect(() => {
     const previousPublishedAppCount = previousPublishedAppCountRef.current;
@@ -285,6 +288,7 @@ export function WorkspaceSidebar({
       const data = (await response.json()) as {
         activeMemberCount?: number;
         pendingReviewCount?: number;
+        showAvailableApps?: boolean;
         apps?: SidebarApp[];
       };
       const nextApps = data.apps ?? [];
@@ -301,6 +305,9 @@ export function WorkspaceSidebar({
       }
       if (typeof data.pendingReviewCount === "number") {
         setLivePendingReviewCount(data.pendingReviewCount);
+      }
+      if (typeof data.showAvailableApps === "boolean") {
+        setLiveShowAvailableApps(data.showAvailableApps);
       }
     } catch {
       // The last server-rendered sidebar snapshot remains usable.
@@ -370,7 +377,8 @@ export function WorkspaceSidebar({
       event.scope === "reviews" ||
       event.scope === "memberships" ||
       event.scope === "team-memberships" ||
-      event.scope === "integrations"
+      event.scope === "integrations" ||
+      event.scope === "workspace-settings"
     ) {
       scheduleSidebarRefresh();
     }
@@ -706,7 +714,7 @@ export function WorkspaceSidebar({
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {showAvailableApps ? (
+              {liveShowAvailableApps ? (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild

@@ -11,6 +11,7 @@ import {
 import {
   appHasPublishedVersion,
   getAppPublishStatus,
+  hasValidSourceControlConnection,
   listLatestRunStatesForWorkspace,
   listMembershipsForWorkspace,
   listReviewRequestsForWorkspace,
@@ -75,12 +76,14 @@ export default async function WorkspaceLayout({
     memberships: onboardingState.memberships,
   };
 
+  const localSourceControlFeaturesAvailable = canShowLocalSourceControlFeatures();
   const [
     workspaces,
     apps,
     appRunStates,
     activeWorkspaceMemberships,
     reviews,
+    sourceControlConnected,
   ] = await Promise.all([
     listWorkspacesByIds(
       onboardingState.memberships.map((m) => m.workspaceId),
@@ -91,6 +94,9 @@ export default async function WorkspaceLayout({
     isWorkspaceAdminRole(activeMembership.role)
       ? listReviewRequestsForWorkspace({ workspaceId, status: "pending" })
       : Promise.resolve([]),
+    localSourceControlFeaturesAvailable
+      ? hasValidSourceControlConnection({ workspaceId, provider: "github" })
+      : Promise.resolve(false),
   ]);
   const config = readRuntimeConfig();
   const canReview = isWorkspaceAdminRole(activeMembership.role);
@@ -130,7 +136,9 @@ export default async function WorkspaceLayout({
             activeRole={activeMembership.role}
             activeMemberCount={activeWorkspaceMemberships.length}
             pendingReviewCount={reviews.length}
-            showAvailableApps={canShowLocalSourceControlFeatures()}
+            showAvailableApps={
+              localSourceControlFeaturesAvailable && sourceControlConnected
+            }
             apps={apps.map((a) => ({
               _id: a._id,
               name: a.name,

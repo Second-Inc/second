@@ -180,6 +180,7 @@ export {
   findInstalledSourceControlApp,
   getSourceControlConnection,
   getValidSourceControlConnection,
+  hasValidSourceControlConnection,
   listInstalledSourceControlApps,
   markSourceControlConnectionInvalid,
   patchAppSourceControlMetadata,
