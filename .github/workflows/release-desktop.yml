@@ -154,8 +154,8 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           TITLE="v${VERSION}"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --clobber
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --title "$TITLE" --notes "Second ${VERSION}"
+            gh release create "$GITHUB_REF_NAME" artifacts/Second-mac-arm64.dmg artifacts/Second-mac-arm64.dmg.sha256 --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "Second ${VERSION}"
           fi
