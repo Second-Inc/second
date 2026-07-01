@@ -194,6 +194,7 @@ export {
   findUserById,
   updateUserContext,
   updateUserOnboarding,
+  updateUserProfile,
   updateUserPreferences,
   upsertUserByEmail,
 } from "./users";

@@ -1,4 +1,5 @@
 import type { UserDocument, WorkspaceDocument } from "@/lib/db/types";
+import { LOCAL_ONBOARDING_EMAIL } from "@/lib/auth";
 import { hasOnboardingContext } from "@/lib/onboarding-context";
 
 function trimContext(value: string | null | undefined): string | null {
@@ -13,21 +14,23 @@ export function appendOnboardingContextSection(input: {
 }): string {
   const companyContext = trimContext(input.workspace?.companyContext);
   const userContext = trimContext(input.user?.userContext);
+  const hasCompanyContext = hasOnboardingContext(companyContext);
+  const hasUserContext = hasOnboardingContext(userContext);
+  const email =
+    input.user?.email && input.user.email !== LOCAL_ONBOARDING_EMAIL
+      ? `Email: ${input.user.email}`
+      : null;
   const userIdentity = input.user
     ? [
         `Name: ${input.user.displayName}`,
-        `Email: ${input.user.email}`,
+        email,
         input.user.profileRole ? `Role: ${input.user.profileRole}` : null,
       ]
         .filter(Boolean)
         .join("\n")
     : null;
 
-  if (
-    !hasOnboardingContext(companyContext) &&
-    !hasOnboardingContext(userContext) &&
-    !userIdentity
-  ) {
+  if (!hasCompanyContext && !hasUserContext) {
     return input.systemPrompt;
   }
 

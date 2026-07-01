@@ -55,5 +55,9 @@ export function nextOnboardingPathForReadyUser(input: {
     return START_ONBOARDING_PATH;
   }
 
+  if (step === "start" && input.authMode === "none") {
+    return PROVIDER_ONBOARDING_PATH;
+  }
+
   return onboardingStepPath(step);
 }

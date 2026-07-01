@@ -237,7 +237,11 @@ const OPENCODE_MODEL_SELECTION_SETTINGS: AgentRuntimeSettings = {
   params: { variant: "auto" },
 };
 
-export function ProviderSetup() {
+type ProviderSetupProps = {
+  workspaceId: string;
+};
+
+export function ProviderSetup({ workspaceId }: ProviderSetupProps) {
   const [detection, setDetection] = useState<DetectionResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [choosing, setChoosing] = useState(false);
@@ -275,20 +279,29 @@ export function ProviderSetup() {
     detection?.runtimes?.["codex-cli"]?.available ||
     detection?.runtimes?.opencode?.available;
 
-  async function continueToStart(runtimeSettings?: AgentRuntimeSettings) {
+  async function finishLocalOnboarding(runtimeSettings?: AgentRuntimeSettings) {
     if (choosing) return;
     setChoosing(true);
     if (runtimeSettings) {
       writePreferredRuntimeSettings(runtimeSettings);
     }
-    await fetch("/api/onboarding/step", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step: "start" }),
-    }).catch(() => {});
+    try {
+      const context = await fetch("/api/onboarding/context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyContext: "", userContext: "" }),
+      });
+      if (!context.ok) throw new Error("context_save_failed");
+
+      const complete = await fetch("/api/onboarding/complete", { method: "POST" });
+      if (!complete.ok) throw new Error("onboarding_complete_failed");
+    } catch {
+      setChoosing(false);
+      return;
+    }
     document.dispatchEvent(
       new CustomEvent("second:onboarding-navigate", {
-        detail: { href: "/onboarding/start" },
+        detail: { href: `/w/${workspaceId}` },
       }),
     );
   }
@@ -393,7 +406,7 @@ export function ProviderSetup() {
           }
           onChoose={
             claudeDetected
-              ? () => void continueToStart(getDefaultRuntimeSettings("claude-code"))
+              ? () => void finishLocalOnboarding(getDefaultRuntimeSettings("claude-code"))
               : undefined
           }
         />
@@ -442,7 +455,7 @@ export function ProviderSetup() {
           }
           onChoose={
             codexRuntimeReady
-              ? () => void continueToStart(getDefaultRuntimeSettings("codex-cli"))
+              ? () => void finishLocalOnboarding(getDefaultRuntimeSettings("codex-cli"))
               : undefined
           }
         />
@@ -510,7 +523,7 @@ export function ProviderSetup() {
         onOpenChange={(nextOpen) => {
           setOpenCodeDialogOpen(nextOpen);
           if (nextOpen || !isOpenCodeModelId(openCodeRuntimeSettings.model)) return;
-          void continueToStart(openCodeRuntimeSettings);
+          void finishLocalOnboarding(openCodeRuntimeSettings);
         }}
         onChange={(settings) => {
           setOpenCodeRuntimeSettings(settings);
@@ -550,7 +563,7 @@ export function ProviderSetup() {
             variant="ghost"
             className="flex-1"
             disabled={choosing}
-            onClick={() => void continueToStart()}
+            onClick={() => void finishLocalOnboarding()}
           >
             Skip for now
           </Button>

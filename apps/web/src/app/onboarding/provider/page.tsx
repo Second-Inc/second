@@ -55,7 +55,7 @@ export default async function ProviderOnboardingPage() {
       calloutTone="warning"
       trackProgress
     >
-      <ProviderSetup />
+      <ProviderSetup workspaceId={onboardingState.memberships[0].workspaceId} />
     </OnboardingShell>
   );
 }

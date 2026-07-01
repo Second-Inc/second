@@ -4,13 +4,16 @@ import { OnboardingShell } from "@/components/onboarding/onboarding-shell";
 import { StarterOnboarding } from "@/components/onboarding/starter-onboarding";
 import {
   IDENTITY_ONBOARDING_PATH,
+  PROVIDER_ONBOARDING_PATH,
   WORKSPACE_ONBOARDING_PATH,
   resolveOnboardingState,
 } from "@/lib/auth";
+import { readRuntimeConfig } from "@/lib/config";
 import { findWorkspaceById } from "@/lib/db";
 import { userCompletedOnboarding } from "@/lib/onboarding";
 
 export default async function StartOnboardingPage() {
+  const config = readRuntimeConfig();
   const onboardingState = await resolveOnboardingState({
     headers: await headers(),
   });
@@ -29,6 +32,10 @@ export default async function StartOnboardingPage() {
 
   if (userCompletedOnboarding(onboardingState.user)) {
     redirect(`/w/${onboardingState.memberships[0].workspaceId}`);
+  }
+
+  if (config.authMode === "none") {
+    redirect(PROVIDER_ONBOARDING_PATH);
   }
 
   const workspaceId = onboardingState.memberships[0].workspaceId;

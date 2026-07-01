@@ -16,13 +16,11 @@ import { Separator } from "@/components/ui/separator";
 
 type IdentityOnboardingFormProps = {
   defaultDisplayName?: string;
-  defaultEmail?: string;
   defaultProfileRole?: string | null;
 };
 
 export function IdentityOnboardingForm({
   defaultDisplayName,
-  defaultEmail,
   defaultProfileRole,
 }: IdentityOnboardingFormProps) {
   const [submitting, setSubmitting] = useState(false);
@@ -76,20 +74,6 @@ export function IdentityOnboardingForm({
               maxLength={80}
               placeholder="Ada Lovelace"
               defaultValue={defaultDisplayName}
-            />
-          </Field>
-
-          <Field>
-            <FieldLabel htmlFor="email">Work email</FieldLabel>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              maxLength={254}
-              placeholder="you@company.com"
-              defaultValue={defaultEmail}
             />
           </Field>
 

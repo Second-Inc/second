@@ -84,6 +84,34 @@ export async function updateUserContext(input: {
   );
 }
 
+export async function updateUserProfile(input: {
+  userId: string;
+  displayName: string;
+  email?: string;
+  profileRole?: string | null;
+}): Promise<UserDocument | null> {
+  const usersCollection = await getUsersCollection();
+  const now = new Date();
+  const $set: Record<string, unknown> = {
+    displayName: input.displayName.trim(),
+    profileRole: input.profileRole?.trim() || null,
+    updatedAt: now,
+  };
+
+  if (input.email) {
+    const email = input.email.trim();
+    $set.email = email;
+    $set.emailNormalized = normalizeEmail(email);
+  }
+
+  await usersCollection.updateOne(
+    { _id: input.userId },
+    { $set },
+  );
+
+  return usersCollection.findOne({ _id: input.userId });
+}
+
 export async function updateUserOnboarding(input: {
   userId: string;
   step?: OnboardingStepId;

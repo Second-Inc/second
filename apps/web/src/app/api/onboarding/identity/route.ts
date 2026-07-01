@@ -4,18 +4,21 @@ import {
   buildNoAuthSessionCookie,
   buildWorkspaceCookie,
   IDENTITY_ONBOARDING_PATH,
+  LOCAL_ONBOARDING_EMAIL,
+  readNoAuthSessionUserId,
   WORKSPACE_ONBOARDING_PATH,
 } from "@/lib/auth";
 import { readRuntimeConfig } from "@/lib/config";
 import {
+  findUserById,
   listMembershipsForUser,
   updateUserOnboarding,
+  updateUserProfile,
   upsertUserByEmail,
 } from "@/lib/db";
 import { userCompletedOnboarding } from "@/lib/onboarding";
 import {
   validateDisplayName,
-  validateEmail,
   validateOptionalProfileRole,
 } from "@/lib/validation";
 
@@ -28,24 +31,43 @@ export async function POST(request: Request) {
 
   const formData = await request.formData();
   const displayName = validateDisplayName(formData.get("displayName"));
-  const email = validateEmail(formData.get("email"));
   const rawProfileRole = formData.get("profileRole");
   const profileRole = validateOptionalProfileRole(rawProfileRole);
   const rawProfileRoleText =
     typeof rawProfileRole === "string" ? rawProfileRole.trim() : "";
   const hasInvalidProfileRole =
     rawProfileRole !== null &&
-    (typeof rawProfileRole !== "string" ||
+      (typeof rawProfileRole !== "string" ||
       (rawProfileRoleText.length > 0 && profileRole === null));
 
-  if (!displayName || !email || hasInvalidProfileRole) {
+  if (!displayName || hasInvalidProfileRole) {
     return NextResponse.redirect(
       new URL(`${IDENTITY_ONBOARDING_PATH}?error=invalid_identity`, config.publicUrl),
       303,
     );
   }
 
-  const user = await upsertUserByEmail({ displayName, email, profileRole });
+  const existingSessionUserId = readNoAuthSessionUserId(request.headers);
+  const existingUser = existingSessionUserId
+    ? await findUserById(existingSessionUserId)
+    : null;
+  const user = existingUser
+    ? await updateUserProfile({
+        userId: existingUser._id,
+        displayName,
+        email: existingUser.email || LOCAL_ONBOARDING_EMAIL,
+        profileRole,
+      })
+    : await upsertUserByEmail({
+        displayName,
+        email: LOCAL_ONBOARDING_EMAIL,
+        profileRole,
+      });
+
+  if (!user) {
+    throw new Error("[onboarding] Failed to save local identity.");
+  }
+
   const memberships = await listMembershipsForUser(user._id);
 
   let destination = WORKSPACE_ONBOARDING_PATH;
