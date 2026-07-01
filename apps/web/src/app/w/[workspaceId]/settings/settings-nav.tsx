@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BlocksIcon,
   Code2Icon,
+  GitBranchIcon,
   // LifeBuoyIcon,
   PlugIcon,
   ShieldIcon,
@@ -30,6 +31,7 @@ const NAV_SECTIONS = [
     label: "Workspace",
     items: [
       { href: "integrations", label: "Integrations", icon: BlocksIcon },
+      { href: "source-control", label: "Source Control", icon: GitBranchIcon },
       { href: "connected-apps", label: "Connected Apps", icon: PlugIcon },
     ],
   },

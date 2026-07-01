@@ -14,6 +14,8 @@ import type { UIMessage } from "ai";
 import {
   ArrowLeftIcon,
   BotIcon,
+  GitBranchIcon,
+  GithubIcon,
   HammerIcon,
   Info,
   PanelLeftClose,
@@ -26,7 +28,10 @@ import {
   SparklesIcon,
   XIcon,
 } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -163,6 +168,25 @@ type AppWorkspaceProps = {
     permissionGroups: IntegrationPermissionGroup[];
     secretRequirements: IntegrationSecretRequirement[];
   }>;
+  sourceControl: AppSourceControlState;
+};
+
+type AppSourceControlState = {
+  localAvailable: boolean;
+  connected: boolean;
+  connectionStatus: string;
+  canPublish: boolean;
+  app: {
+    publishEnabled: boolean;
+    publishState: "publishing" | "published" | "sync_failed" | null;
+    syncStatus: "never" | "pending" | "synced" | "failed";
+    owner: string;
+    repo: string;
+    latestTag: string | null;
+    version: number | null;
+    lastSyncedAt: string | null;
+    lastErrorMessage: string | null;
+  } | null;
 };
 
 /** "panel" = 385px side panel, "full" = agent full width, "hidden" = agent hidden */
@@ -607,6 +631,7 @@ export function AppWorkspace({
   appTeamIds,
   teams,
   publishIntegrations,
+  sourceControl,
 }: AppWorkspaceProps) {
   const router = useRouter();
   const [isHydrated, setIsHydrated] = useState(false);
@@ -833,6 +858,11 @@ export function AppWorkspace({
   const [livePublishIntegrations, setLivePublishIntegrations] = useState(
     publishIntegrations,
   );
+  const [liveSourceControl, setLiveSourceControl] = useState(sourceControl);
+  const [sourceControlDialogOpen, setSourceControlDialogOpen] = useState(false);
+  const [sourceControlPublishRequested, setSourceControlPublishRequested] =
+    useState(false);
+  const [sourceControlPublishing, setSourceControlPublishing] = useState(false);
   const [appRuntimeSettings, setAppRuntimeSettings] = useState(
     initialAppRuntimeSettings,
   );
@@ -892,6 +922,7 @@ export function AppWorkspace({
       setLiveAppTeamIds(appTeamIds);
       setLiveCollaboratorUserIds(collaboratorUserIds);
       setLivePublishIntegrations(publishIntegrations);
+      setLiveSourceControl(sourceControl);
       setAppRuntimeSettings(initialAppRuntimeSettings);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -904,6 +935,7 @@ export function AppWorkspace({
     publishIntegrations,
     publishStatus,
     reviewRequestedAt,
+    sourceControl,
   ]);
 
   const fetchAppState = useCallback(async () => {
@@ -924,6 +956,7 @@ export function AppWorkspace({
         hasDraftChanges?: boolean;
         integrations?: AppWorkspaceProps["publishIntegrations"];
         appRuntimeSettings?: WorkspaceAppRuntimeSettings;
+        sourceControl?: AppSourceControlState;
       };
 
       if (data.publishStatus) setLivePublishStatus(data.publishStatus);
@@ -939,6 +972,9 @@ export function AppWorkspace({
       }
       if (data.appRuntimeSettings) {
         setAppRuntimeSettings(data.appRuntimeSettings);
+      }
+      if (data.sourceControl) {
+        setLiveSourceControl(data.sourceControl);
       }
       if (typeof data.hasPublishedVersion === "boolean") {
         setHasPublishedSnapshot(data.hasPublishedVersion);
@@ -1443,6 +1479,36 @@ export function AppWorkspace({
   const showRunUsage = isDraftVersion;
   const showDraftAgentControls =
     previewVisible && canCollaborateApp && isDraftVersion && !isInspectorView;
+  const sourceControlApp = liveSourceControl.app;
+  const sourceControlPublished = Boolean(sourceControlApp?.publishEnabled);
+  const showSourceControlPublish =
+    previewVisible &&
+    isDraftVersion &&
+    liveSourceControl.localAvailable &&
+    liveSourceControl.connected &&
+    liveSourceControl.canPublish;
+  const sourceControlStatusLabel = sourceControlPublished
+    ? sourceControlApp?.syncStatus === "failed"
+      ? "Sync failed"
+      : sourceControlApp?.syncStatus === "pending" ||
+          sourceControlApp?.publishState === "publishing"
+        ? "Syncing"
+        : sourceControlApp?.latestTag ?? "GitHub"
+    : "Publish";
+  const sourceControlRepoLabel =
+    sourceControlApp?.owner && sourceControlApp.repo
+      ? `${sourceControlApp.owner}/${sourceControlApp.repo}`
+      : "GitHub";
+  const sourceControlSyncFailed =
+    sourceControlPublished && sourceControlApp?.syncStatus === "failed";
+  const sourceControlActionEnabled =
+    sourceControlPublishing
+      ? false
+      : sourceControlSyncFailed ||
+        (!sourceControlPublished && sourceControlPublishRequested);
+  const sourceControlActionLabel = sourceControlSyncFailed
+    ? "Retry sync"
+    : "Publish";
   const isBuilderRunActive = isActiveRunStatus(builderRunStatus);
   const activeToolRecoveryStatus = isBuilderRunActive
     ? toolRecoveryStatus
@@ -1458,6 +1524,41 @@ export function AppWorkspace({
   const builderAgentToggleTooltipOpen = builderAgentToggleHintOpen
     ? true
     : undefined;
+  const publishToSourceControl = useCallback(async () => {
+    if (sourceControlPublishing) return;
+    setSourceControlPublishing(true);
+    try {
+      const response = await fetch(
+        `/api/workspaces/${workspaceId}/apps/${appId}/source-control/publish`,
+        { method: "POST" },
+      );
+      const body = (await response.json().catch(() => null)) as
+        | { error?: string; message?: string }
+        | null;
+      if (!response.ok) {
+        toast.error(body?.message ?? "Could not publish app to source control.");
+        return;
+      }
+      toast.success(
+        sourceControlPublished
+          ? "App synced to source control."
+          : "App published to source control.",
+      );
+      setSourceControlDialogOpen(false);
+      setSourceControlPublishRequested(false);
+      await fetchAppState();
+    } catch {
+      toast.error("Could not publish app to source control.");
+    } finally {
+      setSourceControlPublishing(false);
+    }
+  }, [
+    appId,
+    fetchAppState,
+    sourceControlPublished,
+    sourceControlPublishing,
+    workspaceId,
+  ]);
   const restoreAutoExpandedBuilderPanel = useCallback(() => {
     const restoreWidth = autoExpandedBuilderPanelRestoreWidthRef.current;
     if (restoreWidth === null) return;
@@ -1633,6 +1734,89 @@ export function AppWorkspace({
         </div>
       ) : null}
 
+      <Dialog
+        open={sourceControlDialogOpen}
+        onOpenChange={(open) => {
+          if (sourceControlPublishing) return;
+          setSourceControlDialogOpen(open);
+          if (!open) setSourceControlPublishRequested(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Publish this app to source control?</DialogTitle>
+            <DialogDescription>
+              Second will create a GitHub-backed version of this app from the
+              current app state. After publishing, future successful builds for
+              this app will automatically update GitHub and create new versions.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-border bg-card">
+            <div className="flex items-center gap-4 px-4 py-4">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
+                <GithubIcon className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-medium tracking-tight">
+                    Publish to GitHub
+                  </h2>
+                  {sourceControlPublished ? (
+                    <Badge variant="secondary">On</Badge>
+                  ) : (
+                    <Badge variant="outline">Off</Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                  Apps that are not published stay local.
+                </p>
+                {sourceControlApp?.lastErrorMessage ? (
+                  <p className="mt-2 text-[12px] leading-relaxed text-destructive">
+                    {sourceControlApp.lastErrorMessage}
+                  </p>
+                ) : null}
+              </div>
+              <Switch
+                checked={sourceControlPublished || sourceControlPublishRequested}
+                disabled={sourceControlPublished || sourceControlPublishing}
+                onCheckedChange={(checked) =>
+                  setSourceControlPublishRequested(checked)
+                }
+                className={cn(
+                  "[--toggle-on:oklch(0.62_0.18_148)] [--toggle-ring:oklch(0.62_0.18_148_/_0.24)] dark:[--toggle-on:oklch(0.72_0.19_148)] dark:[--toggle-ring:oklch(0.72_0.19_148_/_0.24)]",
+                  "[&>span]:bg-white",
+                  (sourceControlPublished || sourceControlPublishRequested) &&
+                    "bg-[var(--toggle-on)] hover:bg-[var(--toggle-on)] focus-visible:ring-[var(--toggle-ring)]",
+                )}
+                aria-label="Publish app to source control"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setSourceControlDialogOpen(false)}
+              disabled={sourceControlPublishing}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!sourceControlActionEnabled}
+              onClick={publishToSourceControl}
+            >
+              {sourceControlPublishing ? (
+                <AppLoader size="xs" interactive={false} />
+              ) : (
+                <GitBranchIcon data-icon="inline-start" />
+              )}
+              {sourceControlActionLabel}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Top bar — visible for active chat, with app controls once a preview exists */}
       {showTopBar && (
         <div
@@ -1710,6 +1894,36 @@ export function AppWorkspace({
 
           {/* Right: action buttons */}
           <div className="flex shrink-0 items-center gap-0.5">
+            {showSourceControlPublish ? (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        sourceControlApp?.syncStatus === "failed"
+                          ? "destructive"
+                          : sourceControlPublished
+                            ? "secondary"
+                            : "outline"
+                      }
+                      className="h-7 rounded-full px-2.5 text-xs"
+                      onClick={() => setSourceControlDialogOpen(true)}
+                    >
+                      <GithubIcon data-icon="inline-start" strokeWidth={1.5} />
+                      {sourceControlStatusLabel}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {sourceControlPublished
+                      ? sourceControlRepoLabel
+                      : "Publish this local app to source control"}
+                  </TooltipContent>
+                </Tooltip>
+                <BarSeparator />
+              </>
+            ) : null}
             {previewVisible && showPublishDialog ? (
               <AppPublishDialog
                 workspaceId={workspaceId}

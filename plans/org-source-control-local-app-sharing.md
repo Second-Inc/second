@@ -250,8 +250,11 @@ Official GitHub docs consulted for implementation constraints:
 - [x] 2026-07-01: Confirmed the existing app runtime serves built previews from worker/Mongo snapshots, not from source control.
 - [x] 2026-07-01: Researched GitHub PAT and REST API requirements for repo creation, contents, git trees, refs, tags, releases, and topics.
 - [x] 2026-07-01: Created this implementation plan.
-- [ ] Implementation not started.
-- [ ] Validation not started.
+- [x] 2026-07-01: Implemented source-control connection storage, GitHub provider adapter, credential wrapper, source-control settings UI/API, app-level publish UI/API, post-`done_building` opt-in sync, Available Apps catalog/install/update, and source-control restore hook for build/session recovery.
+- [x] 2026-07-01: Updated app preview and self-hosting docs with the source-control loading boundary.
+- [x] 2026-07-01: Ran `npm --prefix apps/web run typecheck`.
+- [x] 2026-07-01: Ran `npm --prefix apps/web run lint`.
+- [x] 2026-07-01: Ran root `npm run typecheck`, covering web and worker.
 
 ## Surprises & Discoveries
 
@@ -261,6 +264,8 @@ Official GitHub docs consulted for implementation constraints:
 - GitHub repository topics require administration-level permission to replace topics. Topics should be best-effort and merged with existing topics, not assumed to always succeed.
 - `done_building.summary` is available in the worker result, but the web bridge should preserve the parsed payload explicitly so the post-build sync does not scrape text from messages.
 - Local CLI and desktop already identify themselves through `SECOND_LOCAL_INSTALL=1`, which can gate the Available Apps page.
+- GitHub user-owned repo creation must use the authenticated PAT account as the owner. If the target owner is another user, Second should reject it and require an organization owner instead.
+- GitHub archive ZIPs can be downloaded without an explicit ref, which is safer than sending a fake `HEAD` ref when no tag exists.
 
 ## Decision Log
 
@@ -367,7 +372,7 @@ Proposed embedded field:
 
 ```ts
 type AppSourceControlMetadata = {
-  publishEnabled: true;
+  publishEnabled: boolean;
   publishState: "publishing" | "published" | "sync_failed";
   provider: "github";
   connectionId: ObjectId;
@@ -826,8 +831,8 @@ Add APIs:
   - normalizes archive root.
   - reuses shared import service to create a local app.
   - records `installedFrom` metadata.
-- `POST /api/workspaces/[workspaceId]/available-apps/update`
-  - body: provider, owner, repo, tag/ref, appId.
+- `POST /api/workspaces/[workspaceId]/available-apps/[appId]/update`
+  - body: provider, owner, repo, tag/ref.
   - verifies the local app is installed from the same upstream.
   - downloads selected ref.
   - updates the existing app draft snapshot through `saveAppSourceFiles`.
@@ -1347,20 +1352,50 @@ Classic PAT fallback:
 
 ## Outcomes & Retrospective
 
-Not started. Fill this section after implementation and validation.
+Implemented on 2026-07-01.
 
-Record:
+Final architecture changes:
 
-- final architecture changes,
-- provider API tradeoffs,
-- GitHub permission friction,
-- performance findings,
-- tenant isolation review,
-- any follow-up issues.
+- Added workspace-scoped source-control connections and compact app source-control metadata.
+- Added a provider interface with GitHub as the first adapter.
+- Added a source-control credential wrapper over the existing secret-store/Vault path.
+- Added source-control settings UI/API with GitHub enabled and GitLab/Bitbucket disabled.
+- Added app-level publish/adoption from the app top bar.
+- Added post-`done_building` sync that no-ops unless that app has `publishEnabled = true`.
+- Added auto-bumped `second-app-v<N>` tags for changed source snapshots.
+- Added local-only Available Apps catalog/install/update.
+- Added source-control restore for build/session recovery when an app has GitHub source-control metadata.
+
+Provider API tradeoffs:
+
+- GitHub operations use REST/provider APIs instead of shelling out to `git`.
+- Repo topics are best-effort. Root `second-app.json` remains authoritative.
+- User-owned repo creation is limited to the authenticated PAT account; org-owned repos use the configured org.
+
+Performance findings:
+
+- App preview/page rendering remains artifact/cache based. It does not download from GitHub or compile on page load.
+- GitHub calls happen in settings validation, explicit publish/sync, Available Apps catalog/install/update, or mutation-time worker restore.
+- Hot app/sidebar paths keep compact metadata only.
+
+Tenant isolation and secret handling:
+
+- Every connection/app query is workspace-scoped.
+- Install/update/restore enforce workspace/app access before mutating app files.
+- PAT values stay server-side in the secret store and are not returned to the browser, worker, audit metadata, or realtime events.
+- Source-control events are small invalidation/audit records, not provider payloads.
+
+Follow-up issues:
+
+- Consider adding a richer source-control status panel later; the first implementation retries failed syncs from the app top-bar source-control modal.
+- Add mocked GitHub provider tests for rate limits, tag conflicts, permission failures, archive formats, and same-source skips.
+- Add browser QA for the local Source Control settings, app publish modal, and Available Apps page when QA is explicitly requested.
+- Consider moving materialized built artifacts from MongoDB snapshots to object storage later; the loading rule stays the same.
 
 ## Change Notes
 
 - 2026-07-01: Initial plan created from user image architecture, pasted text, repository docs, source inspection, and GitHub API research.
+- 2026-07-01: Implemented the first GitHub-backed source-control workflow and updated the plan to capture the final loading matrix, app-level publish opt-in rule, auto-versioning, validation commands, and follow-up work.
 
 ## Captured User Intent (Verbatim)
 

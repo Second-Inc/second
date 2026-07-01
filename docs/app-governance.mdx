@@ -13,6 +13,15 @@ The goal is simple: builders can move quickly, but the runtime that team members
 use is the version an admin or owner intentionally allowed to use real data and
 integrations.
 
+Source control is a separate app source storage layer. Connecting a provider
+such as GitHub, GitLab, or Bitbucket does not publish or upload apps by itself.
+Local CLI/desktop installs use explicit app-level Publish to source control.
+On-prem or managed deployments can enable a workspace-level Store app source in
+source control policy so successful builds store app source in the configured
+provider and create auto-versioned `second-app-v<N>` tags. This is separate
+from Available Apps discovery and from the normal review/publish flow. See
+[Source Control](/source-control).
+
 ## Roles and app access
 
 | Actor | Can do |

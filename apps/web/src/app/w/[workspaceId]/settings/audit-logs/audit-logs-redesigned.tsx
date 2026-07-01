@@ -15,6 +15,7 @@ import {
   FileJsonIcon,
   FingerprintIcon,
   HelpCircleIcon,
+  GitBranchIcon,
   KeyRoundIcon,
   LockKeyholeIcon,
   PanelRightCloseIcon,
@@ -77,6 +78,7 @@ const CATEGORY_LABELS: Record<AuditCategory, string> = {
   app_event: "App events",
   audit: "Audit",
   library: "Library",
+  source_control: "Source control",
   system: "System",
 };
 
@@ -94,6 +96,7 @@ const CATEGORY_ICONS: Record<AuditCategory, LucideIcon> = {
   app_event: SparklesIcon,
   audit: ShieldCheckIcon,
   library: FileJsonIcon,
+  source_control: GitBranchIcon,
   system: ActivityIcon,
 };
 

@@ -32,7 +32,8 @@ No Sandpack. No in-browser bundling.
 │                 → renders compiled artifact in iframe                         │
 │                                                                               │
 │  5. RESTORE      On cold start / recycled worker workspace                   │
-│                 source snapshot is restored from Mongo into workspace         │
+│                 source restores from source control for backed apps,         │
+│                 otherwise from Mongo                                         │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -42,6 +43,7 @@ No Sandpack. No in-browser bundling.
 | --- | --- | --- |
 | Working copy during agent execution | Worker filesystem (`/tmp/second-workspaces/{appId}` by default) | Regular project files |
 | Durable snapshot | MongoDB `app_source_snapshots` | `Record<string, string>` (source + `dist/**` text files) |
+| Source-control authority, optional | Provider repository, such as GitHub, GitLab, or Bitbucket | Sanitized app files + root `second-app.json` |
 | Snapshot metadata | MongoDB `apps` | Snapshot IDs, hashes, file counts, and byte sizes |
 | Chat messages and run metadata | MongoDB `agent_runs` | `UIMessage[]` and run fields |
 | Preview runtime | Browser iframe | `srcDoc` HTML built from current files returned by the web API |
@@ -52,6 +54,20 @@ fall back to the persisted Mongo snapshot when the worker workspace is missing
 or empty after sandbox churn. The `apps` document keeps compact metadata so app
 lists, navigation, and access checks do not load source files. Legacy embedded
 `apps.sourceFiles` snapshots remain readable until the app is saved or migrated.
+
+## Source-control boundary
+
+When an app is source-control-backed through app-level publish, workspace source
+storage, or Available Apps install/update, the configured provider becomes the
+authority for that app's source. MongoDB still stores a materialized
+snapshot/cache so app pages can render quickly. Normal preview/page loads do not
+download from source control and do not compile source. The provider is
+consulted only from explicit mutation paths such as app publish, workspace source-storage sync, Available Apps
+install/update, or worker/session restore after the live workspace is gone.
+
+This keeps the hot preview path fast while source control can still be the
+authoritative source store. See [Source Control](/source-control) for the full
+source storage, app-level publish, auto-versioning, and Available Apps model.
 
 ## Workspace template
 
@@ -138,7 +154,7 @@ On each user message:
 
 1. Web checks worker status (`/sessions/:appId/status`).
 2. If restore is **not** needed, web sends prompt without `sourceFiles`.
-3. If restore **is** needed, web loads the latest draft source snapshot from Mongo and sends it as `sourceFiles` to the worker.
+3. If restore **is** needed, web loads the latest source from source control when the app is source-control-backed; otherwise it loads the latest draft source snapshot from Mongo. Restored files are saved back into Mongo as a fast cache.
 4. Worker scaffolds from `sourceFiles` only when workspace is empty.
 
 This avoids reloading large snapshots on every turn while preserving recovery after worker/session churn.
@@ -147,8 +163,8 @@ This avoids reloading large snapshots on every turn while preserving recovery af
 
 - Live preview/file explorer reads: web API calls worker `GET /sessions/:appId/files` using `WORKER_URL` when live files are available, merging them over the persisted snapshot so live source can update without hiding the last compiled `dist/**` artifact.
 - Idle/cold fallback: if the worker is unavailable or returns an empty workspace, the web API returns the MongoDB source snapshot so the compiled app and file explorer remain visible after the 15-minute sandbox TTL.
-- Durable recovery after worker loss: chat restore path loads the MongoDB source snapshot and rehydrates the workspace.
-- Result: UI shows current worker filesystem when available; Mongo snapshot is used both to keep the idle preview visible and to recover state after churn.
+- Durable recovery after worker loss: chat restore path loads source-control source for source-control-backed apps, otherwise MongoDB source, and rehydrates the workspace.
+- Result: UI shows current worker filesystem when available; Mongo snapshot/cache keeps the idle preview visible, while source control is used only for mutation-time restore when an app is source-control-backed.
 
 ## Key files
 

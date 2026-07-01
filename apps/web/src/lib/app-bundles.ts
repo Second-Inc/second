@@ -726,7 +726,12 @@ export function createSecondAppBundle(input: {
 }
 
 export function parseSecondAppBundle(zip: Buffer): ParsedSecondAppBundle {
-  const entries = parseZipEntries(zip);
+  const rawEntries = parseZipEntries(zip);
+  const archiveRoot = singlePlainZipRoot(rawEntries.map((entry) => entry.path));
+  const entries = rawEntries.map((entry) => ({
+    ...entry,
+    path: stripPlainZipRoot(entry.path, archiveRoot),
+  }));
   const manifestEntry = entries.find(
     (entry) => entry.path === SECOND_APP_MANIFEST_PATH,
   );
@@ -763,7 +768,7 @@ export function parseSecondAppBundle(zip: Buffer): ParsedSecondAppBundle {
     const rawPath = manifest
       ? entry.path.startsWith(SECOND_APP_FILES_PREFIX)
         ? entry.path.slice(SECOND_APP_FILES_PREFIX.length)
-        : null
+        : entry.path
       : stripPlainZipRoot(entry.path, plainZipRoot);
     if (!rawPath) continue;
 

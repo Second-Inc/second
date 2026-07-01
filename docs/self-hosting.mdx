@@ -204,6 +204,40 @@ Portless is only a developer convenience for `npm run dev`. It is not used by
 `npx --yes @second-inc/cli` local runtime. The CLI should use the same plain loopback
 shape for OAuth-capable local runs.
 
+## Source control
+
+Workspace source control connects Second to a repository provider such as
+GitHub, GitLab, Bitbucket, or self-hosted source control. Admins configure the
+provider owner or organization from Settings -> Source Control.
+For the full source storage, app-level publish, Available Apps, preview/cache,
+and worker restore model, see [Source Control](/source-control).
+Second stores the token through the same secret storage boundary used for OAuth
+secrets: WorkOS Vault when configured, otherwise the encrypted local secret
+store. The token is not returned to the browser, worker, audit metadata, or
+realtime events.
+
+Connecting source control does not upload apps by itself. In on-prem or managed
+deployments, turn on Store app source in source control to make successful
+builds commit app source to the configured provider after `done_building`.
+Existing Mongo-backed apps are adopted the next time a successful build creates
+a new snapshot. Local CLI/desktop installs still use app-level Publish to source
+control.
+
+App viewing stays fast. The app page renders the materialized built artifact
+from the saved snapshot/cache; it does not download from source control or compile on
+page load. For source-control-backed apps, ephemeral worker/container restore
+uses the configured provider only when the live workspace is gone and a new
+agent turn needs source files. Restored files are cached back into MongoDB for
+preview and file explorer reads.
+
+Available Apps is separate from source storage. Storage-only repos created by
+the workspace source storage policy do not need to appear in Available Apps.
+
+When the provider uses personal access tokens, prefer a fine-grained token with
+Metadata read, Contents read/write, and Administration write for the owner that
+will hold app repositories. Prefer private repositories and rotate expiring
+tokens.
+
 ## Running with Docker Compose
 
 **Option A** — build from source:

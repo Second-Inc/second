@@ -21,6 +21,14 @@ Second has two current deployment shapes:
 | Local CLI | Individual evaluation and local app building | Runs on the user's machine with local data and local secrets |
 | Self-hosted or managed instance | Teams and production use | Runs in customer-owned infrastructure or a dedicated managed environment |
 
+Source Control lets Second use a repository provider, such as GitHub, GitLab,
+Bitbucket, or self-hosted source control, as authoritative app source storage.
+Local CLI/desktop teams opt in per app from the app top bar. On-prem or managed
+deployments can enable a workspace-level Store app source in source control
+policy so successful builds commit app source to the configured provider
+automatically. Available Apps is a separate discovery/install layer, not the
+storage layer itself. See [Source Control](/source-control).
+
 Production deployments should use `SECOND_AUTH_MODE=external`, keep web and
 worker internal routes on a private network, and use a production secret store
 such as WorkOS Vault when configured. Without WorkOS Vault, OAuth secrets
@@ -211,6 +219,7 @@ Before production rollout:
 Related pages:
 
 - [Self-hosting](/self-hosting)
+- [Source Control](/source-control)
 - [Authentication](/authentication)
 - [App Governance](/app-governance)
 - [Integrations](/integrations)

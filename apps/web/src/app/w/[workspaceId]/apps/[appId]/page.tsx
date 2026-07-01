@@ -13,6 +13,7 @@ import {
   appHasUnpublishedChanges,
   findPendingAppReviewRequest,
   getAppPublishStatus,
+  getSourceControlConnection,
   getWorkspaceAppRuntimeSettings,
   getLatestRun,
   integrationNeedsSetup,
@@ -23,6 +24,7 @@ import type { RunUsage } from "@/lib/db/types";
 import type { AttachmentReference } from "@/lib/attachments";
 import { normalizeRuntimeSettings } from "@/lib/agent/runtime-registry";
 import { readRuntimeConfig } from "@/lib/config";
+import { canShowLocalSourceControlFeatures } from "@/lib/source-control/runtime";
 import { AppWorkspace } from "@/components/app-workspace";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +99,7 @@ export default async function AppPage({ params }: AppPageProps) {
       : null;
   const config = readRuntimeConfig();
   const localRuntimeMode = config.authMode === "none";
+  const localSourceControlAvailable = canShowLocalSourceControlFeatures();
   const anthropicApiKeyConfigured =
     process.env.ANTHROPIC_API_KEY_CONFIGURED === "true" ||
     !!process.env.ANTHROPIC_API_KEY;
@@ -105,6 +108,13 @@ export default async function AppPage({ params }: AppPageProps) {
     process.env.CODEX_API_KEY_CONFIGURED === "true" ||
     !!process.env.OPENAI_API_KEY ||
     !!process.env.CODEX_API_KEY;
+
+  const sourceControlConnection = localSourceControlAvailable
+    ? await getSourceControlConnection({
+        workspaceId,
+        provider: "github",
+      })
+    : null;
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
@@ -181,6 +191,29 @@ export default async function AppPage({ params }: AppPageProps) {
             permissionGroups: integration.permissionGroups ?? [],
             secretRequirements: integration.secretRequirements ?? [],
         }))}
+        sourceControl={{
+          localAvailable: localSourceControlAvailable,
+          connected: sourceControlConnection?.status === "valid",
+          connectionStatus: sourceControlConnection?.status ?? "not_configured",
+          canPublish:
+            localSourceControlAvailable &&
+            sourceControlConnection?.status === "valid" &&
+            access.canCollaborate,
+          app: app.sourceControl
+            ? {
+                publishEnabled: Boolean(app.sourceControl.publishEnabled),
+                publishState: app.sourceControl.publishState ?? null,
+                syncStatus: app.sourceControl.syncStatus,
+                owner: app.sourceControl.owner,
+                repo: app.sourceControl.repo,
+                latestTag: app.sourceControl.latestTag ?? null,
+                version: app.sourceControl.version ?? null,
+                lastSyncedAt:
+                  app.sourceControl.lastSyncedAt?.toISOString() ?? null,
+                lastErrorMessage: app.sourceControl.lastErrorMessage ?? null,
+              }
+            : null,
+        }}
       />
     </div>
   );

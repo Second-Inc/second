@@ -25,6 +25,7 @@ import { WorkspaceRealtimeProvider } from "@/components/workspace-realtime-provi
 import { WorkspaceContentErrorBoundary } from "@/components/workspace-content-error-boundary";
 import { WorkspaceAnalyticsTracker } from "@/components/workspace-analytics-tracker";
 import { DesktopTitlebarDragRegion } from "@/components/desktop-titlebar-drag-region";
+import { canShowLocalSourceControlFeatures } from "@/lib/source-control/runtime";
 
 type WorkspaceLayoutProps = {
   children: React.ReactNode;
@@ -129,6 +130,7 @@ export default async function WorkspaceLayout({
             activeRole={activeMembership.role}
             activeMemberCount={activeWorkspaceMemberships.length}
             pendingReviewCount={reviews.length}
+            showAvailableApps={canShowLocalSourceControlFeatures()}
             apps={apps.map((a) => ({
               _id: a._id,
               name: a.name,

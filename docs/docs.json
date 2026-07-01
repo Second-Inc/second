@@ -27,6 +27,7 @@
         "pages": [
           "architecture",
           "app-governance",
+          "source-control",
           "agent-system",
           "app-agents",
           "app-data",

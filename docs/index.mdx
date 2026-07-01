@@ -41,6 +41,7 @@ For the full developer setup, see [Quickstart](/quickstart).
 | AI agent that builds apps | Type a prompt → agent writes code, runs commands, iterates |
 | App agents with custom tools | Apps trigger scoped AI agents that call external APIs (HubSpot, Slack, etc.) with secure secret injection |
 | Draft/review governance | Draft edits, agent permissions, integrations, and published snapshots stay under admin/owner control |
+| Source-control app storage | Store app source in repositories such as GitHub, GitLab, or Bitbucket, keep MongoDB as metadata/cache, and optionally share selected apps through Available Apps |
 | Audit logs | Owners/admins can inspect workspace-scoped governance, agent, integration, and app-data changes without exposing secrets or payloads |
 | Live data persistence | Apps persist data in MongoDB via `useCollection`/`useDoc` with live updates via Change Streams |
 | Async agent execution | Agents run in the background and write results to the app's database, even after the user closes their browser |
@@ -70,12 +71,20 @@ Browser (useChat) → Next.js API → Worker (Claude Agent SDK) → streams back
 11. When the agent finishes, messages and source snapshots are persisted to MongoDB.
 12. Persisted source snapshots are used for recovery/rehydration after worker churn; live preview reads come from the worker filesystem.
 
+When an app is source-control-backed, the repository becomes the source of truth
+for that app's source. The app page still renders the saved built artifact/cache
+for speed; source control is used for explicit publish/sync, workspace
+source-storage sync, Available Apps install/update, and source restore after a
+live worker session is gone. See [Source Control](/source-control) for the full
+storage and distribution model.
+
 ## Next steps
 
 - [Quickstart](/quickstart): run locally and build your first app
 - [Enterprise Deployment and Security](/enterprise): customer-owned auth, OAuth apps, app-scoped credentials, `agents.json`, and app-agent governance
 - [Architecture](/architecture): system overview with diagrams
 - [App Governance](/app-governance): draft vs published snapshots, review flow, and governed agent config
+- [Source Control](/source-control): source-control-backed app source storage, Available Apps, auto-versioning, and restore boundaries
 - [Audit Logs](/audit-logs): workspace audit schema, redaction, permissions, and event coverage
 - [Agent System](/agent-system): worker, bridge, and provider abstraction
 - [App Agents](/app-agents): how apps trigger AI agents with custom tools

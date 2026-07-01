@@ -11,6 +11,7 @@ import {
   Inbox,
   MessageCircle,
   MoreHorizontal,
+  PackageOpenIcon,
   Pencil,
   Plus,
   Trash2,
@@ -98,6 +99,7 @@ type WorkspaceSidebarProps = {
   activeRole: WorkspaceRole;
   activeMemberCount: number;
   pendingReviewCount: number;
+  showAvailableApps: boolean;
   apps: SidebarApp[];
 };
 
@@ -159,6 +161,7 @@ export function WorkspaceSidebar({
   activeRole,
   activeMemberCount,
   pendingReviewCount,
+  showAvailableApps,
   apps,
 }: WorkspaceSidebarProps) {
   const pathname = usePathname();
@@ -703,6 +706,28 @@ export function WorkspaceSidebar({
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {showAvailableApps ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.startsWith(
+                      `/w/${activeWorkspaceId}/available-apps`,
+                    )}
+                  >
+                    <Link
+                      href={`/w/${activeWorkspaceId}/available-apps`}
+                      prefetch={false}
+                      onClick={(event) => {
+                        trackSidebarClick("available apps");
+                        announceNavigationIntentFromClick(event);
+                      }}
+                    >
+                      <PackageOpenIcon strokeWidth={1.7} />
+                      <span>Available Apps</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
             </SidebarMenu>
           </SidebarGroup>
 
