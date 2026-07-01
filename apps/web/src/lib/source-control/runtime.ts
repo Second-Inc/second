@@ -16,5 +16,5 @@ export function sourceControlSecretStorageLabel(): string {
 }
 
 export function canShowLocalSourceControlFeatures(): boolean {
-  return readRuntimeConfig().authMode === "none" && isLocalSecondInstall();
+  return sourceControlRuntimeLabel() === "local";
 }

@@ -802,7 +802,8 @@ Apps that are available for you to get through your org's source control.
 
 Gating:
 
-- Only show in local mode, using `SECOND_LOCAL_INSTALL=1`.
+- Only show in local mode, using the shared source-control local runtime check
+  (`SECOND_LOCAL_INSTALL=1` or local auth mode).
 - If no source-control connection exists, show an empty state with a settings link for admins/owners.
 - In cloud mode, hide the page or return 404.
 

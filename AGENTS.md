@@ -35,6 +35,10 @@ It's also very important to keep everything very secure and go with the security
 - When testing app-building flows, keep prompts intentionally tiny so runs finish quickly: ask for a tiny to-do list with minimal UI and no agents.
 - Unless explicitly requested, send the message and verify the response starts successfully, but do not approve or complete the build.
 
+# About local runtime detection
+- Do not duplicate local-vs-cloud checks with ad hoc combinations of `SECOND_LOCAL_INSTALL`, `SECOND_AUTH_MODE`, or `readRuntimeConfig().authMode`. Use the shared helpers in `apps/web/src/lib/source-control/runtime.ts`, especially `sourceControlRuntimeLabel()` and `canShowLocalSourceControlFeatures()`, so Source Control settings, Available Apps, app-level publish controls, pages, and APIs agree on what "local" means.
+- If a local-only feature appears in one surface but not another, inspect and fix the shared helper first instead of adding a component-local workaround.
+
 # When making changes that are directly related to the desktop app:
 - If the bug only appears in the packaged desktop app but not in `npx --yes @second-inc/cli` or browser localhost, first suspect desktop runtime environment differences such as PATH, app sandbox/signing, packaged resources, or lifecycle.
 - For macOS provider subprocess bugs, remember Finder-launched apps do not inherit the user's terminal PATH; resolve CLI tools through the login shell or common install paths before changing provider logic.

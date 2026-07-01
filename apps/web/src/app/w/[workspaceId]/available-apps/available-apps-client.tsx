@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   abortForNavigation,
   subscribeNavigationIntent,
@@ -74,6 +75,37 @@ function actionLabel(item: AvailableSourceControlApp) {
   if (item.installStatus === "update_available") return "Update";
   if (item.installStatus === "installed") return "Open";
   return "Install";
+}
+
+function AvailableAppSkeletonRows() {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={index}
+          className={cn(
+            "flex items-center gap-4 px-4 py-3",
+            index > 0 && "border-t border-border",
+          )}
+        >
+          <Skeleton className="size-9 shrink-0 rounded-md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-5 w-20 rounded-full" />
+            </div>
+            <Skeleton className="mt-2 h-3 w-full max-w-md" />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          </div>
+          <Skeleton className="h-8 w-20 shrink-0 rounded-md" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
@@ -309,14 +341,7 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
           ) : null}
 
           {loading ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <div
-                  key={index}
-                  className="h-[84px] rounded-lg border border-border bg-muted/25"
-                />
-              ))}
-            </div>
+            <AvailableAppSkeletonRows />
           ) : null}
 
           {connected && filteredApps.length > 0 ? (
