@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src http://localhost:* http://127.0.0.1:*"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Second</title>
+    <link rel="stylesheet" href="./startup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="startup-card" aria-live="polite">
+        <!-- Centered brand -->
+        <header class="app-brand" aria-label="Second">
+          <svg
+            class="app-logo"
+            viewBox="0 0 516 479"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M280.077 0C303.874 0 323.166 21.4292 323.166 47.8633V120.154H141.528C123.085 120.154 108.133 141.584 108.133 168.018V311.606C108.133 338.04 123.085 359.47 141.528 359.47H323.166V430.769C323.166 457.203 303.874 478.632 280.077 478.632H43.0889C19.2916 478.632 0 457.203 0 430.769V47.8633C0 21.4292 19.2916 0 43.0889 0H280.077Z"
+              fill="currentColor"
+            />
+            <path
+              d="M230 119H370.25C401.417 119 417 139 417 179V419C417 459 401.417 479 370.25 479H276.75C245.583 479 230 459 230 419V119Z"
+              fill="currentColor"
+            />
+            <path
+              d="M296 273H461C497.667 273 516 284.444 516 307.333V444.667C516 467.556 497.667 479 461 479H351C314.333 479 296 467.556 296 444.667V273Z"
+              fill="currentColor"
+            />
+          </svg>
+        </header>
+
+        <!-- Hidden: JS writes to these but they are not shown -->
+        <div class="copy">
+          <p class="eyebrow" id="headline">Loading Second</p>
+          <h1 id="status-title">Initializing local workspace</h1>
+        </div>
+
+        <!-- Inline loader + shimmering status text -->
+        <div class="status-row">
+          <div class="loader-shell" aria-hidden="true">
+            <svg class="grid-loader" viewBox="0 0 16 16">
+              <rect class="loader-dot" x="1.5" y="1.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="6.5" y="1.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="11.5" y="1.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="1.5" y="6.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="6.5" y="6.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="11.5" y="6.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="1.5" y="11.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="6.5" y="11.5" width="3" height="3" rx="0.8"/>
+              <rect class="loader-dot" x="11.5" y="11.5" width="3" height="3" rx="0.8"/>
+            </svg>
+          </div>
+          <p id="status-line">Checking packaged local runtime</p>
+        </div>
+
+        <div class="progress-row" aria-label="Startup progress">
+          <progress id="progress" max="100" value="8"></progress>
+          <span id="percent">8%</span>
+        </div>
+
+        <button id="primary-action" class="primary-action" type="button" hidden>
+          Restart Windows
+        </button>
+
+        <details class="developer-details" id="developer-details">
+          <summary>
+            <span>More</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M4.25 6.25L8 10l3.75-3.75"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.6"
+              />
+            </svg>
+          </summary>
+
+          <div class="developer-panel">
+            <ol class="steps" id="steps">
+              <li data-step="runtime" class="active">
+                <span></span>
+                <p>Checking runtime</p>
+              </li>
+              <li data-step="wsl">
+                <span></span>
+                <p>Preparing Windows runtime</p>
+              </li>
+              <li data-step="data">
+                <span></span>
+                <p>Starting data services</p>
+              </li>
+              <li data-step="web">
+                <span></span>
+                <p>Starting Second</p>
+              </li>
+              <li data-step="agents">
+                <span></span>
+                <p>Starting agents</p>
+              </li>
+              <li data-step="ready">
+                <span></span>
+                <p>Opening workspace</p>
+              </li>
+            </ol>
+
+            <p class="message" id="message">Checking packaged local runtime</p>
+
+            <div class="actions">
+              <button id="restart" type="button">Restart</button>
+              <button id="logs" type="button">Logs</button>
+              <button id="diagnostics" type="button">Copy diagnostics</button>
+            </div>
+          </div>
+        </details>
+      </section>
+    </main>
+    <script src="./startup.js"></script>
+  </body>
+</html>

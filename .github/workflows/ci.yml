@@ -15,8 +15,14 @@ concurrency:
 
 jobs:
   code:
-    name: Code checks
-    runs-on: ubuntu-latest
+    name: Code checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
 
     steps:
       - name: Checkout
@@ -33,6 +39,7 @@ jobs:
           npm ci --prefix apps/web
           npm ci --prefix apps/worker
           npm ci --prefix packages/cli
+          npm ci --prefix apps/desktop
 
       - name: Typecheck
         run: npm run typecheck
@@ -44,7 +51,15 @@ jobs:
         run: npm --prefix apps/web run build
 
       - name: Validate CLI launcher
-        run: npm --prefix packages/cli run build
+        run: |
+          npm --prefix packages/cli run build
+          npm --prefix packages/cli-local-win32-x64 run build
+
+      - name: Validate local supervisor
+        run: npm --prefix packages/local-supervisor run build
+
+      - name: Validate desktop shell
+        run: npm --prefix apps/desktop run build
 
   docs:
     name: Docs check

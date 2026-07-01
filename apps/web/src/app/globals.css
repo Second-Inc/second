@@ -306,6 +306,70 @@ html.dark {
   --sh-entity: #e04f1c;
 }
 
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"] {
+  --second-mac-sidebar-left-offset: 3px;
+  --second-mac-titlebar-height: 50px;
+}
+
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  [data-slot="sidebar-container"][data-side="left"]
+  [data-slot="sidebar-inner"] {
+  padding-left: var(--second-mac-sidebar-left-offset);
+  padding-top: var(--second-mac-titlebar-height);
+  -webkit-app-region: drag;
+}
+
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  [data-second-desktop-drag-region] {
+  -webkit-app-region: drag;
+}
+
+[data-second-desktop-titlebar-drag-region] {
+  display: none;
+}
+
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  [data-second-desktop-titlebar-drag-region] {
+  display: block;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--second-mac-titlebar-height);
+  -webkit-app-region: drag;
+}
+
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  :is(
+    a,
+    button,
+    iframe,
+    input,
+    textarea,
+    select,
+    summary,
+    [contenteditable="true"],
+    [data-second-desktop-no-drag],
+    [role="button"],
+    [role="link"],
+    [role="tab"],
+    [role="menuitem"],
+    [role="option"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"]
+  ) {
+  -webkit-app-region: no-drag;
+}
+
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  [data-slot="sidebar-trigger"],
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  [data-slot="sidebar-trigger"]
+  * {
+  -webkit-app-region: no-drag;
+}
+
 [data-onboarding-shell] {
   --onboarding-bento-bg: #f9fafb;
   --onboarding-bento-inset-bg: rgba(255, 255, 255, 0.72);
@@ -322,6 +386,23 @@ html.dark {
   --onboarding-bento-inset-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.86),
     0 0 0 1px rgba(0, 0, 0, 0.055);
+}
+
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  [data-onboarding-shell]::before {
+  content: "";
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 52px;
+  -webkit-app-region: drag;
+}
+
+html[data-second-desktop="true"][data-second-desktop-platform="darwin"]
+  [data-onboarding-brand-row] {
+  margin-top: 32px;
 }
 
 @media (prefers-color-scheme: dark) {

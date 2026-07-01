@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { arch as osArch, platform as osPlatform } from "node:os";
+import { arch as osArch, homedir as osHomedir, platform as osPlatform } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,7 +58,7 @@ const payloadBinPath = await preparePayloadBinary();
 spinner.stop("Payload ready. Switching to the local runtime...");
 leaveFullscreen();
 
-const child = spawn(payloadBinPath, args, {
+const child = spawn(process.execPath, [payloadBinPath, ...args], {
   stdio: "inherit",
   env: {
     ...process.env,
@@ -110,6 +110,27 @@ function resolvePayloadPackage() {
       binName: "second-local",
     };
   }
+  if (runtimeId === "darwin-x64") {
+    return {
+      runtimeId,
+      packageName: "@second-inc/cli-local-darwin-x64",
+      binName: "second-local",
+    };
+  }
+  if (runtimeId === "linux-x64") {
+    return {
+      runtimeId,
+      packageName: "@second-inc/cli-local-linux-x64",
+      binName: "second-local",
+    };
+  }
+  if (runtimeId === "win32-x64") {
+    return {
+      runtimeId,
+      packageName: "@second-inc/cli-local-win32-x64",
+      binName: "second-local",
+    };
+  }
   return null;
 }
 
@@ -139,29 +160,40 @@ function readPackageVersion() {
 }
 
 async function preparePayloadBinary() {
-  const npmArgs = [
-    "exec",
-    "--yes",
-    "--loglevel=error",
-    "--package",
-    payloadPackageSpec,
-    "--",
-    "node",
-    "-e",
-    payloadBinResolverScript(),
-    payload.binName,
-  ];
+  const installDir = payloadInstallDir();
+  const packageJsonPath = join(
+    installDir,
+    "node_modules",
+    ...payload.packageName.split("/"),
+    "package.json",
+  );
 
-  const child = spawn("npm", npmArgs, {
+  if (!existsSync(packageJsonPath)) {
+    await installPayload(installDir);
+  }
+
+  return resolvePayloadBinary(packageJsonPath);
+}
+
+async function installPayload(installDir) {
+  mkdirSync(installDir, { recursive: true });
+  const npm = npmInvocation([
+    "install",
+    "--prefix",
+    installDir,
+    "--omit=dev",
+    "--no-audit",
+    "--no-fund",
+    "--loglevel=error",
+    payloadPackageSpec,
+  ]);
+  const child = spawn(npm.command, npm.args, {
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
+    shell: npm.shell,
   });
 
-  let stdout = "";
   let stderr = "";
-  child.stdout.on("data", (chunk) => {
-    stdout += chunk;
-  });
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
@@ -182,37 +214,41 @@ async function preparePayloadBinary() {
     console.error(`\n${message}\n`);
     process.exit(code ?? 1);
   }
+}
 
-  const binPath = stdout.trim().split(/\r?\n/).at(-1)?.trim();
-  if (!binPath) {
+function resolvePayloadBinary(packageJsonPath) {
+  const packageDir = dirname(packageJsonPath);
+  const manifest = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[payload.binName];
+  const binPath = bin ? join(packageDir, bin) : "";
+  if (!binPath || !existsSync(binPath)) {
     spinner.fail("Could not find the local runtime executable.");
     leaveFullscreen();
-    console.error("\nThe payload installed, but npm did not expose second-local.\n");
+    console.error(`\nThe payload installed, but ${payload.binName} was not found in ${payload.packageName}.\n`);
     process.exit(1);
   }
-
   return binPath;
 }
 
-function payloadBinResolverScript() {
-  return `
-const fs = require("node:fs");
-const path = require("node:path");
-const binName = process.argv[1];
-const suffixes = process.platform === "win32" ? [".cmd", ".exe", ".ps1", ""] : [""];
-for (const dir of (process.env.PATH || "").split(path.delimiter)) {
-  if (!dir) continue;
-  for (const suffix of suffixes) {
-    const candidate = path.join(dir, binName + suffix);
-    if (fs.existsSync(candidate)) {
-      process.stdout.write(candidate);
-      process.exit(0);
-    }
-  }
+function payloadInstallDir() {
+  const cacheKey = payloadPackageSpec.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return join(osHomedir(), ".second", "cli-payloads", cacheKey);
 }
-console.error("Could not find " + binName + " in npm exec PATH.");
-process.exit(1);
-`;
+
+function npmInvocation(args) {
+  const npmExecPath = process.env.npm_execpath?.trim();
+  if (npmExecPath) {
+    return {
+      command: process.env.npm_node_execpath || process.execPath,
+      args: [npmExecPath, ...args],
+      shell: false,
+    };
+  }
+  return {
+    command: "npm",
+    args,
+    shell: process.platform === "win32",
+  };
 }
 
 function waitForExit(child) {
@@ -379,11 +415,12 @@ function printUnsupportedPlatform() {
   printSplashScene({
     eyebrow: "unsupported platform",
     title: "Second is not available here yet",
-    subtitle: "The local installer currently ships for macOS Apple Silicon.",
+    subtitle:
+      "The local installer currently ships for macOS, Linux x64, and Windows x64.",
     quote: "\"Detected a runtime we do not package yet.\"",
     rows: [
       ["detected", currentRuntimeId()],
-      ["supported", "darwin-arm64"],
+      ["supported", "darwin-arm64, darwin-x64, linux-x64, win32-x64"],
     ],
     tone: "error",
   });

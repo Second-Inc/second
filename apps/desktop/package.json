@@ -1,0 +1,25 @@
+{
+  "name": "@second/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Second desktop app for nontechnical local installs.",
+  "type": "module",
+  "main": "./src/main/main.js",
+  "scripts": {
+    "build": "node scripts/check-js.mjs",
+    "dev": "electron .",
+    "preview:startup": "node scripts/open-startup-preview.mjs",
+    "preview:startup:watch": "node scripts/startup-preview-server.mjs",
+    "package": "electron-builder --config electron-builder.config.mjs --dir",
+    "make": "electron-builder --config electron-builder.config.mjs"
+  },
+  "dependencies": {
+    "@second-inc/local-supervisor": "file:../../packages/local-supervisor"
+  },
+  "devDependencies": {
+    "@electron/notarize": "3.1.1",
+    "electron": "42.2.0",
+    "electron-builder": "26.8.1"
+  },
+  "license": "Apache-2.0"
+}

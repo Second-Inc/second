@@ -263,7 +263,7 @@ export default function TeamsClient({
   return (
     <div className="flex flex-1 flex-col overflow-auto">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-8">
-        <div>
+        <div data-second-desktop-drag-region>
           <h1 className="text-lg font-semibold">Teams</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Organize members into teams for app publishing and visibility.

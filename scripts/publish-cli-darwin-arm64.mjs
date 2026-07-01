@@ -7,9 +7,13 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const bumpScript = resolve(repoRoot, "scripts/bump-cli-version.mjs");
-const payloadDir = resolve(repoRoot, "packages/cli-local-darwin-arm64");
+const payloadDirs = [
+  resolve(repoRoot, "packages/cli-local-darwin-arm64"),
+  resolve(repoRoot, "packages/cli-local-darwin-x64"),
+  resolve(repoRoot, "packages/cli-local-linux-x64"),
+  resolve(repoRoot, "packages/cli-local-win32-x64"),
+];
 const cliDir = resolve(repoRoot, "packages/cli");
-const payloadPackagePath = resolve(payloadDir, "package.json");
 const cliPackagePath = resolve(cliDir, "package.json");
 
 const options = parseArgs(process.argv.slice(2));
@@ -22,24 +26,33 @@ if (options.bump !== false) {
   run("node", [bumpScript, options.version], { cwd: repoRoot });
 }
 
-const payloadPackage = readJson(payloadPackagePath);
 const cliPackage = readJson(cliPackagePath);
+const payloadPackages = payloadDirs.map((dir) => ({
+  dir,
+  pkg: readJson(resolve(dir, "package.json")),
+}));
 
-if (payloadPackage.version !== cliPackage.version) {
-  throw new Error(
-    `CLI package versions do not match: ${cliPackage.name}@${cliPackage.version} and ${payloadPackage.name}@${payloadPackage.version}.`,
-  );
+for (const { pkg } of payloadPackages) {
+  if (pkg.version !== cliPackage.version) {
+    throw new Error(
+      `CLI package versions do not match: ${cliPackage.name}@${cliPackage.version} and ${pkg.name}@${pkg.version}.`,
+    );
+  }
 }
 
 console.log("");
 console.log(`Publishing local CLI release ${cliPackage.version}`);
-console.log(`  payload:  ${payloadPackage.name}`);
+for (const { pkg } of payloadPackages) {
+  console.log(`  payload:  ${pkg.name}`);
+}
 console.log(`  launcher: ${cliPackage.name}`);
 console.log(`  access:   ${options.access}`);
 console.log(`  tag:      ${options.tag}`);
 console.log("");
 
-publishPackage(payloadDir, options);
+for (const payloadDir of payloadDirs) {
+  publishPackage(payloadDir, options);
+}
 publishPackage(cliDir, options);
 
 console.log("");

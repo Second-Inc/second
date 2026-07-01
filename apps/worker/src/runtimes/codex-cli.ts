@@ -13,6 +13,7 @@ import {
   seedCodexAuthFromLocalLogin,
   writePrivateTextFile,
 } from "./process-env.js";
+import { runtimeBinary } from "./runtime-binary.js";
 import {
   CodexAppServerClient,
   runCodexAppServerRuntime,
@@ -35,7 +36,7 @@ function codexMcpServerConfig(name: string, url: string, toolTimeoutSec = 120): 
 }
 
 function codexCommand(): string {
-  return process.env.SECOND_CODEX_PATH?.trim() || "codex";
+  return runtimeBinary("SECOND_CODEX_PATH", "codex");
 }
 
 type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";

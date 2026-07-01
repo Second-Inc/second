@@ -1080,7 +1080,10 @@ export default function AuditLogsRedesigned({ workspaceId }: { workspaceId: stri
     <TooltipProvider>
       <div className="relative flex h-full overflow-hidden">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex items-end justify-between gap-4 px-8 pt-7 pb-5">
+        <div
+          data-second-desktop-drag-region
+          className="flex items-end justify-between gap-4 px-8 pt-7 pb-5"
+        >
           <div className="min-w-0">
             <div
               className="flex items-center gap-2 opacity-0 animate-fade-in-up"

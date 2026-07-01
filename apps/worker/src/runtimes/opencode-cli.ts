@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { runtimeBinaryEnv } from "./runtime-binary.js";
 
 export type OpenCodeJsonSupportProbe =
   | {
@@ -66,6 +67,7 @@ export function detectOpenCodeRunJsonSupport(
   const result = spawnSync(command, ["run", "--help"], {
     timeout: helpTimeoutMs(),
     encoding: "utf-8",
+    env: runtimeBinaryEnv(),
     stdio: ["ignore", "pipe", "pipe"],
   });
   const output = stripAnsi(`${result.stdout ?? ""}\n${result.stderr ?? ""}`);
@@ -106,4 +108,3 @@ export function detectOpenCodeRunJsonSupport(
       "Installed OpenCode CLI does not support `opencode run --format json`. Upgrade OpenCode before using the OpenCode runtime.",
   };
 }
-

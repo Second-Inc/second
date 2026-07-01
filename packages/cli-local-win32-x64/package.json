@@ -1,0 +1,30 @@
+{
+  "name": "@second-inc/cli-local-win32-x64",
+  "version": "0.1.24",
+  "description": "Windows payload for @second-inc/cli using WSL2.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Second-Inc/second.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Second-Inc/second/issues"
+  },
+  "homepage": "https://github.com/Second-Inc/second#readme",
+  "bin": {
+    "second-local": "bin/second-local.js"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "scripts": {
+    "build": "node --check bin/second-local.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "license": "Apache-2.0"
+}

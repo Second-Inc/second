@@ -1,0 +1,82 @@
+name: Test Windows CLI
+
+on:
+  push:
+    branches:
+      - "codex/add-windows-support"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-windows-test:
+    name: Publish Windows CLI test package
+    runs-on: windows-latest
+    environment: npm-publish
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Derive test version
+        id: release
+        shell: bash
+        run: |
+          BASE_VERSION="$(node -p "require('./packages/cli/package.json').version.split('-')[0]")"
+          VERSION="${BASE_VERSION}-windows-test.${GITHUB_RUN_ID}"
+          NPM_TAG="windows-test"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]; then
+            echo "Invalid test version: $VERSION" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set package versions
+        shell: bash
+        run: |
+          npm --prefix packages/cli pkg set version="${{ steps.release.outputs.version }}"
+          npm --prefix packages/cli-local-win32-x64 pkg set version="${{ steps.release.outputs.version }}"
+
+      - name: Install dependencies
+        shell: bash
+        run: npm ci --prefix packages/cli
+
+      - name: Validate packages
+        shell: bash
+        run: |
+          npm --prefix packages/cli run build
+          npm --prefix packages/cli-local-win32-x64 run build
+
+      - name: Pack check
+        shell: bash
+        run: |
+          cd packages/cli-local-win32-x64 && npm pack --dry-run --ignore-scripts
+          cd ../../packages/cli && npm pack --dry-run --ignore-scripts
+
+      - name: Publish Windows payload
+        shell: bash
+        run: |
+          cd packages/cli-local-win32-x64
+          npm publish --access public --tag "${{ steps.release.outputs.npm_tag }}" --ignore-scripts
+
+      - name: Publish CLI launcher
+        shell: bash
+        run: |
+          cd packages/cli
+          npm publish --access public --tag "${{ steps.release.outputs.npm_tag }}" --ignore-scripts
+
+      - name: Print test command
+        shell: bash
+        run: |
+          echo "Run on Windows:"
+          echo "npx --yes @second-inc/cli@${{ steps.release.outputs.npm_tag }}"

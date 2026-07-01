@@ -1,0 +1,123 @@
+name: Test Mac Desktop Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/add-windows-support"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-mac-desktop-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  build-mac-arm64:
+    name: Build mac-arm64 DMG
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Derive version
+        id: release
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./apps/desktop/package.json').version.split('-')[0]")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          npm ci --prefix apps/web
+          npm ci --prefix apps/worker
+          npm ci --prefix packages/cli
+          npm ci --prefix apps/desktop
+
+      - name: Build macOS arm64 payload
+        shell: bash
+        run: |
+          npm --prefix packages/cli-local-darwin-arm64 pkg set version="${{ steps.release.outputs.version }}"
+          npm --prefix packages/cli-local-darwin-arm64 run build
+
+      - name: Set desktop package version
+        shell: bash
+        run: npm --prefix apps/desktop pkg set version="${{ steps.release.outputs.version }}"
+
+      - name: Validate macOS signing configuration
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$MACOS_CERTIFICATE" || { echo "Missing MACOS_CERTIFICATE" >&2; exit 1; }
+          test -n "$MACOS_CERTIFICATE_PASSWORD" || { echo "Missing MACOS_CERTIFICATE_PASSWORD" >&2; exit 1; }
+          test -n "$APPLE_ID" || { echo "Missing APPLE_ID" >&2; exit 1; }
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD" || { echo "Missing APPLE_APP_SPECIFIC_PASSWORD" >&2; exit 1; }
+          test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID" >&2; exit 1; }
+
+      - name: Export signing environment
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          export CERT_P12="$RUNNER_TEMP/second-macos-certificate.p12"
+          python3 -c 'import base64, os, pathlib; pathlib.Path(os.environ["CERT_P12"]).write_bytes(base64.b64decode(os.environ["MACOS_CERTIFICATE"].strip(), validate=True))'
+          openssl pkcs12 \
+            -in "$CERT_P12" \
+            -nokeys \
+            -passin env:MACOS_CERTIFICATE_PASSWORD \
+            -info \
+            -noout >/dev/null
+          echo "CSC_LINK=$CERT_P12" >> "$GITHUB_ENV"
+          {
+            echo "CSC_KEY_PASSWORD<<__SECOND_CSC_KEY_PASSWORD__"
+            printf '%s\n' "$MACOS_CERTIFICATE_PASSWORD"
+            echo "__SECOND_CSC_KEY_PASSWORD__"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate desktop shell
+        shell: bash
+        env:
+          SECOND_DESKTOP_RUNTIME_ID: darwin-arm64
+          SECOND_DESKTOP_ARTIFACT_PLATFORM: mac-arm64
+        run: npm --prefix apps/desktop run build
+
+      - name: Build DMG
+        shell: bash
+        env:
+          SECOND_DESKTOP_RUNTIME_ID: darwin-arm64
+          SECOND_DESKTOP_ARTIFACT_PLATFORM: mac-arm64
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm --prefix apps/desktop run make -- --mac dmg --arm64
+
+      - name: Collect DMG
+        shell: bash
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          mkdir -p desktop-artifacts
+          cp "apps/desktop/release/Second-${VERSION}-mac-arm64.dmg" "desktop-artifacts/Second-mac-arm64.dmg"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-mac-arm64
+          path: desktop-artifacts/Second-mac-arm64.dmg
+          if-no-files-found: error

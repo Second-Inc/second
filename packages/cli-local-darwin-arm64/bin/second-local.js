@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import {
@@ -78,6 +78,11 @@ const telemetryDisabled =
   args.includes("--no-analytics") ||
   process.env.SECOND_POSTHOG_DISABLED === "1" ||
   process.env.SECOND_TELEMETRY_DISABLED === "1";
+const openBrowserDisabled =
+  args.includes("--no-open") ||
+  process.env.SECOND_LOCAL_NO_OPEN === "1" ||
+  process.env.SECOND_DESKTOP === "1";
+const nodeCommand = process.env.SECOND_NODE_PATH?.trim() || "node";
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   console.error(`Invalid --port value: ${flag("--port")}`);
@@ -171,7 +176,7 @@ async function start() {
   if (existingRuntime) {
     leaveFullscreen();
     printAlreadyRunning(existingRuntime);
-    if (existingRuntime.publicUrl) {
+    if (!openBrowserDisabled && existingRuntime.publicUrl) {
       openBrowser(existingRuntime.publicUrl);
     }
     process.exit(0);
@@ -181,7 +186,7 @@ async function start() {
   if (!lock.acquired) {
     leaveFullscreen();
     printAlreadyRunning(lock);
-    if (lock.publicUrl) {
+    if (!openBrowserDisabled && lock.publicUrl) {
       openBrowser(lock.publicUrl);
     }
     process.exit(0);
@@ -362,20 +367,27 @@ async function start() {
     dataPath: shortPath(DATA_ROOT_DIR),
     logsPath: shortPath(LOGS_DIR),
     updateUrl: controlServer.hostUrl,
+    opensBrowser: !openBrowserDisabled,
   });
 
   setInterruptHandler(() => {
     runtimeStopState.stopping = true;
   });
 
-  for (let n = 2; n >= 1 && !runtimeStopState.stopping; n--) {
-    writeOpeningCountdown(publicUrl, n);
-    await delay(1000);
-  }
+  if (!openBrowserDisabled) {
+    for (let n = 2; n >= 1 && !runtimeStopState.stopping; n--) {
+      writeOpeningCountdown(publicUrl, n);
+      await delay(1000);
+    }
 
-  if (!runtimeStopState.stopping) {
-    openBrowser(publicUrl);
-    writeOpenedBrowser(publicUrl);
+    if (!runtimeStopState.stopping) {
+      openBrowser(publicUrl);
+      writeOpenedBrowser(publicUrl);
+    }
+  } else if (setBootFooter(`Second is ready at ${publicUrl}.`)) {
+    // Boot UI was updated.
+  } else {
+    console.log(`\n  Second is ready at ${publicUrl}\n`);
   }
 
   await watchUntilStopped(runtimeStopState);
@@ -467,11 +479,11 @@ async function findExistingRuntime() {
   }
 
   if (state) {
-    if (isRuntimeStateActive(state)) {
+    if (await isRuntimeStateReady(state)) {
       return runtimeInfoFromState(state, "runtime state");
     }
 
-    await stopRuntimeFromState(state);
+    await cleanupInactiveRuntimeState(state);
   }
 
   const lock = readRuntimeLock();
@@ -482,11 +494,22 @@ async function findExistingRuntime() {
     lock.supervisorPid !== process.pid &&
     isProcessAlive(lock.supervisorPid)
   ) {
-    return runtimeInfoFromState(lock, "runtime lock");
+    if (await isRuntimeStateReady(lock)) {
+      return runtimeInfoFromState(lock, "runtime lock");
+    }
+    if (isKnownSecondRuntimeProcess(lock.supervisorPid)) {
+      await terminatePid(lock.supervisorPid);
+    }
   }
 
   removeRuntimeLock();
   return null;
+}
+
+async function isRuntimeStateReady(state) {
+  const runningPort = Number.isInteger(state?.port) ? state.port : null;
+  if (!runningPort) return false;
+  return waitForReady(`http://localhost:${runningPort}/api/health`, 1500);
 }
 
 function runtimeInfoFromState(state, source) {
@@ -520,6 +543,51 @@ function isRuntimeStateActive(state) {
   }
 
   return false;
+}
+
+async function cleanupInactiveRuntimeState(state) {
+  if (!isRuntimeStateActive(state)) {
+    await stopRuntimeFromState(state);
+    return;
+  }
+
+  const pids = [
+    state.processes?.worker?.pid,
+    state.processes?.web?.pid,
+    state.processes?.redis?.pid,
+    state.processes?.mongo?.pid,
+    state.supervisorPid,
+  ].filter((pid) => Number.isInteger(pid) && pid !== process.pid);
+
+  for (const pid of pids) {
+    if (isKnownSecondRuntimeProcess(pid)) {
+      await terminatePid(pid);
+    }
+  }
+
+  removeRuntimeState();
+  removeLocalControlState();
+  removeRuntimeLock();
+}
+
+function isKnownSecondRuntimeProcess(pid) {
+  const command = readProcessCommand(pid);
+  if (!command) return false;
+  return /second-local\.js|payloads\/[^ ]+\/dist\/(?:web\/server\.js|worker\.mjs)|dist\/runtime\/|mongod|redis-server|@second-inc\/cli-local|Second\.app\/Contents\/Resources/.test(
+    command,
+  );
+}
+
+function readProcessCommand(pid) {
+  try {
+    const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+    });
+    if (result.status !== 0) return "";
+    return result.stdout.trim();
+  } catch {
+    return "";
+  }
 }
 
 function printAlreadyRunning(info) {
@@ -845,7 +913,7 @@ async function startWeb({
   localControlToken,
 }) {
   const disableTelemetry = telemetryDisabled ? "1" : "";
-  await spawnManagedProcess("web", "node", [webServer.script], {
+  await spawnManagedProcess("web", nodeCommand, [webServer.script], {
     cwd: webServer.cwd,
     env: {
       ...process.env,
@@ -897,7 +965,7 @@ async function startWorker({
   const nodeArgs = isTs ? ["--import", "tsx", scriptPath] : [scriptPath];
   const cwd = isTs ? join(scriptPath, "..", "..") : undefined;
 
-  await spawnManagedProcess("worker", "node", nodeArgs, {
+  await spawnManagedProcess("worker", nodeCommand, nodeArgs, {
     cwd,
     env: {
       ...process.env,
@@ -2321,12 +2389,20 @@ function setBootFooter(message) {
   return true;
 }
 
-function setBootReady({ publicUrl, dataPath, logsPath, updateUrl }) {
+function setBootReady({
+  publicUrl,
+  dataPath,
+  logsPath,
+  updateUrl,
+  opensBrowser = true,
+}) {
   if (!bootUi) return false;
   bootUi.ready = { publicUrl, dataPath, logsPath, updateUrl };
   bootUi.title = "Second is running locally";
   bootUi.subtitle = "Your agent-native workspace is ready.";
-  bootUi.footer = "Press Ctrl+C to stop. The browser opens automatically in a few seconds.";
+  bootUi.footer = opensBrowser
+    ? "Press Ctrl+C to stop. The browser opens automatically in a few seconds."
+    : "Press Ctrl+C to stop. The desktop app will open this workspace.";
   renderBootUi();
   return true;
 }
@@ -2719,8 +2795,14 @@ function formatDuration(startedAt, finishedAt) {
   return `${Math.round(seconds)}s`;
 }
 
-function printReadyPanel({ publicUrl, dataPath, logsPath, updateUrl }) {
-  if (setBootReady({ publicUrl, dataPath, logsPath, updateUrl })) {
+function printReadyPanel({
+  publicUrl,
+  dataPath,
+  logsPath,
+  updateUrl,
+  opensBrowser = true,
+}) {
+  if (setBootReady({ publicUrl, dataPath, logsPath, updateUrl, opensBrowser })) {
     return;
   }
 
@@ -2736,7 +2818,12 @@ function printReadyPanel({ publicUrl, dataPath, logsPath, updateUrl }) {
       `${label("Logs")} ${logsPath}`,
       `${label("Update")} ${updateUrl}`,
       "",
-      color(ui.dim, "Press Ctrl+C to stop. The browser opens automatically in a few seconds."),
+      color(
+        ui.dim,
+        opensBrowser
+          ? "Press Ctrl+C to stop. The browser opens automatically in a few seconds."
+          : "Press Ctrl+C to stop. The desktop app will open this workspace.",
+      ),
     ],
     { title: color(ui.green, "ready") },
   );
@@ -2840,6 +2927,7 @@ Commands:
 
 Options:
   --port <number>       Web port (default: ${DEFAULT_PORT})
+  --no-open             Do not open an external browser after startup
   --disable-telemetry   Disable product analytics
   --no-analytics        Alias for --disable-telemetry
   -h, --help            Show this help

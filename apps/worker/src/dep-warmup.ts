@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { resolveNpmCommand } from "./npm-command.js";
 
 const warmups = new Map<string, Promise<boolean>>();
 
@@ -24,11 +25,17 @@ export function startDependencyWarmup(workingDirectory: string): void {
 
   console.log(`[dep-warmup] Starting background npm install in ${workingDirectory}`);
 
+  const npm = resolveNpmCommand();
   const promise = new Promise<boolean>((resolve) => {
     execFile(
-      "npm",
+      npm.command,
       ["install", "--include=dev", "--no-audit", "--no-fund", "--prefer-offline"],
-      { cwd: workingDirectory, encoding: "utf-8", timeout: 120_000 },
+      {
+        cwd: workingDirectory,
+        encoding: "utf-8",
+        env: npm.env,
+        timeout: 120_000,
+      },
       (error) => {
         if (error) {
           console.error(`[dep-warmup] Failed in ${workingDirectory}:`, error.message);

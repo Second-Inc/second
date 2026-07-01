@@ -1636,13 +1636,14 @@ export function AppWorkspace({
       {/* Top bar — visible for active chat, with app controls once a preview exists */}
       {showTopBar && (
         <div
+          data-second-desktop-drag-region
           className={cn(
             "flex h-11 shrink-0 items-center justify-between border-b bg-background px-3",
             !agentRunsHintOpen && !builderAgentToggleHintOpen && "z-10",
           )}
         >
-          {/* Left: status */}
-          <div className="flex items-center gap-2">
+          {/* Left: status (the empty bar area is draggable via the bar itself) */}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             {previewVisible ? (
               <>
                 {isDraftVersion && activeToolRecoveryStatus === "fixing" ? (
@@ -1708,7 +1709,7 @@ export function AppWorkspace({
           </div>
 
           {/* Right: action buttons */}
-          <div className="flex items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             {previewVisible && showPublishDialog ? (
               <AppPublishDialog
                 workspaceId={workspaceId}

@@ -52,7 +52,10 @@ export function SettingsNav({ workspaceId }: SettingsNavProps) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex w-56 shrink-0 flex-col border-r border-border px-3 py-6">
+    <nav
+      data-second-desktop-drag-region
+      className="flex w-56 shrink-0 flex-col border-r border-border px-3 py-6"
+    >
       <h2 className="mb-5 px-3 text-xs font-semibold">
         Workspace Settings
       </h2>

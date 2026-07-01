@@ -300,7 +300,11 @@ export function OnboardingFrame({ children }: { children: ReactNode }) {
             frameState.step === "start" ? "overflow-hidden" : "overflow-y-auto",
           )}
         >
-          <div className="flex shrink-0 items-center justify-between gap-4">
+          <div
+            data-onboarding-brand-row
+            data-second-desktop-drag-region
+            className="flex shrink-0 items-center justify-between gap-4"
+          >
             <div className="flex items-center gap-2">
               <SecondLogo className="text-foreground" />
               <span className="text-base font-semibold">Second</span>

@@ -3,6 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "bash ./scripts/dev.sh",
+    "desktop:build": "npm --prefix apps/desktop run build",
+    "desktop:dev": "npm --prefix apps/desktop run dev",
+    "desktop:make": "npm --prefix apps/desktop run make",
     "bump:cli": "node ./scripts/bump-cli-version.mjs",
     "publish:cli:darwin-arm64": "node ./scripts/publish-cli-darwin-arm64.mjs",
     "start": "docker compose up --build",

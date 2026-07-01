@@ -509,7 +509,7 @@ export function AgentStreamDialog({
       />
 
       {/* Panel — slides in from right */}
-      <div className="ml-auto relative w-full max-w-[680px] flex flex-col bg-background border-l border-border animate-in slide-in-from-right-full duration-200">
+      <div className="ml-auto relative w-full max-w-[550px] flex flex-col bg-background border-l border-border animate-in slide-in-from-right-full duration-200">
         {/* Header */}
         <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border shrink-0">
           <BotIcon className="size-4 text-muted-foreground" />

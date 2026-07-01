@@ -740,7 +740,10 @@ export default function IntegrationsClient({
     <div className="flex h-full flex-col overflow-hidden">
       <div className="px-8 pt-8 pb-5">
         <div className="mx-auto max-w-5xl">
-          <div className="flex items-start justify-between gap-4">
+          <div
+            data-second-desktop-drag-region
+            className="flex items-start justify-between gap-4"
+          >
             <div>
               <h1 className="text-lg font-semibold tracking-tight">Integrations</h1>
               <p className="mt-0.5 text-[13px] text-muted-foreground">
