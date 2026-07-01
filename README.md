@@ -22,24 +22,18 @@
 Second is a factory for custom internal software,<br>purpose-built for human2agent work.
 
 <a href="https://github.com/Second-Inc/second/actions"><img src="https://img.shields.io/github/actions/workflow/status/Second-Inc/second/ci.yml?label=CI" alt="CI"></a>&nbsp;&nbsp;
-<a href="#quick-start"><img src="https://img.shields.io/badge/Try_it-npx_@second--inc/cli-black.svg" alt="Try it"></a>
+<a href="https://github.com/Second-Inc/second/releases/latest/download/Second-mac-arm64.dmg"><img src="https://img.shields.io/badge/Download-macOS-black.svg" alt="Download for macOS"></a>
 
-<a href="#quick-start"><strong>Quick Start</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
+<a href="#quick-start---local"><strong>Quick Start - Local</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 
 
 </div>
 
-## Quick Start
-Run Second locally:
-```bash
-npx --yes @second-inc/cli
-```
-
-| Platform | Status |
-|:---|:---|
-| Apple Silicon Mac (M1-M5) | **Available now** |
-| Linux x64, Windows via WSL2 | Experimental |
-| Intel Mac, native Windows | Coming soon |
+## Quick Start - Local
+<a href="https://github.com/Second-Inc/second/releases/latest/download/Second-mac-arm64.dmg">
+  <img src="docs/assets/download-for-mac.png" alt="Download for Mac" width="179" height="40">
+</a>
+<br><br>
 
 Bring your agent:
 
@@ -58,7 +52,7 @@ Bring your agent:
   <tr>
     <td align="center">✅</td>
     <td align="center">✅</td>
-    <td align="center"><sub>Soon</sub></td>
+    <td align="center">✅</td>
   </tr>
 </table>
 
@@ -442,54 +436,12 @@ Agents run in the Worker. App-data writes, tool calls, secret resolution, and au
 
 <br>
 
-## CLI
+## Download Second
 
-Run Second locally with one command:
-
-```bash
-npx --yes @second-inc/cli
-```
-
-| Platform | Status |
-|:---|:---|
-| Apple Silicon Mac (M1-M5) | **Available now** |
-| Linux x64, Windows via WSL2 | Experimental |
-| Intel Mac, native Windows | Coming soon |
-
-<details>
-<summary>&nbsp;&nbsp;<strong>CLI Commands</strong></summary>
-<br>
-
-```bash
-npx --yes @second-inc/cli                      # Start Second
-npx --yes @second-inc/cli stop                 # Stop all services
-npx --yes @second-inc/cli reset                # Stop + delete all data
-npx --yes @second-inc/cli --port 4000          # Custom port
-npx --yes @second-inc/cli --disable-telemetry  # No analytics
-```
-
-</details>
-
-### Windows via WSL2
-
-Second does not currently run from native Windows PowerShell or Command Prompt. On Windows, run it through WSL2:
-
-1. Open PowerShell as Administrator.
-2. Install Ubuntu on WSL2:
-
-```powershell
-wsl --install -d Ubuntu
-```
-
-3. Restart Windows if prompted.
-4. Open Ubuntu from Windows Terminal or the Start menu.
-5. Create the Ubuntu username/password when prompted.
-6. In Ubuntu, install Node.js 20+ and npm.
-7. Start Second from the Ubuntu terminal:
-
-```bash
-npx --yes @second-inc/cli
-```
+<a href="https://github.com/Second-Inc/second/releases/latest/download/Second-mac-arm64.dmg">
+  <img src="docs/assets/download-for-mac.png" alt="Download for Mac" width="179" height="40">
+</a>
+<br><br>
 
 <details>
 <summary>&nbsp;&nbsp;<strong>Development from Source</strong></summary>
