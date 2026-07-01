@@ -97,6 +97,29 @@ function actionLabel(status: string): string {
   return "Connect";
 }
 
+function providerStatusBadge(status: string) {
+  if (status === "valid") {
+    return (
+      <Badge
+        variant="outline"
+        className="h-5 gap-1 border-transparent bg-[#eaf8ef] px-1.5 text-[10px] text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"
+      >
+        <CheckIcon className="size-3" />
+        Connected
+      </Badge>
+    );
+  }
+  if (status === "invalid" || status === "revoked") {
+    return (
+      <Badge variant="destructive" className="h-5 gap-1 px-1.5 text-[10px]">
+        <TriangleAlertIcon className="size-3" />
+        Reconnect
+      </Badge>
+    );
+  }
+  return null;
+}
+
 function ProviderLogo({ provider, large = false }: {
   provider: ProviderKey;
   large?: boolean;
@@ -143,8 +166,11 @@ function ProviderCard({
       >
         <span className="flex items-start justify-between gap-2">
           <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">
-              {provider.name}
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className="truncate text-sm font-medium">
+                {provider.name}
+              </span>
+              {providerStatusBadge(provider.status)}
             </span>
             <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
               {PROVIDER_DESCRIPTIONS[provider.provider]}
