@@ -60,6 +60,7 @@ await build({
 console.log(`Worker bundled -> ${join(cliDist, "worker.mjs")}`);
 
 console.log("Building Next standalone web server...");
+rmSync(join(webAppDir, ".next"), { recursive: true, force: true });
 await run("npm", ["--prefix", webAppDir, "run", "build"]);
 
 const standaloneDir = join(webAppDir, ".next", "standalone");
