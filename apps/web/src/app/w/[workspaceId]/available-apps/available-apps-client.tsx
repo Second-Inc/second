@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRightIcon,
   CheckIcon,
   DownloadIcon,
-  GithubIcon,
   GitBranchIcon,
   Loader2Icon,
   PackageOpenIcon,
@@ -22,6 +21,7 @@ import {
   abortForNavigation,
   subscribeNavigationIntent,
 } from "@/lib/navigation-intent";
+import { useWorkspaceRealtimeEvent } from "@/components/workspace-realtime-provider";
 import type { AvailableSourceControlApp } from "@/lib/source-control/catalog";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +77,19 @@ function actionLabel(item: AvailableSourceControlApp) {
   return "Install";
 }
 
+function GitHubLogo({ className }: { className?: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/icons/source-control-github.svg"
+      alt=""
+      width={18}
+      height={18}
+      className={cn("shrink-0", className)}
+    />
+  );
+}
+
 function AvailableAppSkeletonRows() {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -84,7 +97,7 @@ function AvailableAppSkeletonRows() {
         <div
           key={index}
           className={cn(
-            "flex items-center gap-4 px-4 py-3",
+            "flex items-start gap-4 px-4 py-3",
             index > 0 && "border-t border-border",
           )}
         >
@@ -117,6 +130,7 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
   const [search, setSearch] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const realtimeRefreshTimerRef = useRef<number | null>(null);
 
   const fetchCatalog = useCallback(async (options?: {
     signal?: AbortSignal;
@@ -161,6 +175,37 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
       abortForNavigation(controller, "Available apps unmounted.");
     };
   }, [fetchCatalog]);
+
+  useEffect(() => {
+    return () => {
+      if (realtimeRefreshTimerRef.current !== null) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+      }
+    };
+  }, []);
+
+  useWorkspaceRealtimeEvent(useCallback((event) => {
+    if (
+      event.workspaceId !== workspaceId ||
+      event.scope !== "apps" ||
+      ![
+        "app.created",
+        "app.updated",
+        "app.deleted",
+        "app.published",
+      ].includes(event.type)
+    ) {
+      return;
+    }
+
+    if (realtimeRefreshTimerRef.current !== null) {
+      window.clearTimeout(realtimeRefreshTimerRef.current);
+    }
+    realtimeRefreshTimerRef.current = window.setTimeout(() => {
+      realtimeRefreshTimerRef.current = null;
+      void fetchCatalog({ quiet: true });
+    }, 150);
+  }, [fetchCatalog, workspaceId]));
 
   const filteredApps = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -214,6 +259,15 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
         message?: string;
       } | null;
       if (!response.ok) {
+        if (
+          response.status === 409 &&
+          data?.error === "source_control_app_already_installed" &&
+          data.appId
+        ) {
+          await fetchCatalog({ quiet: true });
+          router.push(`/w/${workspaceId}/apps/${data.appId}`);
+          return;
+        }
         throw new Error(
           data?.message ?? data?.error ?? "Could not import app from GitHub.",
         );
@@ -303,7 +357,7 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
             <div className="rounded-lg border border-border bg-card px-5 py-6">
               <div className="flex items-start gap-3">
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background">
-                  <GithubIcon className="size-4 text-muted-foreground" />
+                  <GitHubLogo className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h2 className="text-sm font-medium">Connect GitHub</h2>
@@ -353,12 +407,12 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
                   <div
                     key={key}
                     className={cn(
-                      "flex items-center gap-4 px-4 py-3",
+                      "flex items-start gap-4 px-4 py-3",
                       index > 0 && "border-t border-border",
                     )}
                   >
                     <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background">
-                      <GithubIcon className="size-4 text-muted-foreground" />
+                      <GitHubLogo className="size-4" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -372,7 +426,7 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
                       </p>
                       <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                         <span className="inline-flex min-w-0 items-center gap-1 font-mono">
-                          <GithubIcon className="size-3" />
+                          <GitHubLogo className="size-3 opacity-70" />
                           <span className="truncate">
                             {item.owner}/{item.repo}
                           </span>
@@ -393,6 +447,7 @@ export function AvailableAppsClient({ workspaceId }: AvailableAppsClientProps) {
                           : "outline"
                       }
                       size="sm"
+                      className="mt-0.5"
                       disabled={busy}
                       onClick={() => void handleAction(item)}
                     >

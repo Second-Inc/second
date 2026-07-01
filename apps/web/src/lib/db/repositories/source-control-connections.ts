@@ -262,9 +262,18 @@ export async function findInstalledSourceControlApp(input: {
   return appsCollection.findOne(
     {
       workspaceId: input.workspaceId,
-      "sourceControl.installedFrom.provider": input.provider,
-      "sourceControl.installedFrom.owner": input.owner,
-      "sourceControl.installedFrom.repo": input.repo,
+      $or: [
+        {
+          "sourceControl.provider": input.provider,
+          "sourceControl.owner": input.owner,
+          "sourceControl.repo": input.repo,
+        },
+        {
+          "sourceControl.installedFrom.provider": input.provider,
+          "sourceControl.installedFrom.owner": input.owner,
+          "sourceControl.installedFrom.repo": input.repo,
+        },
+      ],
     },
     {
       projection: {

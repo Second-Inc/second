@@ -38,17 +38,22 @@ export async function listAvailableSourceControlApps(input: {
         owner: item.owner,
         repo: item.repo,
       });
+      const installedFrom = installed?.sourceControl?.installedFrom;
+      const matchesInstalledFrom =
+        installedFrom?.provider === item.provider &&
+        installedFrom.owner === item.owner &&
+        installedFrom.repo === item.repo;
       const installedVersion =
-        installed?.sourceControl?.installedFrom?.version ??
-        installed?.sourceControl?.version ??
-        null;
+        installedFrom?.version ?? installed?.sourceControl?.version ?? null;
       const installStatus = !installed
         ? "available"
+        : !matchesInstalledFrom
+          ? "installed"
         : item.version && installedVersion && item.version > installedVersion
           ? "update_available"
           : item.sourceHash &&
-              installed.sourceControl?.installedFrom?.sourceHash &&
-              item.sourceHash !== installed.sourceControl.installedFrom.sourceHash
+              installedFrom?.sourceHash &&
+              item.sourceHash !== installedFrom.sourceHash
             ? "update_available"
             : "installed";
       return {
