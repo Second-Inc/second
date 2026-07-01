@@ -24,12 +24,12 @@ Second is a factory for custom internal software,<br>purpose-built for human2age
 <a href="https://github.com/Second-Inc/second/actions"><img src="https://img.shields.io/github/actions/workflow/status/Second-Inc/second/ci.yml?label=CI" alt="CI"></a>&nbsp;&nbsp;
 <a href="https://github.com/Second-Inc/second/releases/latest/download/Second-mac-arm64.dmg"><img src="https://img.shields.io/badge/Download-macOS-black.svg" alt="Download for macOS"></a>
 
-<a href="#quick-start"><strong>Quick Start</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
+<a href="#quick-start---local"><strong>Quick Start - Local</strong></a> · <a href="https://docs.second.so"><strong>Docs</strong></a> · <a href="#security--governance"><strong>Security & Governance</strong></a> · <a href="#self-hosting"><strong>Self-Hosting</strong></a>
 
 
 </div>
 
-## Quick Start
+## Quick Start - Local
 <a href="https://github.com/Second-Inc/second/releases/latest/download/Second-mac-arm64.dmg">
   <img src="docs/assets/download-for-mac.png" alt="Download for Mac" width="179" height="40">
 </a>
