@@ -27,9 +27,10 @@ jobs:
           - label: Linux x64
             runner: ubuntu-latest
             package_dir: packages/cli-local-linux-x64
-          - label: Windows x64
-            runner: windows-latest
-            package_dir: packages/cli-local-win32-x64
+          # Windows is not part of the public release yet.
+          # - label: Windows x64
+          #   runner: windows-latest
+          #   package_dir: packages/cli-local-win32-x64
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_ORG: second-9r
