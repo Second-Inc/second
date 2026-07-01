@@ -10,7 +10,7 @@ The central product model is:
 
 - Each user's local Second runtime remains local and fast.
 - Source control becomes the shared organization state and distribution log for apps.
-- MongoDB remains the local/runtime cache and the source for fast app rendering.
+- When source control is enabled, GitHub is the source of truth and MongoDB is a local/runtime cache for fast rendering.
 - App source and built artifacts can be restored or distributed from GitHub at explicit synchronization boundaries.
 
 ## Goal Description / Sub-goals
@@ -19,17 +19,22 @@ The central product model is:
 2. Support GitHub connection first, using a PAT for local CLI/desktop and for the first cloud/on-prem version.
 3. Store credentials securely through the existing WorkOS Vault or encrypted local secret-store pattern.
 4. Preserve provider-agnostic interfaces so future GitLab and Bitbucket support do not require rewriting app lifecycle code.
-5. After every successful `done_building`, if source control is configured:
+5. Add an app-level "Publish to source control" control for local apps.
+   - Connecting workspace source control only enables the feature.
+   - It must not upload existing apps automatically.
+   - It must not upload new apps automatically.
+   - A specific app syncs to GitHub only after the user turns on publishing for that app.
+6. After every successful `done_building`, sync to source control only if that specific app has "Publish to source control" enabled:
    - create a repository when the app has no linked repo,
    - commit the current app snapshot,
    - push the commit,
    - create a version tag,
    - use the `done_building.summary` as the tag description.
-6. Keep the agent/tool experience transparent. The `done_building` tool stays conceptually unchanged; source-control synchronization runs after the successful build snapshot is persisted.
-7. Add a local-only "Available Apps" workspace page after "New app", "Agents", and "Library".
-8. Let local users browse organization apps from GitHub and click "Get" or "Update" to import/update a local app.
-9. For cloud/on-prem deployments, allow source control to initialize worker/container source when needed, without making every app view depend on GitHub.
-10. Maintain tenant isolation, compact hot-path data, fast navigation, and realtime safety.
+7. Keep the agent/tool experience transparent. The `done_building` tool stays conceptually unchanged; source-control synchronization runs after the successful build snapshot is persisted and only for opted-in apps.
+8. Add a local-only "Available Apps" workspace page after "New app", "Agents", and "Library".
+9. Let local users browse organization apps from GitHub and click "Get" or "Update" to import/update a local app.
+10. For cloud/on-prem deployments, allow source control to initialize worker/container source when needed, without making every app view depend on GitHub.
+11. Maintain tenant isolation, compact hot-path data, fast navigation, and realtime safety.
 
 ## Motivation
 
@@ -70,14 +75,16 @@ After implementation:
 - Cloud/on-prem mode initially also supports PAT, but the UI clearly shows that GitHub OAuth app support is coming soon.
 - Secrets are stored only through WorkOS Vault or encrypted local storage. PATs are never returned to the browser, worker, agent, events, logs, or audit metadata.
 - A new provider abstraction owns all GitHub-specific operations.
-- On successful `done_building`, source-control sync runs after the local source snapshot has been saved.
-- If the app has no linked repo, Second creates a private repo under the configured GitHub owner/org.
-- Each sync commits a sanitized app snapshot and creates a new `second-app-v<N>` tag.
+- Existing apps and new apps remain Mongo-only until that specific app is published to source control.
+- In local CLI/desktop mode, if workspace source control is connected, the app top bar exposes a "Publish to source control" toggle/action.
+- The first time the user turns publishing on for an app, Second adopts the current app state into GitHub: create repo if needed, commit the current snapshot, write `second-app.json`, label/tag it as a Second app, and create `second-app-v1`.
+- After an app is published to source control, successful future `done_building` calls sync that app to GitHub after the local source snapshot has been saved.
+- Each opted-in sync commits a sanitized app snapshot and creates a new `second-app-v<N>` tag.
 - The root repo contains a `second-app.json` manifest so the repo/archive is self-describing and compatible with the existing bundle/import model after archive normalization.
 - Compact source-control metadata lives on the app document and in a source-control connection collection; full source still lives in snapshots and GitHub, not in app list/sidebar payloads.
 - Local CLI/desktop users see "Available Apps" in the workspace sidebar.
 - The Available Apps page lists apps discoverable from the configured GitHub owner/org and lets users Get or Update an app into their local Second runtime.
-- Cloud/on-prem workers can initialize app source from GitHub when a configured app snapshot is missing or stale, but normal app page rendering continues to use MongoDB snapshots.
+- Cloud/on-prem workers initialize restored app source from GitHub when source control is enabled, while normal app page rendering uses a materialized cached built artifact for the selected GitHub version.
 
 ## Context and Orientation
 
@@ -224,7 +231,7 @@ Official GitHub docs consulted for implementation constraints:
 - Available Apps is local-only for CLI/desktop. Cloud deployments already have central sharing/publishing semantics and should not show this page by default.
 - Do not change the public semantics of the `done_building` tool.
 - Do not require a local `git` binary. Use provider APIs for repo creation, commits, tags, and archive/download.
-- Do not make normal app page loads depend on GitHub.
+- Do not make normal app page loads compile source; when source control is enabled, render a materialized cached artifact that corresponds to the selected GitHub version.
 - Do not put source files, built files, prompts, tokens, PATs, or full provider responses on hot metadata paths or realtime events.
 - All source-control records and app queries must be scoped by `workspaceId`.
 - All external provider calls must run server-side.
@@ -257,9 +264,10 @@ Official GitHub docs consulted for implementation constraints:
 
 ## Decision Log
 
-1. Keep MongoDB snapshots as the fast runtime/cache for app rendering.
-   - Normal app page loads should not fetch from GitHub.
-   - GitHub is used at explicit boundaries: post-build sync, Available Apps list/install/update, and source restore when a worker/container lacks a snapshot.
+1. When source control is enabled, treat GitHub as authoritative and MongoDB snapshots as materialized cache.
+   - Normal app page loads should render a cached built artifact for the selected GitHub version.
+   - Normal app page loads should not compile source.
+   - Agent/session restore should use GitHub when source control is enabled and the live worker/container state is gone.
 
 2. Use provider APIs, not shell `git`.
    - This avoids a runtime dependency on `git`.
@@ -270,39 +278,45 @@ Official GitHub docs consulted for implementation constraints:
    - The app lifecycle should call `SourceControlProvider`, not GitHub REST endpoints directly.
 
 4. Preserve the `done_building` tool contract.
-   - The source-control sync happens after successful snapshot persistence.
+   - The source-control sync happens after successful snapshot persistence only when the app has source-control publishing enabled.
    - The agent does not need to know whether source control is connected.
 
-5. Do not fail local app rendering when GitHub sync fails after the snapshot is saved.
+5. Workspace source-control connection is not app publication.
+   - Connecting GitHub enables source-control publishing controls.
+   - It must not automatically upload existing Mongo-only apps.
+   - It must not automatically upload newly created apps.
+   - Each app becomes source-control-backed only after the user explicitly enables "Publish to source control" for that app.
+
+6. Do not fail local app rendering when GitHub sync fails after the snapshot is saved.
    - The app build remains usable locally.
    - The app receives a visible source-control sync status and retry action.
    - The run/audit trail records the sync failure without exposing secrets.
 
-6. Use `second-app.json` at repository root as the authoritative app manifest.
+7. Use `second-app.json` at repository root as the authoritative app manifest.
    - This keeps the repository self-describing.
    - It aligns with the existing bundle manifest.
    - GitHub archive imports can reuse the existing import parser after stripping the GitHub archive root directory.
 
-7. Use `second-app-v<N>` tags.
+8. Use `second-app-v<N>` tags.
    - `N` is a monotonically increasing integer stored in app source-control metadata and validated against remote tags.
    - The annotated tag message is the `done_building.summary`.
 
-8. Default app repositories to private.
+9. Default app repositories to private.
    - Public repos should require an explicit future setting.
 
-9. Gate Available Apps to local runtimes.
+10. Gate Available Apps to local runtimes.
    - The sidebar item appears only when `SECOND_LOCAL_INSTALL=1` and a source-control connection is configured or connectable.
 
-10. Keep GitHub discovery layered.
+11. Keep GitHub discovery layered.
     - Prefer repos with topic `second-app` when available.
     - Validate every candidate by reading root `second-app.json`.
     - Treat manifest metadata as authoritative.
 
-11. Use WorkOS Vault or the existing encrypted secret-store pattern for PATs.
+12. Use WorkOS Vault or the existing encrypted secret-store pattern for PATs.
     - Do not store PAT plaintext in MongoDB.
     - Do not expose secret refs to clients unless already safe in existing config patterns.
 
-12. Put only compact source-control state on app metadata.
+13. Put only compact source-control state on app metadata.
     - Store provider, owner, repo, tag/version, commit SHA, sync status, and source hash.
     - Do not store files, provider responses, or token data on the app document.
 
@@ -353,6 +367,8 @@ Proposed embedded field:
 
 ```ts
 type AppSourceControlMetadata = {
+  publishEnabled: true;
+  publishState: "publishing" | "published" | "sync_failed";
   provider: "github";
   connectionId: ObjectId;
   owner: string;
@@ -384,6 +400,8 @@ type AppSourceControlMetadata = {
   };
 };
 ```
+
+Absence of `apps.sourceControl` means the app is not published to source control. Workspace source-control connection alone must not create this field on every app.
 
 Add indexes:
 
@@ -596,6 +614,64 @@ Cloud/on-prem UI:
 - If WorkOS Vault is configured, show "Stored in WorkOS Vault" after save.
 - If local encrypted storage is used, show a local/trusted-runtime label.
 
+### App-Level Publish to Source Control
+
+Workspace source control only enables source-control publishing. It does not publish apps by itself.
+
+Add an app-level "Publish to source control" toggle/action in the app top bar.
+
+Availability:
+
+- local CLI/desktop only,
+- workspace source control is connected,
+- current user can update/publish the app,
+- provider connection has enough permission to create/update the target repo.
+
+Behavior:
+
+- Toggle off / not published:
+  - app remains Mongo-only,
+  - `done_building` saves the snapshot as it does today,
+  - no GitHub repo is created,
+  - no commit is pushed,
+  - no tag/version is created.
+- First toggle on:
+  - take the current latest app state from live worker files if available, otherwise from Mongo snapshot,
+  - create the GitHub repo if needed,
+  - write the sanitized app files,
+  - write root `second-app.json`,
+  - label/mark the repo as a Second app,
+  - commit the snapshot,
+  - create `second-app-v1`,
+  - set `apps.sourceControl.publishEnabled = true`,
+  - set `apps.sourceControl.publishState = "published"`.
+- After toggle on:
+  - every later successful `done_building` with changed source commits/tags a new version,
+  - same source hash does not create a duplicate version,
+  - GitHub becomes authoritative for that app.
+
+Existing Mongo-only apps:
+
+- stay Mongo-only after workspace GitHub connection,
+- keep loading from Mongo,
+- are adopted into GitHub only when the user turns on "Publish to source control" for that specific app.
+
+New apps:
+
+- also stay Mongo-only by default,
+- must not be uploaded on first `done_building`,
+- start syncing only after the user turns on "Publish to source control" for that app.
+
+Modal copy should explain the behavior plainly:
+
+```text
+Publish this app to source control?
+
+Second will create a GitHub-backed version of this app from the current app state. After publishing, future successful builds for this app will automatically update GitHub and create new versions.
+
+Apps that are not published stay local.
+```
+
 ### Post-`done_building` Source-Control Sync
 
 Extend `WorkerBridgeResult` to include parsed successful build completion payload:
@@ -624,7 +700,7 @@ In the chat route:
 2. If `bridgeResult.sourceFiles` exists, call `saveAppSourceFiles` as today.
 3. After `saveAppSourceFiles` succeeds, call `syncAppSnapshotToSourceControl` if:
    - workspace has an active source-control connection,
-   - app is eligible,
+   - this specific app has `apps.sourceControl.publishEnabled = true`,
    - build completed successfully.
 4. Source-control sync:
    - computes/uses the same source hash as snapshot save,
@@ -780,16 +856,16 @@ UI behavior:
 
 ### Source-Control Restore for Workers / Cloud Containers
 
-Do not change the user-facing app page to fetch from GitHub.
+When source control is enabled, GitHub is the source of truth for app source. MongoDB is a materialized cache/snapshot, not the authority.
 
 Add a source-control restore path for worker/session initialization:
 
 - When a chat/build session needs source files:
-  - first use live worker files if available,
-  - then use Mongo `app_source_snapshots`,
-  - then, only if the app has source-control metadata and the snapshot is missing/stale, fetch the selected ref from source control,
-  - save it back into `app_source_snapshots`,
-  - then hydrate the worker.
+  - if the existing worker/container session is still alive, keep using its live files,
+  - if restore is needed and source control is enabled for the app, load the selected app version from GitHub,
+  - save the restored files back into `app_source_snapshots` as a fast cache,
+  - then hydrate the worker,
+  - if source control is not enabled, restore from Mongo `app_source_snapshots`.
 
 Rules:
 
@@ -801,9 +877,9 @@ Rules:
 
 For cloud/on-prem deployments:
 
-- Container initialization can pull source from GitHub when a configured app is launched for editing/building and no fresh Mongo snapshot exists.
-- The built user preview still serves from the saved snapshot.
-- If source control is unreachable, use Mongo snapshot fallback if available.
+- Container initialization should load source from GitHub when source control is enabled and a dead/ephemeral container must be restored.
+- The built user preview should still render from a fast materialized artifact/cache, but that artifact/cache must correspond to the GitHub source-of-truth version.
+- If source control is unreachable, Mongo can be used only as an offline/stale fallback with visible status, not silently treated as authoritative.
 
 ### Performance Safety Checklist
 
@@ -906,15 +982,18 @@ Validation:
 - Disconnect removes/revokes secret reference.
 - UI matches existing integrations/settings visual language.
 
-### Phase 4: Post-Build Sync
+### Phase 4: App-Level Publish and Post-Build Sync
 
 Implement:
 
 - `WorkerBridgeResult.doneBuilding`.
+- app top-bar "Publish to source control" toggle/action.
+- publish confirmation modal.
+- first-publish adoption flow from current live files or Mongo snapshot.
 - source-control sync service.
 - source-control manifest writer.
-- app repo creation on first successful build.
-- commit/tag on every later successful build.
+- app repo creation on first publish.
+- commit/tag on every later successful build only after app-level publish is enabled.
 - app metadata updates.
 - audit events.
 - visible sync status and retry API.
@@ -922,8 +1001,9 @@ Implement:
 Validation:
 
 - Build with no source-control connection behaves exactly as before.
-- Build with source-control connection creates repo, commit, tag, and app metadata.
-- Second build commits and tags a new version.
+- Build with source-control connection but app publish off behaves exactly as before and does not create a repo, commit, or tag.
+- First publish for an app creates repo, commit, tag, and app metadata.
+- Second build after publish commits and tags a new version.
 - Same source hash does not create a duplicate tag.
 - GitHub failure after local snapshot save leaves app usable and marks sync failed.
 - Retry succeeds without duplicating repos.
@@ -955,7 +1035,7 @@ Validation:
 Implement:
 
 - explicit restore service for app source files from provider ref.
-- hook into build/session initialization only when Mongo snapshot is missing/stale and app has source-control metadata.
+- hook into build/session initialization when restore is needed and app has source-control metadata.
 - save restored files to `app_source_snapshots`.
 - audit/source-control restore event.
 
@@ -1033,7 +1113,7 @@ Manual QA flow after implementation:
 9. Build a newer version in the creator runtime.
 10. Verify the other runtime shows Update.
 11. Click Update and verify the existing local app updates.
-12. Confirm no normal app page load performs GitHub API calls.
+12. Confirm normal app page load renders the cached built artifact for the selected GitHub version and does not compile source.
 
 ## Validation and Acceptance
 
@@ -1042,11 +1122,14 @@ The implementation is acceptable when:
 - GitHub can be configured from Source Control settings by owners/admins.
 - PATs are stored securely and are never exposed to the client or worker.
 - GitLab and Bitbucket are represented as disabled future providers without fake functionality.
-- A successful `done_building` creates a repo for a new app when needed.
-- A successful `done_building` commits and tags each new app version.
+- Connecting GitHub does not upload existing apps.
+- Creating a new app does not upload it automatically.
+- A successful `done_building` does not upload to GitHub unless the specific app has "Publish to source control" enabled.
+- First publish for an app creates a repo, commit, tag, and source-control metadata.
+- A successful `done_building` commits and tags each new app version only after app-level publish is enabled.
 - The tag description is the build summary from `done_building`.
 - GitHub sync failures are visible, retryable, audited, and redacted.
-- Apps still render from local/Mongo snapshots without requiring GitHub on normal page load.
+- Apps render from a fast cached/materialized built artifact; in source-control mode that artifact must correspond to the selected GitHub version.
 - Available Apps is visible only in local CLI/desktop mode.
 - Available Apps lists GitHub repos that contain valid Second app manifests.
 - Get imports an app into local Second.
@@ -1061,24 +1144,61 @@ The implementation is acceptable when:
 
 ### Answer to the Loading Question
 
-Do not load the user-facing app from GitHub on every app page load.
+If source control is enabled, GitHub is the source of truth. This is true for both local and on-prem/cloud deployments.
 
-Use GitHub/source control as:
+MongoDB is only a materialized cache/snapshot in that mode. It can make rendering fast, but it must not be treated as the authoritative app state once source control is connected.
 
-- the organization source of truth,
-- the distribution catalog,
-- the version history,
-- the recovery source for missing/stale snapshots,
-- the source initializer for remote/cloud worker containers when needed.
+| Deployment | Source control | Built app shown to user | Agent files when an existing session is still alive | Agent files when restore is needed |
+| --- | --- | --- | --- | --- |
+| Local CLI/desktop | Off | Mongo snapshot is authoritative and used for preview. | Live local worker files. | Mongo snapshot. |
+| Local CLI/desktop | On | GitHub is authoritative. Materialize the selected GitHub version into the local Mongo/cache and render that cached built artifact. | Live local worker files. | GitHub. Restore from GitHub, then cache in Mongo. |
+| On-prem/cloud | Off | Mongo snapshot is authoritative and used for preview. | Live container files. | Mongo snapshot. |
+| On-prem/cloud | On | GitHub is authoritative. Materialize the selected GitHub version into Mongo/artifact cache and render that cached built artifact. | Live container files. | GitHub. Restore from GitHub, then cache in Mongo. |
 
-Keep MongoDB `app_source_snapshots` as:
+Important answer:
 
-- the fast app render cache,
-- the cold-start fallback,
-- the durable local runtime snapshot,
-- the source of `dist/index.html` for preview.
+- App preview/page should be fast and render a built artifact, not compile source on every view.
+- If source control is off, Mongo is the source of truth.
+- If source control is on, GitHub is the source of truth.
+- In source-control mode, Mongo is a cache of the selected GitHub version, not the authority.
+- If the remote container is still alive, no restore is needed.
+- If the remote container died and the user sends a new message, source files should reappear from GitHub when source control is connected.
 
-This preserves fast navigation and offline/local reliability while still moving organization sharing and versioning into source control.
+Why this is the right split:
+
+- Viewing an app and preparing source for an agent are different hot paths.
+- The current app-page path already renders from a `files` object and, for built apps, looks for `files["dist/index.html"]` in `apps/web/src/components/app-preview.tsx`.
+- The current files API loads persisted snapshots through `getAppSourceFilesForVersion`, plus live worker files only for an active draft worker session.
+- `done_building` succeeds only after `npm run build` succeeds and `dist/index.html` exists.
+- After the worker returns files, the chat route persists them through `saveAppSourceFiles`.
+
+So the current system is: build during `done_building`, save the built output, then app preview reads the saved built output.
+
+With source control enabled, the authority changes to GitHub, but the hot render shape should remain fast:
+
+- Do not compile on every app page load.
+- Do not make viewing an app wait on package install/build.
+- Do not make normal viewing depend directly on runner/container startup.
+- Do not silently treat Mongo as authoritative when GitHub is connected.
+- Do materialize/cache the selected GitHub version so the built app can render quickly.
+
+Long term, the materialized built artifact could move from MongoDB to object storage such as GCS or S3. The rule would still be the same: GitHub is authoritative when source control is enabled, and the app page renders a fast cached built artifact for that GitHub version.
+
+### Answer to the Versioning Question
+
+Yes, versions should auto-bump.
+
+The app version must not be manually entered by the user. Versions auto-bump only for apps that have "Publish to source control" enabled. On every successful `done_building` for an already-published app that produces a source hash different from the latest synced hash, Second should allocate the next version number, commit the snapshot, and create the matching `second-app-v<N>` tag.
+
+Rules:
+
+- Turning on "Publish to source control" for an app creates `version = 1` and tag `second-app-v1` from the current app state.
+- Each later successful build for that published app with changed source creates `version = previousVersion + 1` and tag `second-app-v<N>`.
+- Builds for unpublished apps do not create versions, repos, commits, or tags.
+- If the source hash did not change, do not bump the version and do not create a duplicate tag.
+- If local metadata says the next version is `N` but GitHub already has `second-app-v<N>` for another commit, scan existing `second-app-v*` tags, allocate the next available integer, and update Mongo metadata to match GitHub.
+- If commit succeeds but tag creation fails, keep the commit metadata, mark tag sync failed, and retry tag creation without bumping again unless the next retry discovers a real tag conflict.
+- Available Apps update detection compares the installed upstream version/tag/source hash against the latest remote manifest/tag.
 
 ## Idempotence and Recovery
 
