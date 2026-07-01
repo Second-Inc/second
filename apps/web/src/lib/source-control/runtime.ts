@@ -6,7 +6,9 @@ export function isLocalSecondInstall(): boolean {
 }
 
 export function sourceControlRuntimeLabel(): "local" | "cloud" {
-  return isLocalSecondInstall() ? "local" : "cloud";
+  return isLocalSecondInstall() || readRuntimeConfig().authMode === "none"
+    ? "local"
+    : "cloud";
 }
 
 export function sourceControlSecretStorageLabel(): string {

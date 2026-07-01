@@ -235,8 +235,10 @@ the workspace source storage policy do not need to appear in Available Apps.
 
 When the provider uses personal access tokens, prefer a fine-grained token with
 Metadata read, Contents read/write, and Administration write for the owner that
-will hold app repositories. Prefer private repositories and rotate expiring
-tokens.
+will hold app repositories. In GitHub's fine-grained token UI, choose All
+repositories for normal Second-managed source storage, then add only repository
+Administration read/write and Contents read/write. Prefer private repositories
+and rotate expiring tokens.
 
 ## Running with Docker Compose
 

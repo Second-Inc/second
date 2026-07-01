@@ -212,6 +212,14 @@ Recommended permissions:
 | Contents: read/write | Read manifests, commit app snapshots, and download archives. |
 | Administration: write | Create repositories and manage repository topics. |
 
+For GitHub fine-grained tokens, use the GitHub UI like this:
+
+- Resource owner: the user or organization that will own app repositories.
+- Repository access: choose All repositories for normal Second-managed source
+  storage, because new app repositories are created over time.
+- Add permissions: stay on the Repositories tab and add Administration
+  read/write plus Contents read/write.
+
 Classic PAT fallback:
 
 - `repo` for private repositories.
