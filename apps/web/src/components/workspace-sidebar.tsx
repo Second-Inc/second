@@ -844,7 +844,7 @@ export function WorkspaceSidebar({
             <UserMenu user={user} workspaceId={activeWorkspaceId} />
           </div>
           <div className="flex items-center px-2 pb-1 text-xs text-sidebar-foreground/70">
-            <span>Second Alpha</span>
+            <span>Second</span>
             <span className="mx-[7px] text-lg leading-none">&middot;</span>
             <button
               type="button"
