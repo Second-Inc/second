@@ -44,8 +44,7 @@ It's also very important to keep everything very secure and go with the security
 - For macOS provider subprocess bugs, remember Finder-launched apps do not inherit the user's terminal PATH; resolve CLI tools through the login shell or common install paths before changing provider logic.
 - Do the smallest source fix plus quick validation, then hand the exact local build command to the human for manual app testing when they are actively testing the DMG/app.
 - Do not keep running long DMG/notarization/build-test loops unless explicitly asked; stop once the code is ready for the requested manual test.
-- If the human asks you to build it yourself then run, install and test it, run the following command: `cd /Users/omervexler/.codex/worktrees/<current-worktree>/second
-SECOND_DESKTOP_SKIP_NOTARIZE=1 npm --prefix apps/desktop run make -- --mac dmg --arm64 --publish never` . The DMG will then be here: "/Users/omervexler/.codex/worktrees/<current-worktree>/second/apps/desktop/release/Second-0.2.0-mac-arm64.dmg"
+- If the human asks you to build it yourself then run, install and test it, run the following command: `cd /Users/omervexler/.codex/worktrees/<current-worktree>/second && npm --prefix packages/cli ci && npm --prefix apps/desktop ci && npm --prefix packages/cli-local-darwin-arm64 run build && SECOND_DESKTOP_SKIP_NOTARIZE=1 npm --prefix apps/desktop run make -- --mac dmg --arm64 --publish never` . The DMG will then be here: "/Users/omervexler/.codex/worktrees/<current-worktree>/second/apps/desktop/release/Second-0.2.0-mac-arm64.dmg"
 
 # About QA guides
 - For broad manual QA, use the `QA/` folder. Keep a reusable date-prefixed E2E guide such as `QA/YYYY-MM-DD-E2E.md`, and create a separate date-prefixed task guide such as `QA/YYYY-MM-DD-<feature-or-merge>-qa.md` for the current feature, branch, or merge.
