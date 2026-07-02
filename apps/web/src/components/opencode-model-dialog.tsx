@@ -575,7 +575,7 @@ export function OpenCodeModelDialog({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search models, providers, families"
-                  className="h-8 border-0 bg-transparent px-0 focus-visible:ring-0"
+                  className="h-8 border-0 bg-transparent px-0 focus-visible:ring-0 dark:bg-transparent"
                 />
               </div>
               <Button
