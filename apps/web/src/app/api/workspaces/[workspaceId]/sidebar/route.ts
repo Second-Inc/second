@@ -9,10 +9,12 @@ import {
 import {
   appHasPublishedVersion,
   getAppPublishStatus,
+  hasValidSourceControlConnection,
   listLatestRunStatesForWorkspace,
   listMembershipsForWorkspace,
   listReviewRequestsForWorkspace,
 } from "@/lib/db";
+import { canShowLocalSourceControlFeatures } from "@/lib/source-control/runtime";
 
 type SidebarRouteContext = {
   params: Promise<{
@@ -36,11 +38,14 @@ export async function GET(request: Request, context: SidebarRouteContext) {
   }
 
   const canReview = isWorkspaceAdminRole(workspaceContext.membership.role);
+  const localSourceControlFeaturesAvailable =
+    canShowLocalSourceControlFeatures();
   const [
     apps,
     appRunStates,
     memberships,
     reviews,
+    sourceControlConnected,
   ] = await Promise.all([
     listAppsVisibleInSidebarForWorkspaceContext(workspaceContext),
     listLatestRunStatesForWorkspace(workspaceContext.workspaceId),
@@ -51,12 +56,20 @@ export async function GET(request: Request, context: SidebarRouteContext) {
           status: "pending",
         })
       : Promise.resolve([]),
+    localSourceControlFeaturesAvailable
+      ? hasValidSourceControlConnection({
+          workspaceId: workspaceContext.workspaceId,
+          provider: "github",
+        })
+      : Promise.resolve(false),
   ]);
 
   return NextResponse.json(
     {
       activeMemberCount: memberships.length,
       pendingReviewCount: reviews.length,
+      showAvailableApps:
+        localSourceControlFeaturesAvailable && sourceControlConnected,
       apps: apps.map((app) => ({
         _id: app._id,
         name: app.name,

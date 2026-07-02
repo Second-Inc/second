@@ -52,6 +52,16 @@ export function validateOptionalProfileRole(
   return role;
 }
 
+export function validateProfileRole(value: FormDataEntryValue | null): string | null {
+  const role = readString(value);
+
+  if (role.length < 2 || role.length > 80) {
+    return null;
+  }
+
+  return role;
+}
+
 export function validateAppName(value: FormDataEntryValue | null): string | null {
   const appName = readString(value);
 

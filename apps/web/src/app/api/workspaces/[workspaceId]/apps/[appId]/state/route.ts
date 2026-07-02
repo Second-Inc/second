@@ -9,11 +9,13 @@ import {
   appHasPublishedVersion,
   appHasUnpublishedChanges,
   getAppPublishStatus,
+  getSourceControlConnection,
   findPendingAppReviewRequest,
   getWorkspaceAppRuntimeSettings,
   integrationNeedsSetup,
   listIntegrationsForAppReview,
 } from "@/lib/db";
+import { canShowLocalSourceControlFeatures } from "@/lib/source-control/runtime";
 
 type AppStateRouteContext = {
   params: Promise<{
@@ -50,7 +52,13 @@ export async function GET(request: Request, context: AppStateRouteContext) {
   const visiblePublishStatus =
     canSeeDraftState || !hasPublishedVersion ? publishStatus : "published";
   const visibleHasDraftChanges = canSeeDraftState ? hasDraftChanges : false;
-  const [appRuntimeSettings, pendingReview, integrations] = await Promise.all([
+  const localSourceControlAvailable = canShowLocalSourceControlFeatures();
+  const [
+    appRuntimeSettings,
+    pendingReview,
+    integrations,
+    sourceControlConnection,
+  ] = await Promise.all([
     getWorkspaceAppRuntimeSettings(workspaceContext.workspaceId),
     canSeeDraftState
       ? findPendingAppReviewRequest({
@@ -64,6 +72,12 @@ export async function GET(request: Request, context: AppStateRouteContext) {
           appId,
         })
       : Promise.resolve([]),
+    localSourceControlAvailable
+      ? getSourceControlConnection({
+          workspaceId: workspaceContext.workspaceId,
+          provider: "github",
+        })
+      : Promise.resolve(null),
   ]);
   const visibleAppTeamIds = canSeeDraftState
     ? (pendingReview?.targetTeamIds ?? app.teamIds ?? [])
@@ -86,6 +100,29 @@ export async function GET(request: Request, context: AppStateRouteContext) {
       hasPublishedVersion,
       hasDraftChanges: visibleHasDraftChanges,
       appRuntimeSettings,
+      sourceControl: {
+        localAvailable: localSourceControlAvailable,
+        connected: sourceControlConnection?.status === "valid",
+        connectionStatus: sourceControlConnection?.status ?? "not_configured",
+        canPublish:
+          localSourceControlAvailable &&
+          sourceControlConnection?.status === "valid" &&
+          access.canCollaborate,
+        app: app.sourceControl
+          ? {
+              publishEnabled: Boolean(app.sourceControl.publishEnabled),
+              publishState: app.sourceControl.publishState ?? null,
+              syncStatus: app.sourceControl.syncStatus,
+              owner: app.sourceControl.owner,
+              repo: app.sourceControl.repo,
+              latestTag: app.sourceControl.latestTag ?? null,
+              version: app.sourceControl.version ?? null,
+              lastSyncedAt:
+                app.sourceControl.lastSyncedAt?.toISOString() ?? null,
+              lastErrorMessage: app.sourceControl.lastErrorMessage ?? null,
+            }
+          : null,
+      },
       integrations: integrations.map((integration) => {
         return {
           id: integration._id,

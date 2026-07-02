@@ -11,6 +11,7 @@ import {
 import {
   appHasPublishedVersion,
   getAppPublishStatus,
+  hasValidSourceControlConnection,
   listLatestRunStatesForWorkspace,
   listMembershipsForWorkspace,
   listReviewRequestsForWorkspace,
@@ -25,6 +26,7 @@ import { WorkspaceRealtimeProvider } from "@/components/workspace-realtime-provi
 import { WorkspaceContentErrorBoundary } from "@/components/workspace-content-error-boundary";
 import { WorkspaceAnalyticsTracker } from "@/components/workspace-analytics-tracker";
 import { DesktopTitlebarDragRegion } from "@/components/desktop-titlebar-drag-region";
+import { canShowLocalSourceControlFeatures } from "@/lib/source-control/runtime";
 
 type WorkspaceLayoutProps = {
   children: React.ReactNode;
@@ -74,12 +76,14 @@ export default async function WorkspaceLayout({
     memberships: onboardingState.memberships,
   };
 
+  const localSourceControlFeaturesAvailable = canShowLocalSourceControlFeatures();
   const [
     workspaces,
     apps,
     appRunStates,
     activeWorkspaceMemberships,
     reviews,
+    sourceControlConnected,
   ] = await Promise.all([
     listWorkspacesByIds(
       onboardingState.memberships.map((m) => m.workspaceId),
@@ -90,6 +94,9 @@ export default async function WorkspaceLayout({
     isWorkspaceAdminRole(activeMembership.role)
       ? listReviewRequestsForWorkspace({ workspaceId, status: "pending" })
       : Promise.resolve([]),
+    localSourceControlFeaturesAvailable
+      ? hasValidSourceControlConnection({ workspaceId, provider: "github" })
+      : Promise.resolve(false),
   ]);
   const config = readRuntimeConfig();
   const canReview = isWorkspaceAdminRole(activeMembership.role);
@@ -129,6 +136,9 @@ export default async function WorkspaceLayout({
             activeRole={activeMembership.role}
             activeMemberCount={activeWorkspaceMemberships.length}
             pendingReviewCount={reviews.length}
+            showAvailableApps={
+              localSourceControlFeaturesAvailable && sourceControlConnected
+            }
             apps={apps.map((a) => ({
               _id: a._id,
               name: a.name,

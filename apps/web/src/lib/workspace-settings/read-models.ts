@@ -7,6 +7,7 @@ import {
   DEFAULT_WORKSPACE_TEAM_SLUG,
   findDefaultWorkspaceTeam,
   getWorkspaceAppRuntimeSettings,
+  getSourceControlConnection,
   listConnectedAccountsForUser,
   listIntegrationsForWorkspace,
   listOAuthProviderConfigsForWorkspace,
@@ -24,6 +25,12 @@ import type {
   IntegrationGrantWithCredential,
   OAuthProviderConfigDocument,
 } from "@/lib/db/types";
+import { serializeSourceControlConnection } from "@/lib/db";
+import {
+  isLocalSecondInstall,
+  sourceControlRuntimeLabel,
+  sourceControlSecretStorageLabel,
+} from "@/lib/source-control/runtime";
 import type { PerfTrace } from "@/lib/perf/trace";
 
 type SettingsTrace = Pick<PerfTrace, "log" | "time">;
@@ -431,6 +438,54 @@ export async function loadAppRuntimeSettingsReadModel(
   };
 }
 
+export async function loadSourceControlSettingsReadModel(
+  workspaceContext: WorkspaceContext,
+) {
+  const connection = await getSourceControlConnection({
+    workspaceId: workspaceContext.workspaceId,
+    provider: "github",
+  });
+
+  return {
+    canManage: hasWorkspacePermission(
+      workspaceContext.membership,
+      "workspace:manage",
+    ),
+    runtime: {
+      mode: sourceControlRuntimeLabel(),
+      localInstall: isLocalSecondInstall(),
+      secretStorage: sourceControlSecretStorageLabel(),
+    },
+    providers: [
+      {
+        provider: "github" as const,
+        name: "GitHub",
+        enabled: true,
+        status: connection?.status ?? "not_configured",
+      },
+      {
+        provider: "gitlab" as const,
+        name: "GitLab",
+        enabled: false,
+        status: "enterprise_only" as const,
+      },
+      {
+        provider: "bitbucket_cloud" as const,
+        name: "Bitbucket Cloud",
+        enabled: false,
+        status: "enterprise_only" as const,
+      },
+      {
+        provider: "bitbucket_server" as const,
+        name: "Bitbucket Server",
+        enabled: false,
+        status: "enterprise_only" as const,
+      },
+    ],
+    connection: serializeSourceControlConnection(connection),
+  };
+}
+
 export type MembersSettingsReadModel = Awaited<
   ReturnType<typeof loadMembersSettingsReadModel>
 >;
@@ -445,4 +500,7 @@ export type IntegrationsSettingsReadModel = Awaited<
 >;
 export type AppRuntimeSettingsReadModel = Awaited<
   ReturnType<typeof loadAppRuntimeSettingsReadModel>
+>;
+export type SourceControlSettingsReadModel = Awaited<
+  ReturnType<typeof loadSourceControlSettingsReadModel>
 >;

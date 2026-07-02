@@ -19,6 +19,7 @@ export type AuditEventCategory =
   | "apps"
   | "reviews"
   | "integrations"
+  | "source_control"
   | "agents"
   | "tools"
   | "app_data"
@@ -66,6 +67,7 @@ export type AuditTargetType =
   | "app"
   | "review"
   | "integration"
+  | "source_control_connection"
   | "oauth_provider_config"
   | "connected_account"
   | "agent"
@@ -205,6 +207,81 @@ export type WorkspaceInvitationDocument = {
   revokedAt?: Date | null;
 };
 
+export type SourceControlProviderKey = "github";
+
+export type SourceControlConnectionStatus =
+  | "not_configured"
+  | "valid"
+  | "invalid"
+  | "revoked";
+
+export type SourceControlOwnerType = "user" | "organization" | "unknown";
+
+export type SourceControlConnectionDocument = {
+  _id: string;
+  workspaceId: string;
+  provider: SourceControlProviderKey;
+  mode: "pat" | "oauth-placeholder";
+  status: SourceControlConnectionStatus;
+  targetOwner: string;
+  targetOwnerType?: SourceControlOwnerType;
+  defaultVisibility: "private" | "public";
+  repoNamePrefix?: string | null;
+  sourceStorageMode?: "mongo" | "source_control";
+  credentialRef: string;
+  credentialKind: "github_pat";
+  connectedAccountLogin?: string | null;
+  connectedByUserId?: string | null;
+  connectedByName?: string | null;
+  permissionsState?: {
+    canReadMetadata: boolean;
+    canReadContents: boolean;
+    canWriteContents: boolean;
+    canCreateRepositories: boolean;
+    canManageTopics: boolean;
+    checkedAt: Date;
+  };
+  lastValidatedAt?: Date | null;
+  lastErrorCode?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type AppSourceControlMetadata = {
+  publishEnabled?: boolean;
+  availableInCatalog?: boolean;
+  publishState?: "publishing" | "published" | "sync_failed";
+  provider: SourceControlProviderKey;
+  connectionId?: string | null;
+  owner: string;
+  repo: string;
+  repoId?: string | null;
+  defaultBranch?: string | null;
+  remoteUrl?: string | null;
+  manifestPath: "second-app.json";
+  latestCommitSha?: string | null;
+  latestTreeSha?: string | null;
+  latestTag?: string | null;
+  version?: number | null;
+  sourceHash?: string | null;
+  syncStatus: "never" | "pending" | "synced" | "failed";
+  lastSyncedAt?: Date | null;
+  lastSyncStartedAt?: Date | null;
+  lastSummary?: string | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  createdByRemoteLogin?: string | null;
+  installedFrom?: {
+    provider: SourceControlProviderKey;
+    owner: string;
+    repo: string;
+    tag?: string | null;
+    version?: number | null;
+    commitSha?: string | null;
+    sourceHash?: string | null;
+  } | null;
+};
+
 export type AppDocument = {
   _id: string;
   workspaceId: string;
@@ -262,6 +339,7 @@ export type AppDocument = {
   changeRequestMessage?: string | null;
   changeRequestedByUserId?: string | null;
   changeRequestedAt?: Date | null;
+  sourceControl?: AppSourceControlMetadata | null;
 };
 
 export type AppSourceSnapshotKind = "draft" | "published";

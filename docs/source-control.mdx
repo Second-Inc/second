@@ -1,0 +1,276 @@
+---
+title: "Source Control"
+description: "How Second uses source control as authoritative app source storage while keeping preview fast with a local cache."
+icon: "git-branch"
+---
+
+Source control lets Second store app source in a repository instead of treating
+MongoDB as the authoritative code store. MongoDB still stores app metadata, run
+history, audit data, and a materialized snapshot/cache so preview stays fast.
+For source-control-backed apps, the code source of truth is the repository.
+
+Supported providers include GitHub, GitLab, Bitbucket, and self-hosted source
+control in enterprise deployments.
+
+## Mental model
+
+There are three separate concepts:
+
+| Concept | Meaning |
+| --- | --- |
+| Source-control connection | Workspace credentials and target owner exist. Nothing is uploaded just because this exists. |
+| Source storage policy | On-prem/managed setting that makes successful builds write app source to source control after `done_building`. |
+| Available Apps | Optional discovery/install layer for apps intentionally shared with local CLI/desktop users. |
+
+Connecting source control only enables the feature. It does not upload apps.
+
+In local CLI/desktop mode, source-control storage is app-level: a builder turns
+on Publish to source control for a specific app from the app top bar.
+
+In on-prem or managed deployments, admins can turn on Store app source in
+source control in Settings -> Source Control. When that workspace-level storage policy
+is on, successful `done_building` snapshots are committed to the configured provider
+automatically. Existing Mongo-only apps are adopted the next time a successful
+build creates a new app snapshot.
+
+Available Apps is separate. A source-control-backed app can be stored in a
+repository without being listed as an Available App.
+
+## What gets loaded from where
+
+App viewing and agent source restore are different paths.
+
+The app page must be fast. It renders the built artifact from the saved
+snapshot/cache. It does not download source from source control and it does not compile
+on page load.
+
+Agent restore is different. If a worker/container/local session is still alive,
+Second keeps using the live files already on disk. If the session died and the
+app is source-control-backed, Second restores source from source control, then caches
+that restored snapshot back into MongoDB.
+
+| Deployment | Source control | App preview/page | Agent files when session is alive | Agent files when restore is needed |
+| --- | --- | --- | --- | --- |
+| Local CLI/desktop | Off | Mongo snapshot is authoritative. | Live local worker files. | Mongo snapshot. |
+| Local CLI/desktop | On for that app | Source control is authoritative. Render the cached built artifact for the selected repository version. | Live local worker files. | Source control, then cache in Mongo. |
+| On-prem/cloud | Off | Mongo snapshot is authoritative. | Live container files. | Mongo snapshot. |
+| On-prem/cloud | Workspace source storage on | Source control is authoritative. Render the cached built artifact for the selected repository version. | Live container files. | Source control, then cache in Mongo. |
+
+The important rule:
+
+- App preview/page = saved built artifact/cache.
+- Source restore for a dead session = source control when that app is source-control-backed.
+- If the session is still alive, no restore is needed.
+- If the app is not source-control-backed, Mongo remains authoritative.
+
+MongoDB is still used in source-control mode, but it is a materialized cache for
+fast app rendering and recovery. It is not the source of truth for a
+source-control-backed app.
+
+## Source storage modes
+
+### Local CLI/desktop
+
+Local installs use app-level opt-in. The app top bar shows Publish to source
+control only when:
+
+- workspace source control is connected,
+- the user can edit the app,
+- the user is looking at the draft app.
+
+The first publish takes the current app state from live worker files when
+available, otherwise from the saved Mongo snapshot. Second then:
+
+1. Creates a repository if the app does not already have one.
+2. Writes the sanitized app files.
+3. Writes root `second-app.json`.
+4. Best-effort adds the `second-app` repository topic.
+5. Commits the snapshot.
+6. Creates `second-app-v1`.
+7. Stores compact source-control metadata on the app document.
+
+Apps that are not published stay local. `done_building` continues to save the
+snapshot locally, but it does not create a repo, commit, or tag.
+
+### On-prem and managed deployments
+
+On-prem and managed deployments can use a workspace-level storage policy:
+Store app source in source control.
+
+When this setting is off:
+
+- MongoDB is authoritative for app source.
+- `done_building` saves snapshots as it does today.
+- The source-control connection exists only for explicit features that use it.
+
+When this setting is on:
+
+- successful `done_building` saves the local snapshot/cache first,
+- then commits the sanitized app source to the configured provider,
+- creates or updates the app's repository,
+- creates an auto-bumped `second-app-v<N>` tag when source changed,
+- marks source control as the authoritative app source.
+
+This does not automatically list the app in Available Apps. Storage and
+distribution are separate.
+
+## Builds and versions
+
+`done_building` remains the build gate. The worker runs the build, requires
+`dist/index.html`, collects the snapshot, and returns the successful build
+summary. The web route saves that snapshot first.
+
+Only after the snapshot is saved does Second try to sync to source control.
+
+Versioning is automatic:
+
+- First source-control-backed snapshot creates `second-app-v1`.
+- Each later successful build with changed source creates the next
+  `second-app-v<N>` tag.
+- If the source hash did not change, Second does not create a duplicate version.
+- Tag messages use the successful `done_building` summary.
+- If source-control sync fails after local save, the app remains usable locally and the
+  app source-control status shows the failure with a retry path.
+
+## Repository shape
+
+A source-control-backed app repository contains:
+
+- generated app source files,
+- the built `dist/**` output from the successful build snapshot,
+- root `second-app.json`.
+
+The manifest makes the repository self-describing:
+
+```json
+{
+  "type": "second.app.export.v1",
+  "schemaVersion": 1,
+  "app": {
+    "name": "Customer Console"
+  },
+  "source": {
+    "fileCount": 42,
+    "totalBytes": 812345,
+    "hash": "sha256:..."
+  },
+  "sourceControl": {
+    "provider": "github",
+    "owner": "acme",
+    "repo": "second-app-customer-console",
+    "tag": "second-app-v12",
+    "version": 12,
+    "commitSha": "...",
+    "availableInCatalog": false
+  }
+}
+```
+
+The repository must not contain secrets or local runtime state. Source-control
+sync uses the same app-bundle filters that exclude unsafe files such as `.env`,
+`.npmrc`, `.git`, `node_modules`, local caches, and other non-app artifacts.
+
+## Available Apps
+
+Local CLI/desktop users can open Available Apps from the workspace sidebar.
+
+The page reads the configured source-control owner and lists repositories that contain a
+valid root `second-app.json` and are marked as available in the manifest. The
+repository topic `second-app` speeds up discovery, but the manifest is the
+authority.
+
+Actions:
+
+| Action | Behavior |
+| --- | --- |
+| Get | Downloads the selected repository archive server-side, imports it as a local app, and records `installedFrom` metadata. |
+| Update | Downloads the newer upstream version and updates the existing installed app from the same owner/repo. |
+| Open | Opens an already installed local copy. |
+
+Installing from Available Apps creates a local copy. It does not turn on
+Publish to source control for that app. The app can still be published later,
+but that remains an explicit app-level action.
+
+Storage-only repos created by the on-prem workspace source storage policy are
+not listed in Available Apps unless a future sharing policy marks them
+discoverable.
+
+## Provider connection
+
+Owners/admins configure source control from Settings -> Source Control.
+
+Enterprise deployments can use supported providers such as GitHub, GitLab,
+Bitbucket, or self-hosted source control. When the provider uses personal access
+tokens, prefer a fine-grained token owned by the user or organization that will
+hold app repositories.
+
+Recommended permissions:
+
+| Permission | Why |
+| --- | --- |
+| Metadata: read | Validate and discover repositories. |
+| Contents: read/write | Read manifests, commit app snapshots, and download archives. |
+| Administration: write | Create repositories and manage repository topics. |
+
+For GitHub fine-grained tokens, use the GitHub UI like this:
+
+- Resource owner: the user or organization that will own app repositories.
+- Repository access: choose All repositories for normal Second-managed source
+  storage, because new app repositories are created over time.
+- Add permissions: stay on the Repositories tab and add Administration
+  read/write plus Contents read/write.
+
+Classic PAT fallback:
+
+- `repo` for private repositories.
+- `public_repo` only for explicitly public app repositories.
+
+Repository visibility defaults to private.
+
+User-owned repositories must be owned by the authenticated provider account.
+For organization-owned repositories, configure the organization owner.
+
+Repo name prefix is optional. When it is blank, new repositories use
+`second-app-<app-name>`, for example `second-app-customer-console`. When a prefix
+is configured, new repositories use `<prefix>-<app-name>`.
+
+## Secret handling
+
+The PAT is stored only through Second's server-side secret store:
+
+- WorkOS Vault when configured,
+- encrypted local storage otherwise.
+
+The token value is never returned to:
+
+- the browser,
+- the worker,
+- agent runtimes,
+- realtime events,
+- audit metadata,
+- logs.
+
+Provider errors are normalized and redacted before they are shown to the user or
+stored on app metadata.
+
+## Tenant isolation
+
+Source-control records are workspace-scoped. Every query includes `workspaceId`.
+Install, update, publish, and restore routes prove workspace/app access before
+mutating app files.
+
+GET/read paths do not create repos, sync snapshots, restore files, or write
+audit events. Provider calls that mutate state happen only from explicit mutation
+paths such as settings save, app publish, post-build sync, Available Apps
+install/update, or worker/session restore.
+
+Realtime events remain compact invalidation hints. They do not include source
+files, prompts, provider responses, tokens, cookies, headers, or full database
+documents.
+
+## Related pages
+
+- [App Preview](/app-preview): build artifacts, iframe rendering, and restore boundaries
+- [App Governance](/app-governance): draft/published snapshots and review flow
+- [Self-hosting](/self-hosting): deployment and secret-store setup
+- [Guard and Tenancy](/guard-and-tenancy): workspace isolation and route guards

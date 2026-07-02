@@ -931,9 +931,24 @@ app.get("/detect-provider", (c) => {
   const opencodeJsonEvents = Boolean(opencodeJsonSupport?.supported);
   const opencodeEnvAuthConfigured = opencodeEnvConfigured();
   const opencodeLocalAuthConfigured = openCodeLocalAuthAvailable();
+  const opencodeModelDiscovery =
+    opencodeCli.available && opencodeJsonEvents
+      ? discoverOpenCodeModels({ command: opencodeCommand })
+      : null;
+  const opencodeModelsDiscovered = Boolean(
+    opencodeModelDiscovery?.available && opencodeModelDiscovery.models.length > 0,
+  );
   const opencodeLikelyConfigured =
     opencodeCli.available &&
-    (opencodeEnvAuthConfigured || opencodeLocalAuthConfigured);
+    (opencodeEnvAuthConfigured ||
+      opencodeLocalAuthConfigured ||
+      opencodeModelsDiscovered);
+  const opencodeError =
+    !opencodeJsonEvents && opencodeJsonSupport
+      ? opencodeJsonSupport.message
+      : !opencodeLikelyConfigured && opencodeModelDiscovery?.error
+        ? opencodeModelDiscovery.error
+        : undefined;
 
   return c.json({
     runtimes: {
@@ -965,13 +980,12 @@ app.get("/detect-provider", (c) => {
         ...opencodeCli,
         available: opencodeCli.available && opencodeJsonEvents && opencodeLikelyConfigured,
         features: { jsonEvents: opencodeJsonEvents },
-        ...(!opencodeJsonEvents && opencodeJsonSupport
-          ? { error: opencodeJsonSupport.message }
-          : {}),
+        ...(opencodeError ? { error: opencodeError } : {}),
         auth: {
           envKeyConfigured: opencodeEnvAuthConfigured,
           cliLikelyConfigured: opencodeLikelyConfigured,
           localAuthConfigured: opencodeLocalAuthConfigured,
+          modelsDiscovered: opencodeModelsDiscovered,
         },
       },
     },

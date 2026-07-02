@@ -35,13 +35,17 @@ test("OpenCode runtime settings parse and remain associated with OpenCode", () =
 test("OpenCode accepts dynamic provider/model IDs from discovery", () => {
   const parsed = parseRuntimeSettings({
     runtimeId: "opencode",
-    runtimeModel: "opencode/qwen-coder-free",
+    runtimeModel: "vllm//models/Qwen/Qwen3-Coder-30B-A3B-Instruct",
     runtimeParams: { variant: "high" },
   });
 
   assert.deepEqual(parsed, {
     runtimeId: "opencode",
-    model: "opencode/qwen-coder-free",
+    model: "vllm//models/Qwen/Qwen3-Coder-30B-A3B-Instruct",
     params: { variant: "high" },
   });
+  assert.equal(
+    findRuntimeForModel("openrouter/google/gemini-2.5-flash")?.id,
+    "opencode",
+  );
 });

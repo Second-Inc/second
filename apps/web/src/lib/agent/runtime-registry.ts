@@ -1,3 +1,5 @@
+import { isOpenCodeModelId } from "./opencode-models";
+
 export type AgentRuntimeId = "claude-code" | "codex-cli" | "opencode";
 
 export type AgentRuntimeSettings = {
@@ -276,10 +278,6 @@ export function getRuntimeModel(
   model: string,
 ): RuntimeModel | null {
   return getRuntime(runtimeId).models.find((candidate) => candidate.id === model) ?? null;
-}
-
-function isOpenCodeModelId(model: string): boolean {
-  return /^[a-z0-9_.-]+\/[^/\s]+$/i.test(model);
 }
 
 export function getDefaultRuntimeSettings(

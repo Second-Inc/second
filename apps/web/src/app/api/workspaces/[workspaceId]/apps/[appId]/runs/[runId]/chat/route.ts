@@ -18,7 +18,6 @@ import {
   failRun,
   findWorkspaceById,
   findRunnableWorkspaceAgentForViewer,
-  getAppSourceFiles,
   loadRuntimeSkillsByRefs,
   loadRunForApp,
   loadRunStreamStateForApp,
@@ -32,6 +31,10 @@ import {
   resolveRuntimeSkillsForViewer,
   type StartRunStreamResult,
 } from "@/lib/db";
+import {
+  restoreSourceControlFilesForApp,
+  syncAppSnapshotToSourceControl,
+} from "@/lib/source-control/sync-app";
 import { classifyBuilderRunTerminalState } from "@/lib/agent/builder-run-terminal";
 import {
   isWorkerRestoreNeeded,
@@ -886,7 +889,7 @@ export async function POST(request: Request, context: ChatRouteContext) {
     ? await isWorkerRestoreNeeded(workerUrl, appId)
     : false;
   const existingSourceFiles = restoreNeeded
-    ? await getAppSourceFiles({
+    ? await restoreSourceControlFilesForApp({
         workspaceId: workspaceContext.workspaceId,
         appId,
       })
@@ -1137,6 +1140,28 @@ export async function POST(request: Request, context: ChatRouteContext) {
             workspaceId: workspaceContext.workspaceId,
             appId,
             sourceFiles: bridgeResult.sourceFiles,
+          });
+          after(() => {
+            void syncAppSnapshotToSourceControl({
+              workspaceId: workspaceContext.workspaceId,
+              appId,
+              files: bridgeResult.sourceFiles!,
+              summary: bridgeResult.doneBuilding?.summary ?? null,
+              audit: {
+                actor: {
+                  kind: "agent",
+                  agentName: "Builder agent",
+                },
+                source: auditSourceFromRequest(request, {
+                  kind: "builder_agent",
+                  trust: "internal_trusted",
+                  appId,
+                  appName: app.name,
+                  runId,
+                }),
+                runId,
+              },
+            });
           });
           const snapshot = sourceSnapshotMetadata(bridgeResult.sourceFiles);
           void recordAuditEvent({

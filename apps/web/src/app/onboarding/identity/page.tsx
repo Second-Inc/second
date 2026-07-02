@@ -48,11 +48,6 @@ export default async function IdentityOnboardingPage() {
             ? onboardingState.user.displayName
             : undefined
         }
-        defaultEmail={
-          onboardingState.status === "ready"
-            ? onboardingState.user.email
-            : undefined
-        }
         defaultProfileRole={
           onboardingState.status === "ready"
             ? onboardingState.user.profileRole

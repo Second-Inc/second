@@ -78,8 +78,9 @@ App iframe (SDK hooks)
 └──────────────────────────────────────────────┘
 ```
 
-See [App Governance](/app-governance), [App Agents](/app-agents),
-[App Data](/app-data), and [Integrations](/integrations) for details.
+See [App Governance](/app-governance), [Source Control](/source-control),
+[App Agents](/app-agents), [App Data](/app-data), and
+[Integrations](/integrations) for details.
 
 Draft and published runtime state are intentionally separate. Published app
 views read and write app data under the published app ID. Draft previews and
@@ -107,6 +108,7 @@ builder can test data changes without mutating the currently published app data.
 | `workspace_invitations` | Workspace-scoped invitation records, external invitation IDs, requested role, and default team assignment |
 | `apps` | Workspace-owned application records, draft/review/published state, app collaborators, and team visibility |
 | `app_source_snapshots` | Large draft and published source-file snapshots, separated from hot app metadata paths |
+| `source_control_connections` | Workspace-scoped source-control provider configuration, connection status, owner metadata, and secret references |
 | `review_requests` | Workspace admin inbox items for app publication approval |
 | `agent_runs` | Builder agent runs: messages, `pending`/`streaming`/`completed` status, session state, active stream ID |
 | `integrations` | App-scoped integration grants, setup requirements, static/OAuth auth metadata, app/requester metadata, and integration state. See [Integrations](/integrations) |
@@ -173,6 +175,19 @@ published app, the app keeps serving the last published snapshot to team
 viewers while the builder works on a draft. Publishing locally or approving a
 review promotes the current draft snapshot into the published snapshot. See
 [App Governance](/app-governance) for the full role and review flow.
+
+Source control is the repository-backed app source storage layer. Connecting a
+provider such as GitHub, GitLab, or Bitbucket at the workspace level only stores
+credentials and owner metadata; it does not upload apps by itself. Local
+CLI/desktop installs use app-level Publish to source control. On-prem or
+managed deployments can enable a workspace-level Store app source in source
+control policy, which makes successful builds sync sanitized source and built
+artifacts to the configured provider and create auto-bumped `second-app-v<N>`
+tags. Normal app page loads still render a cached built artifact; source
+restore happens only when a source-control-backed app needs files after the
+live worker/container session is gone. Available Apps is a separate discovery
+layer, not the definition of source-control storage. See
+[Source Control](/source-control).
 
 `agents.json` is a protected draft artifact. The builder and file tools may
 edit it, but live agent runtime permissions are trusted only after the platform

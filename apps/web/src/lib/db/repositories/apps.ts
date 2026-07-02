@@ -302,6 +302,7 @@ const appMetadataProjection = {
   changeRequestMessage: 1,
   changeRequestedByUserId: 1,
   changeRequestedAt: 1,
+  sourceControl: 1,
   draftSnapshotId: 1,
   draftSourceUpdatedAt: 1,
   draftSourceSizeBytes: 1,
@@ -514,6 +515,7 @@ export async function createAppForWorkspace(input: {
     runtimeModel: input.runtimeModel,
     runtimeParams: input.runtimeParams,
     collaboratorUserIds: [],
+    sourceControl: null,
   };
 
   await appsCollection.insertOne(app);

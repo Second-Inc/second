@@ -176,10 +176,25 @@ export {
   upsertConnectedAccount,
 } from "./connected-accounts";
 export {
+  deleteSourceControlConnection,
+  findInstalledSourceControlApp,
+  getSourceControlConnection,
+  getValidSourceControlConnection,
+  hasValidSourceControlConnection,
+  listInstalledSourceControlApps,
+  markSourceControlConnectionInvalid,
+  patchAppSourceControlMetadata,
+  serializeSourceControlConnection,
+  updateAppSourceControlMetadata,
+  upsertSourceControlConnection,
+  type SourceControlConnectionReadModel,
+} from "./source-control-connections";
+export {
   findUserByEmail,
   findUserById,
   updateUserContext,
   updateUserOnboarding,
+  updateUserProfile,
   updateUserPreferences,
   upsertUserByEmail,
 } from "./users";

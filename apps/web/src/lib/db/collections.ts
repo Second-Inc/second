@@ -12,6 +12,7 @@ import type {
   IntegrationDocument,
   OAuthProviderConfigDocument,
   ReviewRequestDocument,
+  SourceControlConnectionDocument,
   UserDocument,
   WorkspaceAgentDocument,
   WorkspaceDocument,
@@ -37,6 +38,7 @@ const COLLECTIONS = {
   integrationCredentials: "integration_credentials",
   oauthProviderConfigs: "oauth_provider_configs",
   connectedAccounts: "connected_accounts",
+  sourceControlConnections: "source_control_connections",
   appAgentRuns: "app_agent_runs",
   appData: "app_data",
   appSourceSnapshots: "app_source_snapshots",
@@ -137,6 +139,14 @@ export async function getConnectedAccountsCollection(): Promise<
   Collection<ConnectedAccountDocument>
 > {
   return getCollection<ConnectedAccountDocument>(COLLECTIONS.connectedAccounts);
+}
+
+export async function getSourceControlConnectionsCollection(): Promise<
+  Collection<SourceControlConnectionDocument>
+> {
+  return getCollection<SourceControlConnectionDocument>(
+    COLLECTIONS.sourceControlConnections,
+  );
 }
 
 export async function getAppAgentRunsCollection(): Promise<Collection<AppAgentRunDocument>> {

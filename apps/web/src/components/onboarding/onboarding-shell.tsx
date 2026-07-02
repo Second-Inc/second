@@ -98,7 +98,7 @@ const FRAME_STATE_BY_STEP: Record<OnboardingStep, OnboardingFrameState> = {
   },
 };
 
-const STEPS: Array<{
+const LOCAL_PROGRESS_STEPS: Array<{
   id: OnboardingStep;
   label: string;
 }> = [
@@ -117,6 +117,24 @@ const STEPS: Array<{
   {
     id: "provider",
     label: "Runtime",
+  },
+];
+
+const CONTEXT_PROGRESS_STEPS: Array<{
+  id: OnboardingStep;
+  label: string;
+}> = [
+  {
+    id: "identity",
+    label: "Identity",
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
+  },
+  {
+    id: "loader",
+    label: "Loader",
   },
   {
     id: "start",
@@ -216,7 +234,13 @@ function frameStateForPathname(pathname: string): OnboardingFrameState {
   return DEFAULT_FRAME_STATE;
 }
 
-export function OnboardingFrame({ children }: { children: ReactNode }) {
+export function OnboardingFrame({
+  children,
+  isLocalMode = false,
+}: {
+  children: ReactNode;
+  isLocalMode?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationTimeoutRef = useRef<number | null>(null);
@@ -226,7 +250,12 @@ export function OnboardingFrame({ children }: { children: ReactNode }) {
   const [shaderStep, setShaderStep] = useState<OnboardingStep>(
     frameState.step,
   );
-  const activeIndex = STEPS.findIndex((item) => item.id === frameState.step);
+  const progressSteps = isLocalMode
+    ? LOCAL_PROGRESS_STEPS
+    : CONTEXT_PROGRESS_STEPS;
+  const activeIndex = progressSteps.findIndex(
+    (item) => item.id === frameState.step,
+  );
   const isLeaving = leavingPathname === pathname;
 
   const navigate = useCallback(
@@ -342,11 +371,11 @@ export function OnboardingFrame({ children }: { children: ReactNode }) {
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-xs font-medium">Setup progress</span>
                   <span className="font-mono text-[10px] text-white/60">
-                    {Math.max(activeIndex + 1, 1)}/{STEPS.length}
+                    {Math.max(activeIndex + 1, 1)}/{progressSteps.length}
                   </span>
                 </div>
                 <div className="grid gap-1.5">
-                  {STEPS.map((item, index) => (
+                  {progressSteps.map((item, index) => (
                     <StepIndicator
                       key={item.id}
                       label={item.label}

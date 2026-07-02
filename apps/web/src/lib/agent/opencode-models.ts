@@ -31,7 +31,13 @@ export type OpenCodeModelDiscoveryResult = {
 };
 
 export function isOpenCodeModelId(value: string): boolean {
-  return /^[a-z0-9_.-]+\/[^/\s]+$/i.test(value);
+  const trimmed = value.trim();
+  const separatorIndex = trimmed.indexOf("/");
+  if (separatorIndex <= 0 || separatorIndex >= trimmed.length - 1) return false;
+
+  const providerId = trimmed.slice(0, separatorIndex);
+  const modelId = trimmed.slice(separatorIndex + 1);
+  return /^[a-z0-9_.-]+$/i.test(providerId) && !/\s/.test(modelId);
 }
 
 export function openCodeVariantOptions(model: OpenCodeDiscoveredModel | null): string[] {

@@ -26,6 +26,7 @@ import {
   SparklesIcon,
   XIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -163,6 +164,25 @@ type AppWorkspaceProps = {
     permissionGroups: IntegrationPermissionGroup[];
     secretRequirements: IntegrationSecretRequirement[];
   }>;
+  sourceControl: AppSourceControlState;
+};
+
+type AppSourceControlState = {
+  localAvailable: boolean;
+  connected: boolean;
+  connectionStatus: string;
+  canPublish: boolean;
+  app: {
+    publishEnabled: boolean;
+    publishState: "publishing" | "published" | "sync_failed" | null;
+    syncStatus: "never" | "pending" | "synced" | "failed";
+    owner: string;
+    repo: string;
+    latestTag: string | null;
+    version: number | null;
+    lastSyncedAt: string | null;
+    lastErrorMessage: string | null;
+  } | null;
 };
 
 /** "panel" = 385px side panel, "full" = agent full width, "hidden" = agent hidden */
@@ -607,6 +627,7 @@ export function AppWorkspace({
   appTeamIds,
   teams,
   publishIntegrations,
+  sourceControl,
 }: AppWorkspaceProps) {
   const router = useRouter();
   const [isHydrated, setIsHydrated] = useState(false);
@@ -833,6 +854,8 @@ export function AppWorkspace({
   const [livePublishIntegrations, setLivePublishIntegrations] = useState(
     publishIntegrations,
   );
+  const [liveSourceControl, setLiveSourceControl] = useState(sourceControl);
+  const [sourceControlPublishing, setSourceControlPublishing] = useState(false);
   const [appRuntimeSettings, setAppRuntimeSettings] = useState(
     initialAppRuntimeSettings,
   );
@@ -892,6 +915,7 @@ export function AppWorkspace({
       setLiveAppTeamIds(appTeamIds);
       setLiveCollaboratorUserIds(collaboratorUserIds);
       setLivePublishIntegrations(publishIntegrations);
+      setLiveSourceControl(sourceControl);
       setAppRuntimeSettings(initialAppRuntimeSettings);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -904,6 +928,7 @@ export function AppWorkspace({
     publishIntegrations,
     publishStatus,
     reviewRequestedAt,
+    sourceControl,
   ]);
 
   const fetchAppState = useCallback(async () => {
@@ -924,6 +949,7 @@ export function AppWorkspace({
         hasDraftChanges?: boolean;
         integrations?: AppWorkspaceProps["publishIntegrations"];
         appRuntimeSettings?: WorkspaceAppRuntimeSettings;
+        sourceControl?: AppSourceControlState;
       };
 
       if (data.publishStatus) setLivePublishStatus(data.publishStatus);
@@ -939,6 +965,9 @@ export function AppWorkspace({
       }
       if (data.appRuntimeSettings) {
         setAppRuntimeSettings(data.appRuntimeSettings);
+      }
+      if (data.sourceControl) {
+        setLiveSourceControl(data.sourceControl);
       }
       if (typeof data.hasPublishedVersion === "boolean") {
         setHasPublishedSnapshot(data.hasPublishedVersion);
@@ -1431,18 +1460,33 @@ export function AppWorkspace({
     currentUserRole === "owner" || currentUserRole === "admin";
   const hasBuilderChat = canCollaborateApp && isDraftVersion && Boolean(runId);
   const showTopBar = previewVisible || hasBuilderChat;
-  const showPublishDialog =
-    previewVisible &&
-    isDraftVersion &&
-    (!hasPublishedSnapshot ||
-      hasDraftChanges ||
-      currentPublishStatus !== "published");
   // Published app sharing grants runtime app and app-data access to selected teams.
   // Keep source/data inspector chrome draft-only until app-level RBAC can split those capabilities.
   const showDraftInspectorTools = previewVisible && isDraftVersion;
   const showRunUsage = isDraftVersion;
   const showDraftAgentControls =
     previewVisible && canCollaborateApp && isDraftVersion && !isInspectorView;
+  const sourceControlApp = liveSourceControl.app;
+  const sourceControlPublished = Boolean(sourceControlApp?.publishEnabled);
+  const showSourceControlPublish =
+    previewVisible &&
+    isDraftVersion &&
+    liveSourceControl.localAvailable &&
+    liveSourceControl.connected &&
+    liveSourceControl.canPublish;
+  const sourceControlRepoLabel =
+    sourceControlApp?.owner && sourceControlApp.repo
+      ? `${sourceControlApp.owner}/${sourceControlApp.repo}`
+      : "GitHub";
+  const sourceControlSyncFailed =
+    sourceControlPublished && sourceControlApp?.syncStatus === "failed";
+  const showPublishDialog =
+    previewVisible &&
+    isDraftVersion &&
+    (showSourceControlPublish ||
+      !hasPublishedSnapshot ||
+      hasDraftChanges ||
+      currentPublishStatus !== "published");
   const isBuilderRunActive = isActiveRunStatus(builderRunStatus);
   const activeToolRecoveryStatus = isBuilderRunActive
     ? toolRecoveryStatus
@@ -1458,6 +1502,41 @@ export function AppWorkspace({
   const builderAgentToggleTooltipOpen = builderAgentToggleHintOpen
     ? true
     : undefined;
+  const publishToSourceControl = useCallback(async (): Promise<boolean> => {
+    if (sourceControlPublishing) return false;
+    setSourceControlPublishing(true);
+    try {
+      const response = await fetch(
+        `/api/workspaces/${workspaceId}/apps/${appId}/source-control/publish`,
+        { method: "POST" },
+      );
+      const body = (await response.json().catch(() => null)) as
+        | { error?: string; message?: string }
+        | null;
+      if (!response.ok) {
+        toast.error(body?.message ?? "Could not publish app to source control.");
+        return false;
+      }
+      toast.success(
+        sourceControlPublished
+          ? "App synced to source control."
+          : "App published to source control.",
+      );
+      await fetchAppState();
+      return true;
+    } catch {
+      toast.error("Could not publish app to source control.");
+      return false;
+    } finally {
+      setSourceControlPublishing(false);
+    }
+  }, [
+    appId,
+    fetchAppState,
+    sourceControlPublished,
+    sourceControlPublishing,
+    workspaceId,
+  ]);
   const restoreAutoExpandedBuilderPanel = useCallback(() => {
     const restoreWidth = autoExpandedBuilderPanelRestoreWidthRef.current;
     if (restoreWidth === null) return;
@@ -1724,6 +1803,20 @@ export function AppWorkspace({
                 appTeamIds={liveAppTeamIds}
                 teams={teams}
                 integrations={livePublishIntegrations}
+                sourceControlPublish={
+                  showSourceControlPublish
+                    ? {
+                        published: sourceControlPublished,
+                        publishing: sourceControlPublishing,
+                        syncFailed: sourceControlSyncFailed,
+                        repoLabel: sourceControlRepoLabel,
+                        latestTag: sourceControlApp?.latestTag ?? null,
+                        lastErrorMessage:
+                          sourceControlApp?.lastErrorMessage ?? null,
+                        onPublish: publishToSourceControl,
+                      }
+                    : undefined
+                }
                 onSubmitted={() => void fetchAppState()}
               />
             ) : null}

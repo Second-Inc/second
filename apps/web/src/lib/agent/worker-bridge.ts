@@ -5,7 +5,11 @@ import {
   type UIMessageStreamWriter,
 } from "ai";
 import { isApprovalStopToolOutput } from "./approval-stop";
-import { isDoneBuildingSuccessOutput } from "./done-building";
+import {
+  isDoneBuildingSuccessOutput,
+  parseDoneBuildingOutput,
+  type DoneBuildingPayload,
+} from "./done-building";
 import { workerFetch } from "@/lib/worker-client";
 import type { AgentRuntimeSettings } from "@/lib/agent/runtime-registry";
 import type { ProviderSessionState } from "@/lib/db/types";
@@ -75,6 +79,8 @@ export type WorkerBridgeResult = {
   runtimeTerminal: WorkerRuntimeTerminal | null;
   /** Source files collected after agent called done_building */
   sourceFiles: Record<string, string> | null;
+  /** Parsed successful done_building payload, if observed. */
+  doneBuilding: DoneBuildingPayload | null;
   /** Tool calls observed while translating worker events into UI message parts. */
   toolCalls: WorkerToolCallSummary[];
 };
@@ -786,6 +792,7 @@ export async function streamFromWorker(
 
   // --- Build completion tracking ---
   let buildComplete = false;
+  let doneBuilding: DoneBuildingPayload | null = null;
 
   // --- Block tracking ---
   // Track the current content block type by index so we can properly
@@ -1329,6 +1336,7 @@ export async function streamFromWorker(
               isDoneBuildingSuccessOutput(block.content)
             ) {
               buildComplete = true;
+              doneBuilding = parseDoneBuildingOutput(block.content);
             }
 
             resolveTool(block.tool_use_id, block.content ?? "");
@@ -1369,6 +1377,7 @@ export async function streamFromWorker(
     usage: queryUsage,
     runtimeTerminal,
     sourceFiles,
+    doneBuilding,
     toolCalls: [...observedToolCalls.values()],
   };
 }

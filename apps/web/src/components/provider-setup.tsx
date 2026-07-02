@@ -41,6 +41,7 @@ type DetectionResult = {
         envKeyConfigured: boolean;
         cliLikelyConfigured: boolean;
         localAuthConfigured?: boolean;
+        modelsDiscovered?: boolean;
       };
       error?: string;
     }
@@ -236,7 +237,11 @@ const OPENCODE_MODEL_SELECTION_SETTINGS: AgentRuntimeSettings = {
   params: { variant: "auto" },
 };
 
-export function ProviderSetup() {
+type ProviderSetupProps = {
+  workspaceId: string;
+};
+
+export function ProviderSetup({ workspaceId }: ProviderSetupProps) {
   const [detection, setDetection] = useState<DetectionResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [choosing, setChoosing] = useState(false);
@@ -274,20 +279,29 @@ export function ProviderSetup() {
     detection?.runtimes?.["codex-cli"]?.available ||
     detection?.runtimes?.opencode?.available;
 
-  async function continueToStart(runtimeSettings?: AgentRuntimeSettings) {
+  async function finishLocalOnboarding(runtimeSettings?: AgentRuntimeSettings) {
     if (choosing) return;
     setChoosing(true);
     if (runtimeSettings) {
       writePreferredRuntimeSettings(runtimeSettings);
     }
-    await fetch("/api/onboarding/step", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step: "start" }),
-    }).catch(() => {});
+    try {
+      const context = await fetch("/api/onboarding/context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyContext: "", userContext: "" }),
+      });
+      if (!context.ok) throw new Error("context_save_failed");
+
+      const complete = await fetch("/api/onboarding/complete", { method: "POST" });
+      if (!complete.ok) throw new Error("onboarding_complete_failed");
+    } catch {
+      setChoosing(false);
+      return;
+    }
     document.dispatchEvent(
       new CustomEvent("second:onboarding-navigate", {
-        detail: { href: "/onboarding/start" },
+        detail: { href: `/w/${workspaceId}` },
       }),
     );
   }
@@ -303,7 +317,13 @@ export function ProviderSetup() {
   const opencodeJsonEvents = !!opencodeRuntime?.features?.jsonEvents;
   const opencodeConfigured =
     !!opencodeRuntime?.auth.envKeyConfigured ||
-    !!opencodeRuntime?.auth.localAuthConfigured;
+    !!opencodeRuntime?.auth.localAuthConfigured ||
+    !!opencodeRuntime?.auth.modelsDiscovered;
+  const opencodeReadyHint = opencodeRuntime?.auth.localAuthConfigured
+    ? "; using local OpenCode auth"
+    : opencodeRuntime?.auth.modelsDiscovered
+      ? "; using OpenCode model config"
+      : "";
   // const apiKeyReady = !!detection?.apiKeyConfigured;
 
   function chooseOpenCode() {
@@ -386,7 +406,7 @@ export function ProviderSetup() {
           }
           onChoose={
             claudeDetected
-              ? () => void continueToStart(getDefaultRuntimeSettings("claude-code"))
+              ? () => void finishLocalOnboarding(getDefaultRuntimeSettings("claude-code"))
               : undefined
           }
         />
@@ -435,7 +455,7 @@ export function ProviderSetup() {
           }
           onChoose={
             codexRuntimeReady
-              ? () => void continueToStart(getDefaultRuntimeSettings("codex-cli"))
+              ? () => void finishLocalOnboarding(getDefaultRuntimeSettings("codex-cli"))
               : undefined
           }
         />
@@ -455,7 +475,7 @@ export function ProviderSetup() {
               : opencodeInstalled && !opencodeJsonEvents
                 ? "Upgrade required"
                 : opencodeInstalled && !opencodeConfigured
-                  ? "Needs auth"
+                  ? "Needs setup"
                   : "Not found"
           }
           description={
@@ -464,7 +484,7 @@ export function ProviderSetup() {
               : opencodeInstalled && !opencodeJsonEvents
                 ? "OpenCode is installed, but this version cannot stream JSON events."
                 : opencodeInstalled
-                  ? "OpenCode is installed, but no provider credentials were found."
+                  ? "OpenCode is installed, but no configured models were found."
                   : "Uses OpenCode with provider/model IDs such as openai/gpt-5.5."
           }
           hint={
@@ -474,9 +494,7 @@ export function ProviderSetup() {
                 {detection?.opencodeCli.version
                   ? `: ${detection.opencodeCli.version}`
                   : ""}
-                {opencodeRuntime?.auth.localAuthConfigured
-                  ? "; using local OpenCode auth"
-                  : ""}
+                {opencodeReadyHint}
               </span>
             ) : opencodeInstalled && !opencodeJsonEvents ? (
               <span>
@@ -485,12 +503,12 @@ export function ProviderSetup() {
               </span>
             ) : opencodeInstalled ? (
               <span>
-                Run <code>opencode auth login</code> or set{" "}
-                <code>OPENAI_API_KEY</code>
+                Run <code>opencode models</code> to verify your provider setup,
+                then retry.
               </span>
             ) : (
               <span>
-                Install OpenCode, then run <code>opencode auth login</code>
+                Install OpenCode, then configure a provider.
               </span>
             )
           }
@@ -505,7 +523,7 @@ export function ProviderSetup() {
         onOpenChange={(nextOpen) => {
           setOpenCodeDialogOpen(nextOpen);
           if (nextOpen || !isOpenCodeModelId(openCodeRuntimeSettings.model)) return;
-          void continueToStart(openCodeRuntimeSettings);
+          void finishLocalOnboarding(openCodeRuntimeSettings);
         }}
         onChange={(settings) => {
           setOpenCodeRuntimeSettings(settings);
@@ -545,7 +563,7 @@ export function ProviderSetup() {
             variant="ghost"
             className="flex-1"
             disabled={choosing}
-            onClick={() => void continueToStart()}
+            onClick={() => void finishLocalOnboarding()}
           >
             Skip for now
           </Button>

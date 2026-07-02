@@ -10,6 +10,7 @@ import {
   getIntegrationsCollection,
   getOAuthProviderConfigsCollection,
   getReviewRequestsCollection,
+  getSourceControlConnectionsCollection,
   getUsersCollection,
   getWorkspaceInvitationsCollection,
   getWorkspaceAgentsCollection,
@@ -181,6 +182,7 @@ export async function ensureDatabaseIndexes(): Promise<void> {
     integrationCredentialsCollection,
     oauthProviderConfigsCollection,
     connectedAccountsCollection,
+    sourceControlConnectionsCollection,
     reviewRequestsCollection,
     appAgentRunsCollection,
     appDataCollection,
@@ -203,6 +205,7 @@ export async function ensureDatabaseIndexes(): Promise<void> {
     getIntegrationCredentialsCollection(),
     getOAuthProviderConfigsCollection(),
     getConnectedAccountsCollection(),
+    getSourceControlConnectionsCollection(),
     getReviewRequestsCollection(),
     getAppAgentRunsCollection(),
     getAppDataCollection(),
@@ -252,6 +255,24 @@ export async function ensureDatabaseIndexes(): Promise<void> {
     appsCollection.createIndex(
       { workspaceId: 1, collaboratorUserIds: 1 },
       { name: "apps_workspace_collaborators" },
+    ),
+    appsCollection.createIndex(
+      {
+        workspaceId: 1,
+        "sourceControl.provider": 1,
+        "sourceControl.owner": 1,
+        "sourceControl.repo": 1,
+      },
+      { name: "apps_workspace_source_control_repo" },
+    ),
+    appsCollection.createIndex(
+      {
+        workspaceId: 1,
+        "sourceControl.installedFrom.provider": 1,
+        "sourceControl.installedFrom.owner": 1,
+        "sourceControl.installedFrom.repo": 1,
+      },
+      { name: "apps_workspace_source_control_installed_from" },
     ),
     reviewRequestsCollection.createIndex(
       { workspaceId: 1, status: 1, updatedAt: -1 },
@@ -363,6 +384,17 @@ export async function ensureDatabaseIndexes(): Promise<void> {
     connectedAccountsCollection.createIndex(
       { workspaceId: 1, userId: 1, updatedAt: -1 },
       { name: "connected_accounts_workspace_user_updated" },
+    ),
+    sourceControlConnectionsCollection.createIndex(
+      { workspaceId: 1, provider: 1 },
+      {
+        name: "source_control_connections_workspace_provider_unique",
+        unique: true,
+      },
+    ),
+    sourceControlConnectionsCollection.createIndex(
+      { workspaceId: 1, updatedAt: -1 },
+      { name: "source_control_connections_workspace_updated" },
     ),
     appAgentRunsCollection.createIndex(
       { appId: 1, createdAt: -1 },

@@ -7,7 +7,6 @@ import { navigateToResponseUrl } from "@/components/onboarding/onboarding-client
 import { Button } from "@/components/ui/button";
 import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
@@ -16,13 +15,11 @@ import { Separator } from "@/components/ui/separator";
 
 type IdentityOnboardingFormProps = {
   defaultDisplayName?: string;
-  defaultEmail?: string;
   defaultProfileRole?: string | null;
 };
 
 export function IdentityOnboardingForm({
   defaultDisplayName,
-  defaultEmail,
   defaultProfileRole,
 }: IdentityOnboardingFormProps) {
   const [submitting, setSubmitting] = useState(false);
@@ -80,32 +77,17 @@ export function IdentityOnboardingForm({
           </Field>
 
           <Field>
-            <FieldLabel htmlFor="email">Work email</FieldLabel>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              maxLength={254}
-              placeholder="you@company.com"
-              defaultValue={defaultEmail}
-            />
-          </Field>
-
-          <Field>
             <FieldLabel htmlFor="profile-role">Your role</FieldLabel>
             <Input
               id="profile-role"
               name="profileRole"
               autoComplete="organization-title"
+              required
+              minLength={2}
               maxLength={80}
               placeholder="Head of Operations"
               defaultValue={defaultProfileRole ?? undefined}
             />
-            <FieldDescription>
-              Optional, but helpful for the first build.
-            </FieldDescription>
           </Field>
         </FieldGroup>
       </div>

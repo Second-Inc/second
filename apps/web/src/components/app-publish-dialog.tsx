@@ -14,15 +14,18 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AppLoader } from "@/components/app-loader";
 import { SearchableMultiSelect } from "@/components/searchable-multi-select";
 import type {
   AppPublishStatus,
@@ -67,10 +70,21 @@ type AppPublishDialogProps = {
   appTeamIds: string[];
   teams: PublishTeam[];
   integrations: PublishIntegration[];
+  sourceControlPublish?: SourceControlPublishConfig;
   onSubmitted?: () => void;
 };
 
 type PublishDialogTab = "sharing" | "changes";
+
+type SourceControlPublishConfig = {
+  published: boolean;
+  publishing: boolean;
+  syncFailed: boolean;
+  repoLabel: string;
+  latestTag: string | null;
+  lastErrorMessage: string | null;
+  onPublish: () => Promise<boolean>;
+};
 
 function statusLabel(status: AppPublishStatus): string {
   if (status === "published") return "Published";
@@ -101,6 +115,19 @@ export function AppPublishStatusBadge({
   return <Badge variant={statusVariant(status)}>{label}</Badge>;
 }
 
+function GitHubLogo({ className }: { className?: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/icons/source-control-github.svg"
+      alt=""
+      width={20}
+      height={20}
+      className={cn("size-5", className)}
+    />
+  );
+}
+
 export function AppPublishDialog({
   workspaceId,
   appId,
@@ -114,11 +141,13 @@ export function AppPublishDialog({
   appTeamIds,
   teams,
   integrations,
+  sourceControlPublish,
   onSubmitted,
 }: AppPublishDialogProps) {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<PublishDialogTab>("sharing");
   const [savingMode, setSavingMode] = useState<"publish" | "request" | null>(null);
+  const [sourceControlRequested, setSourceControlRequested] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const defaultTeamId = teams.find((team) => team.isDefault)?.id ?? teams[0]?.id;
   const initialTeamIds = useMemo(
@@ -133,12 +162,27 @@ export function AppPublishDialog({
   const canSubmit = selectedTeamIds.length > 0 && !savingMode;
   const hasChangeRequest =
     publishStatus === "changes_requested" && Boolean(changeRequestMessage?.trim());
+  const sourceControlMode = Boolean(sourceControlPublish);
+  const sourceControlActionEnabled = sourceControlPublish
+    ? !sourceControlPublish.publishing &&
+      (sourceControlPublish.syncFailed ||
+        (!sourceControlPublish.published && sourceControlRequested))
+    : false;
+  const sourceControlActionLabel = sourceControlPublish?.syncFailed
+    ? "Retry sync"
+    : "Publish";
 
   useEffect(() => {
-    if (open && hasChangeRequest) {
+    if (open && hasChangeRequest && !sourceControlPublish) {
       setActiveTab("changes");
     }
-  }, [hasChangeRequest, open]);
+  }, [hasChangeRequest, open, sourceControlPublish]);
+
+  useEffect(() => {
+    if (open && sourceControlPublish) {
+      setSourceControlRequested(sourceControlPublish.published);
+    }
+  }, [open, sourceControlPublish]);
 
   const toggleTeam = (teamId: string) => {
     setSelectedTeamIds((current) => {
@@ -195,8 +239,9 @@ export function AppPublishDialog({
     );
   }
 
-  const buttonLabel =
-    publishStatus === "published" && !hasDraftChanges
+  const buttonLabel = sourceControlMode
+    ? "Publish"
+    : publishStatus === "published" && !hasDraftChanges
       ? "Sharing"
       : hasPublishedVersion
         ? "Publish draft"
@@ -213,7 +258,10 @@ export function AppPublishDialog({
             className="h-7 rounded-full px-2.5 text-xs"
             onClick={() => {
               setSelectedTeamIds(initialTeamIds);
-              setActiveTab(hasChangeRequest ? "changes" : "sharing");
+              setActiveTab(
+                hasChangeRequest && !sourceControlPublish ? "changes" : "sharing",
+              );
+              setSourceControlRequested(Boolean(sourceControlPublish?.published));
               setError(null);
               setOpen(true);
             }}
@@ -223,18 +271,84 @@ export function AppPublishDialog({
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          Publish your app and request a review
+          {sourceControlMode
+            ? "Publish this app to source control"
+            : "Publish your app and request a review"}
         </TooltipContent>
       </Tooltip>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (sourceControlPublish?.publishing) return;
+          setOpen(nextOpen);
+        }}
+      >
+        <DialogContent className={cn("sm:max-w-lg", sourceControlMode && "sm:max-w-md")}>
           <DialogHeader>
-            <DialogTitle>Publish app</DialogTitle>
+            <DialogTitle>
+              {sourceControlMode
+                ? "Publish this app to source control?"
+                : "Publish app"}
+            </DialogTitle>
+            {sourceControlMode ? (
+              <DialogDescription>
+                Second will create a source-control repository from the current
+                app files. After that, future successful builds for this app
+                will update source control and create new version tags.
+              </DialogDescription>
+            ) : null}
           </DialogHeader>
 
           <div className="mt-3 flex flex-col gap-5">
-            {hasChangeRequest ? (
+            {sourceControlPublish ? (
+              <div className="rounded-lg border border-border bg-card">
+                <div className="flex items-center gap-4 px-4 py-4">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background">
+                    <GitHubLogo />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-sm font-medium tracking-tight">
+                        Publish to source control
+                      </h2>
+                      <Badge variant={sourceControlPublish.published ? "secondary" : "outline"}>
+                        {sourceControlPublish.published ? "On" : "Off"}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                      Apps that are not published stay local.
+                    </p>
+                    {sourceControlPublish.published ? (
+                      <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                        {sourceControlPublish.repoLabel}
+                        {sourceControlPublish.latestTag
+                          ? ` / ${sourceControlPublish.latestTag}`
+                          : ""}
+                      </p>
+                    ) : null}
+                    {sourceControlPublish.lastErrorMessage ? (
+                      <p className="mt-2 text-[12px] leading-relaxed text-destructive">
+                        {sourceControlPublish.lastErrorMessage}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Switch
+                    checked={
+                      sourceControlPublish.published || sourceControlRequested
+                    }
+                    disabled={
+                      sourceControlPublish.published ||
+                      sourceControlPublish.publishing
+                    }
+                    onCheckedChange={setSourceControlRequested}
+                    aria-label="Publish app to source control"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {!sourceControlPublish && hasChangeRequest ? (
               <div
                 className="inline-flex w-fit rounded-md border border-border bg-muted/30 p-0.5"
                 role="tablist"
@@ -271,7 +385,7 @@ export function AppPublishDialog({
               </div>
             ) : null}
 
-            {hasChangeRequest && activeTab === "changes" ? (
+            {!sourceControlPublish && hasChangeRequest && activeTab === "changes" ? (
               <div className="flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-amber-900 dark:text-amber-200">
                 <MessageSquareWarningIcon className="mt-0.5 size-3.5 shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -286,7 +400,7 @@ export function AppPublishDialog({
               </div>
             ) : null}
 
-            {activeTab === "sharing" && localMode && reviewer ? (
+            {!sourceControlPublish && activeTab === "sharing" && localMode && reviewer ? (
               <div className="flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-amber-900 dark:text-amber-200">
                 <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -306,7 +420,7 @@ export function AppPublishDialog({
                   </Button>
                 </div>
               </div>
-            ) : activeTab === "sharing" && reviewer ? (
+            ) : !sourceControlPublish && activeTab === "sharing" && reviewer ? (
               <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
                 <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
@@ -320,7 +434,7 @@ export function AppPublishDialog({
                   </p>
                 </div>
               </div>
-            ) : activeTab === "sharing" ? (
+            ) : !sourceControlPublish && activeTab === "sharing" ? (
               <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
                 <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                 <p className="text-xs leading-relaxed text-muted-foreground">
@@ -329,7 +443,7 @@ export function AppPublishDialog({
               </div>
             ) : null}
 
-            {activeTab === "sharing" ? (
+            {!sourceControlPublish && activeTab === "sharing" ? (
               <>
                 <section className="flex flex-col gap-2">
                   <div>
@@ -442,7 +556,7 @@ export function AppPublishDialog({
                 {error}
               </p>
             ) : null}
-            {!localMode && reviewer && setupNeeded ? (
+            {!sourceControlPublish && !localMode && reviewer && setupNeeded ? (
               <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
                 Configure the requested integrations before publishing.
               </p>
@@ -455,10 +569,26 @@ export function AppPublishDialog({
               variant="outline"
               size="sm"
               onClick={() => setOpen(false)}
+              disabled={sourceControlPublish?.publishing}
             >
               Cancel
             </Button>
-            {activeTab === "changes" ? (
+            {sourceControlPublish ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={!sourceControlActionEnabled}
+                onClick={async () => {
+                  const published = await sourceControlPublish.onPublish();
+                  if (published) setOpen(false);
+                }}
+              >
+                {sourceControlPublish.publishing ? (
+                  <AppLoader size="xs" interactive={false} />
+                ) : null}
+                {sourceControlActionLabel}
+              </Button>
+            ) : activeTab === "changes" ? (
               <Button
                 type="button"
                 size="sm"

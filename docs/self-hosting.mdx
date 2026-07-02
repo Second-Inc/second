@@ -119,7 +119,7 @@ TOOL_EXECUTE_URL=http://web:3000/api/internal/tool-execute
 
 `INTERNAL_API_TOKEN` authenticates internal web↔worker calls. The worker uses it for web internal APIs (tool execution, agent completion callbacks, app data reads/writes), and the web server uses it when calling the worker HTTP API. Use a strong random secret and set the same value on both services.
 
-The worker must never pass `INTERNAL_API_TOKEN`, MongoDB URLs, Redis URLs, WorkOS secrets, cookies, headers, or integration secret values into CLI runtimes. Codex CLI and OpenCode are launched with an allowlisted environment plus private per app/run `HOME` and config/data directories. The only token they receive for Second tools is a short-lived scoped MCP broker token. Codex receives an OpenAI key through app-server login instead of through the spawned process environment, and Codex shell commands get a separate shell `HOME` plus key/token/secret environment exclusions. In local Codex login mode, the private Codex home is seeded with only the local Codex `auth.json`; in local OpenCode login mode, the private OpenCode data directory is seeded with only OpenCode `auth.json`. If custom OpenCode providers are configured, Second mirrors only the OpenCode `provider` config object into the private runtime config so selected `provider/model` IDs resolve without inheriting user MCP servers or plugins. Production deployments should prefer explicit provider keys, and local auth seeding is disabled by default under `NODE_ENV=production`.
+The worker must never pass `INTERNAL_API_TOKEN`, MongoDB URLs, Redis URLs, WorkOS secrets, cookies, headers, or integration secret values into CLI runtimes. Codex CLI and OpenCode are launched with an allowlisted environment plus private per app/run `HOME` and config/data directories. The only token they receive for Second tools is a short-lived scoped MCP broker token. Codex receives an OpenAI key through app-server login instead of through the spawned process environment, and Codex shell commands get a separate shell `HOME` plus key/token/secret environment exclusions. In local Codex login mode, the private Codex home is seeded with only the local Codex `auth.json`; in local OpenCode login mode, the private OpenCode data directory is seeded with only OpenCode `auth.json`. If custom OpenCode providers are configured, Second mirrors only the OpenCode `provider` config object into the private runtime config so selected `provider/model` IDs resolve without inheriting user MCP servers or plugins. If that provider config references keys with OpenCode's `{env:NAME}` syntax, only those referenced provider env keys are passed through the runtime allowlist. Production deployments should prefer explicit provider keys, and local auth seeding is disabled by default under `NODE_ENV=production`.
 
 Claude Code runs with subprocess environment scrubbing enabled by default. On
 Linux workers, that requires the `bubblewrap` package (`bwrap` executable). Keep
@@ -203,6 +203,42 @@ Portless is only a developer convenience for `npm run dev`. It is not used by
 `npm run start`, `npm run release`, on-prem deployments, or the packaged
 `npx --yes @second-inc/cli` local runtime. The CLI should use the same plain loopback
 shape for OAuth-capable local runs.
+
+## Source control
+
+Workspace source control connects Second to a repository provider such as
+GitHub, GitLab, Bitbucket, or self-hosted source control. Admins configure the
+provider owner or organization from Settings -> Source Control.
+For the full source storage, app-level publish, Available Apps, preview/cache,
+and worker restore model, see [Source Control](/source-control).
+Second stores the token through the same secret storage boundary used for OAuth
+secrets: WorkOS Vault when configured, otherwise the encrypted local secret
+store. The token is not returned to the browser, worker, audit metadata, or
+realtime events.
+
+Connecting source control does not upload apps by itself. In on-prem or managed
+deployments, turn on Store app source in source control to make successful
+builds commit app source to the configured provider after `done_building`.
+Existing Mongo-backed apps are adopted the next time a successful build creates
+a new snapshot. Local CLI/desktop installs still use app-level Publish to source
+control.
+
+App viewing stays fast. The app page renders the materialized built artifact
+from the saved snapshot/cache; it does not download from source control or compile on
+page load. For source-control-backed apps, ephemeral worker/container restore
+uses the configured provider only when the live workspace is gone and a new
+agent turn needs source files. Restored files are cached back into MongoDB for
+preview and file explorer reads.
+
+Available Apps is separate from source storage. Storage-only repos created by
+the workspace source storage policy do not need to appear in Available Apps.
+
+When the provider uses personal access tokens, prefer a fine-grained token with
+Metadata read, Contents read/write, and Administration write for the owner that
+will hold app repositories. In GitHub's fine-grained token UI, choose All
+repositories for normal Second-managed source storage, then add only repository
+Administration read/write and Contents read/write. Prefer private repositories
+and rotate expiring tokens.
 
 ## Running with Docker Compose
 
