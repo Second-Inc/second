@@ -108,8 +108,8 @@ app.on("before-quit", (event) => {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1240,
-    height: 820,
+    width: 1260,
+    height: 835,
     title: "Second",
     show: false,
     ...(process.platform === "darwin"

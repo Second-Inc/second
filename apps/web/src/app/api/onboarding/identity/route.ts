@@ -19,7 +19,7 @@ import {
 import { userCompletedOnboarding } from "@/lib/onboarding";
 import {
   validateDisplayName,
-  validateOptionalProfileRole,
+  validateProfileRole,
 } from "@/lib/validation";
 
 export async function POST(request: Request) {
@@ -31,16 +31,9 @@ export async function POST(request: Request) {
 
   const formData = await request.formData();
   const displayName = validateDisplayName(formData.get("displayName"));
-  const rawProfileRole = formData.get("profileRole");
-  const profileRole = validateOptionalProfileRole(rawProfileRole);
-  const rawProfileRoleText =
-    typeof rawProfileRole === "string" ? rawProfileRole.trim() : "";
-  const hasInvalidProfileRole =
-    rawProfileRole !== null &&
-      (typeof rawProfileRole !== "string" ||
-      (rawProfileRoleText.length > 0 && profileRole === null));
+  const profileRole = validateProfileRole(formData.get("profileRole"));
 
-  if (!displayName || hasInvalidProfileRole) {
+  if (!displayName || !profileRole) {
     return NextResponse.redirect(
       new URL(`${IDENTITY_ONBOARDING_PATH}?error=invalid_identity`, config.publicUrl),
       303,

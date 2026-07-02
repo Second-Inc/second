@@ -7,7 +7,6 @@ import { navigateToResponseUrl } from "@/components/onboarding/onboarding-client
 import { Button } from "@/components/ui/button";
 import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
@@ -83,13 +82,12 @@ export function IdentityOnboardingForm({
               id="profile-role"
               name="profileRole"
               autoComplete="organization-title"
+              required
+              minLength={2}
               maxLength={80}
               placeholder="Head of Operations"
               defaultValue={defaultProfileRole ?? undefined}
             />
-            <FieldDescription>
-              Optional, but helpful for the first build.
-            </FieldDescription>
           </Field>
         </FieldGroup>
       </div>
