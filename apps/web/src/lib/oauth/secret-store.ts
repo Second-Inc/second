@@ -5,6 +5,7 @@ import {
   randomBytes,
 } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   deleteSecret,
@@ -43,13 +44,33 @@ function parseConfiguredKey(value: string): Buffer | null {
   return createHash("sha256").update(trimmed).digest();
 }
 
-function getGeneratedLocalSecretKey(): Buffer {
-  const path = join(process.cwd(), LOCAL_SECRET_DIR, LOCAL_SECRET_KEY_FILE);
-  if (existsSync(path)) {
-    return Buffer.from(readFileSync(path, "utf-8").trim(), "base64");
+function isLocalInstall(): boolean {
+  return process.env.SECOND_LOCAL_INSTALL === "1";
+}
+
+function getGeneratedLocalSecretDir(): string {
+  const configured = process.env.SECOND_LOCAL_SECRET_DIR?.trim();
+  if (configured) return configured;
+
+  if (isLocalInstall()) {
+    return join(homedir(), ".second", "secrets");
   }
 
-  mkdirSync(join(process.cwd(), LOCAL_SECRET_DIR), { recursive: true });
+  return join(process.cwd(), LOCAL_SECRET_DIR);
+}
+
+function getGeneratedLocalSecretKey(): Buffer {
+  const secretDir = getGeneratedLocalSecretDir();
+  const path = join(secretDir, LOCAL_SECRET_KEY_FILE);
+  if (existsSync(path)) {
+    const key = Buffer.from(readFileSync(path, "utf-8").trim(), "base64");
+    if (key.length !== 32) {
+      throw new Error("Invalid local OAuth secret-store key.");
+    }
+    return key;
+  }
+
+  mkdirSync(secretDir, { recursive: true, mode: 0o700 });
   const key = randomBytes(32);
   writeFileSync(path, `${key.toString("base64")}\n`, { mode: 0o600 });
   return key;
@@ -60,7 +81,7 @@ function getLocalEncryptionKey(): Buffer {
   const configuredKey = configured ? parseConfiguredKey(configured) : null;
   if (configuredKey) return configuredKey;
 
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.NODE_ENV === "production" && !isLocalInstall()) {
     throw new Error(
       "SECOND_TOKEN_ENCRYPTION_KEY is required when WorkOS Vault is not configured in production.",
     );

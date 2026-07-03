@@ -931,6 +931,7 @@ async function startWeb({
       WORKER_URL: workerUrl,
       REDIS_URL: redisUrl,
       SECOND_LOCAL_INSTALL: "1",
+      SECOND_LOCAL_SECRET_DIR: SECRETS_DIR,
       SECOND_RELEASE_RUNTIME: "native",
       SECOND_RELEASE_VERSION: packageMetadata.version,
       SECOND_RELEASE_PACKAGE: packageMetadata.name,
