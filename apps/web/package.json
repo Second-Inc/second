@@ -26,7 +26,7 @@
     "lucide-react": "^0.577.0",
     "mongodb": "^6.21.0",
     "next": "^16.2.6",
-    "postcss": "8.5.14",
+    "postcss": "8.5.23",
     "posthog-js": "^1.374.2",
     "radix-ui": "^1.4.3",
     "react": "19.2.4",
@@ -53,7 +53,7 @@
     "typescript": "^5"
   },
   "overrides": {
-    "postcss": "8.5.14",
+    "postcss": "8.5.23",
     "qs": "6.15.2"
   }
 }
