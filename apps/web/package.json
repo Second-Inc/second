@@ -12,7 +12,7 @@
   "dependencies": {
     "@ai-sdk/react": "^3.0.140",
     "@paper-design/shaders-react": "^0.0.76",
-    "@sentry/nextjs": "^10.53.1",
+    "@sentry/nextjs": "^10.75.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
     "@workos-inc/node": "^8.12.0",
